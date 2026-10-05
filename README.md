@@ -4,6 +4,8 @@ An English-language fork of [Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX
 
 The interface contains task planning, agent sessions, findings, asset graphs, traffic evidence, approval records, model configuration, and system settings. The hosted preview uses simulated data. A functioning local installation requires PostgreSQL and an LLM configuration.
 
+This fork translates the interface, preview data, built-in agent prompts, and default agent descriptions. Existing installations keep previously saved prompts until an administrator resets them to the built-in defaults. Some legacy backend messages and developer comments remain in Chinese.
+
 [Open the English demo](https://artex-english.vercel.app/function/tasks)
 
 ## Preview and deployment
@@ -16,7 +18,9 @@ For Vercel, import this repository with these settings:
 | --- | --- |
 | Root directory | `web` |
 | Framework | Next.js |
-| Environment variable | `NEXT_PUBLIC_MOCK=1` |
+| Build command | `NEXT_PUBLIC_MOCK=1 npm run build` |
+
+The build command is included in [web/vercel.json](web/vercel.json).
 
 The full application serves its API and event streams from the Go process. A Vercel deployment of `web/` provides the frontend preview only.
 

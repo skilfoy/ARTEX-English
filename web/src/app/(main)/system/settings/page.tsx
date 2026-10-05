@@ -299,19 +299,18 @@ export default function SystemSettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <RadioTowerIcon className="size-4" />
-              Agent automatically binds traffic
+              Automatically link traffic to findings
             </CardTitle>
             <CardDescription id="agent-traffic-binding-description">
-              Off by default. When enabled, the reporting agent triggered when a vulnerability is logged into the database will check existing HTTP requests/responses, correlate the corresponding traffic, and then write a report.
-              <b>Viewing data packages and additional tool calls will increase Token consumption.</b>
+              The report writer can review captured HTTP requests and responses, link relevant records to a new finding, and use them in its report.
+              <b> Reviewing traffic uses additional model tokens.</b>
               <br />
-              TCP, no packet capture or no matching traffic can still be reported normally. This switch does not affect traffic capture, manual binding, and viewing of saved evidence. For the next round of Agent
-              Take effect; new automatic bindings will be rejected immediately after closing.
+              Findings remain reportable when no matching traffic is available. This setting does not change traffic capture or manual evidence links. Agent runs use the updated setting on their next round.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">
             <Label htmlFor="agent-traffic-binding" className="text-sm font-normal text-muted-foreground">
-              {agentTrafficBinding ? "Already enabled · Will increase Token consumption" : "Close · Manual binding can continue"}
+              {agentTrafficBinding ? "Enabled · Additional model usage" : "Disabled · Manual links remain available"}
             </Label>
             <Switch
               id="agent-traffic-binding"

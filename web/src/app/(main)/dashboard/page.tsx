@@ -497,7 +497,7 @@ export default function DashboardPage() {
       <div>
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Overview</h1>
-          <p className="text-xs text-muted-foreground">Global status of the system · Real-time refresh</p>
+          <p className="text-xs text-muted-foreground">System status · Updates automatically</p>
         </div>
       </div>
 
@@ -592,7 +592,7 @@ export default function DashboardPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ZapIcon className="size-3.5 text-muted-foreground" />
-            LLM Token consumption
+            LLM token usage
             {/* 数据源开关：旧版=activity 统计（含历史任务），新版=llm_usage 计量账本（更准，仅覆盖启用后） */}
             <div className="ml-1 flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
               {(
@@ -607,8 +607,8 @@ export default function DashboardPage() {
                   onClick={() => setTokenVersion(v)}
                   title={
                     v === "new"
-                      ? "New version: from llm_usage metering ledger, accurate call-by-call, including interruption consumption; only data after enablement is covered"
-                      : "Old version: From activity statistics (including historical tasks), interruption consumption is not counted, and the model cannot be accurate."
+                      ? "Usage recorded for each model call since metering was enabled, including interrupted calls"
+                      : "Usage estimated from task activity, including historical tasks; interrupted calls may be missing"
                   }
                   className={cn(
                     "rounded px-2 py-0.5 text-[9px] font-medium transition-colors",
@@ -769,9 +769,9 @@ export default function DashboardPage() {
                   [
                     { days: 7, label: "7 days" },
                     { days: 30, label: "30 days" },
-                    { days: 90, label: "March" },
-                    { days: 180, label: "June" },
-                    { days: 365, label: "One year" },
+                    { days: 90, label: "90 days" },
+                    { days: 180, label: "180 days" },
+                    { days: 365, label: "1 year" },
                   ] as const
                 ).map(({ days, label }) => (
                   <button
@@ -880,7 +880,7 @@ export default function DashboardPage() {
 
           <div className="divide-y">
             {recentActivity.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">No activity record yet</div>
+              <div className="py-4 text-center text-xs text-muted-foreground">No activity yet</div>
             ) : (
               recentActivity.map((a) => (
                 <div key={a.seq} className="flex gap-2.5 py-2">
@@ -925,7 +925,7 @@ export default function DashboardPage() {
 
           <div className="divide-y">
             {recentFindings.length === 0 ? (
-              <div className="py-4 text-center text-xs text-muted-foreground">No found yet</div>
+              <div className="py-4 text-center text-xs text-muted-foreground">No findings yet</div>
             ) : (
               recentFindings.map((f) => (
                 <div key={f.id} className="flex items-start gap-2 py-2">
@@ -958,7 +958,7 @@ export default function DashboardPage() {
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold">
             <ClockIcon className="size-3.5 text-muted-foreground" />
-            Task
+            Tasks
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground">{tasks.length} tasks</span>
@@ -973,7 +973,7 @@ export default function DashboardPage() {
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b">
-              {["Task", "Status", "Engine", "Goal progress", "On the way", "Recent activities"].map((h) => (
+              {["Task", "Status", "Engine", "Goal progress", "Active intents", "Recent activity"].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-2 text-left text-[9px] font-semibold uppercase tracking-widest text-muted-foreground first:pl-4"

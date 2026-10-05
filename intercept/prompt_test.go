@@ -19,6 +19,25 @@ func TestParseVerdict(t *testing.T) {
 	}
 }
 
+func TestParseVerdictEnglishContract(t *testing.T) {
+	comment := "Actual operation: delete a business order; Consequence if successful: remove the record; Applicable rule: D4"
+	raw, _ := json.Marshal(map[string]string{"decision": "deny", "comment": comment})
+	got := ParseVerdict(string(raw))
+	if got.Action != "deny" || got.Reason != comment {
+		t.Fatalf("lost English verdict: %+v", got)
+	}
+	for _, invalid := range []string{
+		strings.Replace(comment, "Actual operation: delete a business order", "Actual operation:", 1),
+		strings.Replace(comment, "Consequence if successful: remove the record", "Consequence if successful:", 1),
+		strings.Replace(comment, "Applicable rule: D4", "Applicable rule:", 1),
+	} {
+		raw, _ := json.Marshal(map[string]string{"decision": "deny", "comment": invalid})
+		if got := ParseVerdict(string(raw)); got.Action != "" {
+			t.Fatalf("accepted incomplete English verdict: %+v", got)
+		}
+	}
+}
+
 func TestParseVerdictRejectsIncompleteOrAmbiguousReplies(t *testing.T) {
 	valid := `{"decision":"allow","comment":"实际操作：读取文件；成功后的后果：返回内容；命中规则：A5"}`
 	for _, reply := range []string{
