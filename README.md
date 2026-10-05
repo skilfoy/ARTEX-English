@@ -4,6 +4,8 @@ An English-language fork of [Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX
 
 The interface contains task planning, agent sessions, findings, asset graphs, traffic evidence, approval records, model configuration, and system settings. The hosted preview uses simulated data. A functioning local installation requires PostgreSQL and an LLM configuration.
 
+[Open the English demo](https://artex-english.vercel.app/function/tasks)
+
 ## Preview and deployment
 
 The `web/` directory supports a frontend-only demo with `NEXT_PUBLIC_MOCK=1`. This mode uses simulated tasks, assets, and findings and does not run the Go backend or make requests to real targets.

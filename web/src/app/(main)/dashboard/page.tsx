@@ -515,9 +515,9 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[10px]">
-            {(tasksByStatus.running ?? 0) > 0 && <span className="text-blue-400">Explore {tasksByStatus.running}</span>}
-            {(tasksByStatus.paused ?? 0) > 0 && <span className="text-amber-400">Pause {tasksByStatus.paused}</span>}
-            {(tasksByStatus.done ?? 0) > 0 && <span className="text-emerald-400">Complete {tasksByStatus.done}</span>}
+            {(tasksByStatus.running ?? 0) > 0 && <span className="text-blue-400">Running {tasksByStatus.running}</span>}
+            {(tasksByStatus.paused ?? 0) > 0 && <span className="text-amber-400">Paused {tasksByStatus.paused}</span>}
+            {(tasksByStatus.done ?? 0) > 0 && <span className="text-emerald-400">Completed {tasksByStatus.done}</span>}
             {tasks.length === 0 && <span className="text-muted-foreground">No tasks yet</span>}
           </CardContent>
         </Card>
@@ -526,15 +526,15 @@ export default function DashboardPage() {
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <BugIcon className="size-3" /> Confirm discovery
+              <BugIcon className="size-3" /> Confirmed findings
             </div>
             <div className="text-2xl font-semibold tabular-nums">{findings.length}</div>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2.5 text-[10px]">
-            <span className="text-rose-500">Serious {findingsBySev.critical}</span>
-            <span className="text-red-400">High risk {findingsBySev.high}</span>
-            <span className="text-amber-400">medium risk {findingsBySev.medium}</span>
-            <span className="text-slate-400">Low risk {findingsBySev.low}</span>
+            <span className="text-rose-500">Critical {findingsBySev.critical}</span>
+            <span className="text-red-400">High {findingsBySev.high}</span>
+            <span className="text-amber-400">Medium {findingsBySev.medium}</span>
+            <span className="text-slate-400">Low {findingsBySev.low}</span>
           </CardContent>
         </Card>
 
@@ -542,7 +542,7 @@ export default function DashboardPage() {
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <NetworkIcon className="size-3" /> Asset node
+              <NetworkIcon className="size-3" /> Assets
             </div>
             <div className="text-2xl font-semibold tabular-nums">{totalAssets}</div>
           </CardHeader>
@@ -553,7 +553,7 @@ export default function DashboardPage() {
         <Card className="gap-1">
           <CardHeader className="pb-0">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-              <ActivityIcon className="size-3" /> Traffic interaction
+              <ActivityIcon className="size-3" /> Traffic records
             </div>
             <div className="text-2xl font-semibold tabular-nums">{traffic.length}</div>
           </CardHeader>
@@ -580,7 +580,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="text-[10px] text-muted-foreground">
-            In {fmtTokens(displayedTokens.input)}(including cache {fmtTokens(displayedTokens.cacheRead)})·Out{" "}
+            Input {fmtTokens(displayedTokens.input)} (cached {fmtTokens(displayedTokens.cacheRead)}) · Output{" "}
             {fmtTokens(displayedTokens.output)}
           </CardContent>
         </Card>
@@ -597,8 +597,8 @@ export default function DashboardPage() {
             <div className="ml-1 flex gap-0.5 rounded-md border bg-muted/30 p-0.5">
               {(
                 [
-                  { v: "old", label: "Old version" },
-                  { v: "new", label: "New version" },
+                  { v: "old", label: "Activity totals" },
+                  { v: "new", label: "Usage ledger" },
                 ] as const
               ).map(({ v, label }) => (
                 <button
@@ -851,7 +851,7 @@ export default function DashboardPage() {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <ActivityIcon className="size-3.5 text-muted-foreground" />
-              Activity flow
+              Activity feed
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground">
@@ -913,7 +913,7 @@ export default function DashboardPage() {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold">
               <BugIcon className="size-3.5 text-muted-foreground" />
-              Discover
+              Findings
             </div>
             <Link
               href="/function/findings"

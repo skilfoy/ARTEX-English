@@ -780,7 +780,7 @@ export default function TasksPage() {
   return (
     <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-4">
       <TabsList className="mx-4 lg:mx-6">
-        <TabsTrigger value="current">Current task</TabsTrigger>
+        <TabsTrigger value="current">Active tasks</TabsTrigger>
         <TabsTrigger value="archived">Archived</TabsTrigger>
       </TabsList>
       <TabsContent value="current">
@@ -790,7 +790,7 @@ export default function TasksPage() {
               <div className="relative w-full sm:max-w-xs">
                 <SearchIcon className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
                 <Input
-                  placeholder="Search Description/Target/ID"
+                  placeholder="Search descriptions, goals, or IDs"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   className="pl-8"
@@ -838,7 +838,7 @@ export default function TasksPage() {
                 </SelectContent>
               </Select>
               <span className="text-muted-foreground text-xs tabular-nums">
-                {filtered.length}/{tasks.length} strip
+                {filtered.length} of {tasks.length} tasks
               </span>
               {selectedIds.size > 0 && (
                 <>
@@ -950,10 +950,10 @@ export default function TasksPage() {
                       onSort={sortTasksBy}
                     />
                     <TableHead className="text-center">Goal progress</TableHead>
-                    <TableHead className="text-center" title="Severe/High/Medium/Low">
-                      Vulnerability <span className="text-muted-foreground font-normal">strict/high/medium/low</span>
+                    <TableHead className="text-center" title="Critical / High / Medium / Low">
+                      Findings <span className="text-muted-foreground font-normal">critical/high/medium/low</span>
                     </TableHead>
-                    <TableHead className="text-center">Running Worker</TableHead>
+                    <TableHead className="text-center">Active workers</TableHead>
                     <SortableTaskHead
                       field="created"
                       label="Creation time"
@@ -1264,16 +1264,16 @@ const TaskRow = React.memo(function TaskRow({
         className="text-right text-xs whitespace-nowrap tabular-nums"
         title={
           task.tokens
-            ? `Input${task.tokens.input_tokens}· cache${task.tokens.cache_read_tokens}· Output${task.tokens.output_tokens}`
+            ? `Input ${task.tokens.input_tokens} · cached ${task.tokens.cache_read_tokens} · output ${task.tokens.output_tokens}`
             : undefined
         }
       >
         {task.tokens ? (
           <span className="text-muted-foreground">
             In <span className="text-foreground">{fmtTokens(task.tokens.input_tokens)}</span>
-            {"· Slow"}
+            {" · cached "}
             <span className="text-foreground">{fmtTokens(task.tokens.cache_read_tokens)}</span>
-            {"· out"}
+            {" · out "}
             <span className="text-foreground">{fmtTokens(task.tokens.output_tokens)}</span>
           </span>
         ) : (

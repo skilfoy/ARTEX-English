@@ -64,10 +64,10 @@ export function TablePagination({
             ))}
           </SelectContent>
         </Select>
-        <span>Article/page</span>
+        <span>Items per page</span>
         {total > 0 ? (
           <span className="tabular-nums">
-            {from}–{to} / common {total} strip
+            {from}–{to} of {total}
           </span>
         ) : (
           <span>Total 0 items</span>
