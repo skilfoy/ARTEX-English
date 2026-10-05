@@ -1407,8 +1407,8 @@ function TaskPinAction({ task, onTogglePinned }: { task: Task; onTogglePinned: (
       variant="ghost"
       size="icon"
       disabled={pinning}
-      aria-label={pinned ? `Cancel pinned task #${task.id}` : `Top task #${task.id}`}
-      title={pinned ? "Cancel pin" : "Pick it to the top"}
+      aria-label={pinned ? `Unpin task #${task.id}` : `Pin task #${task.id}`}
+      title={pinned ? "Unpin task" : "Pin task"}
       onClick={async () => {
         setPinning(true);
         try {
@@ -1441,13 +1441,13 @@ function TaskControlButton({
 }) {
   const [pending, setPending] = React.useState(false);
   const action = taskControlAction(task.status);
-  const label = action === "resume" ? "Continue the task" : "Pause task";
+  const label = action === "resume" ? "Resume task" : "Pause task";
   return (
     <Button
       size="icon"
       variant="ghost"
       aria-label={label}
-      title={action ? label : "This status cannot be paused or continued"}
+      title={action ? label : "Task cannot be paused or resumed in its current status"}
       disabled={!action || pending}
       onClick={async () => {
         if (!action) return;
@@ -1465,10 +1465,10 @@ function TaskControlButton({
 }
 
 function archiveBlockReason(task: Task): string {
-  if (task.queued) return "The tasks in the queue must be paused first";
-  if (!ARCHIVABLE_STATUSES.has(task.status)) return "Tasks that are running or have not yet been completed must be paused first";
+  if (task.queued) return "Pause the queued task before archiving it";
+  if (!ARCHIVABLE_STATUSES.has(task.status)) return "Pause the task before archiving it";
   if (task.archive_blocked_by_task_id) {
-    return `The task is unarchived task #${task.archive_blocked_by_task_id}Direct inheritance, please archive dependent tasks first`;
+    return `Archive dependent task #${task.archive_blocked_by_task_id} first`;
   }
   return "";
 }
@@ -1489,9 +1489,9 @@ function ArchiveConfirmDialog({
       <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{count === 1 ? "Archiving tasks" : `Archive${count}tasks`}</AlertDialogTitle>
+          <AlertDialogTitle>{count === 1 ? "Archive task" : `Archive ${count} tasks`}</AlertDialogTitle>
           <AlertDialogDescription className="[overflow-wrap:anywhere]">
-            Archiving stops task scheduling and compresses graphs, LLM history, files, and exclusive assets and traffic to local cold storage. After archiving is completed, it can be restored from "Archived".
+            Archiving stops task scheduling and moves the task graph, model history, files, and associated assets and traffic to local cold storage. Restore archived tasks from the Archived tab.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -1521,7 +1521,7 @@ function ArchiveConfirmDialog({
 function TaskArchiveAction({ task, onArchive }: { task: Task; onArchive: (task: Task) => Promise<void> }) {
   const reason = archiveBlockReason(task);
   const trigger = (
-    <Button size="icon" variant="ghost" disabled={Boolean(reason)} aria-label={`Archiving tasks #${task.id}`}>
+    <Button size="icon" variant="ghost" disabled={Boolean(reason)} aria-label={`Archive task #${task.id}`}>
       <ArchiveIcon />
     </Button>
   );

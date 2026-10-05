@@ -53,6 +53,7 @@ export const ACTIVE_TASK = "t-acme-web";
 export const tasks: Task[] = [
   {
     id: "t-acme-web",
+    name: "Acme web assessment",
     category_id: 1,
     category_name: "External assessment",
     description: "External assessment of the Acme website and administration portal (acme.com)",
@@ -79,6 +80,7 @@ export const tasks: Task[] = [
   },
   {
     id: "t-acme-api",
+    name: "Acme API assessment",
     category_id: 2,
     category_name: "API assessment",
     description: "Authorization and injection assessment for api.acme.com",
@@ -105,6 +107,7 @@ export const tasks: Task[] = [
   },
   {
     id: "t-shop-pay",
+    name: "Shop payment review",
     category_id: 2,
     category_name: "API assessment",
     description: "Payment and order workflows at shop.acme.com",
@@ -130,6 +133,7 @@ export const tasks: Task[] = [
   },
   {
     id: "t-vpn-edge",
+    name: "VPN perimeter review",
     category_id: 1,
     category_name: "External assessment",
     description: "Exposed surface reconnaissance (VPN / border service)",
