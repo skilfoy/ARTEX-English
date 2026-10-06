@@ -30,8 +30,8 @@ func TestChatUnavailableReasonDistinguishesStates(t *testing.T) {
 		_ = m.pg.DeleteProfile(p.ID)
 	}
 
-	if reason := s.chatUnavailableReason(); !strings.Contains(reason, "Not configured yet") {
-		t.Fatalf("no-profile reason=%q, want Not configured yet", reason)
+	if reason := s.chatUnavailableReason(); !strings.Contains(reason, "No LLM configured yet") {
+		t.Fatalf("no-profile reason=%q, want No LLM configured yet", reason)
 	}
 
 	id, err := m.pg.SaveProfile(&db.LLMProfile{Name: "p1", Format: "anthropic", Model: "claude-x", APIKey: "sk-test"})
@@ -44,15 +44,15 @@ func TestChatUnavailableReasonDistinguishesStates(t *testing.T) {
 	})
 
 	// Profile exists but is not activated.
-	if reason := s.chatUnavailableReason(); !strings.Contains(reason, "No activated") {
-		t.Fatalf("inactive reason=%q, want No activated", reason)
+	if reason := s.chatUnavailableReason(); !strings.Contains(reason, "No active LLM") {
+		t.Fatalf("inactive reason=%q, want No active LLM", reason)
 	}
 
 	// Once activated, the reason no longer claims a missing/inactive config.
 	if err := m.pg.SetActiveProfile(id); err != nil {
 		t.Fatal(err)
 	}
-	if reason := s.chatUnavailableReason(); strings.Contains(reason, "Not configured yet") || strings.Contains(reason, "No activated") {
+	if reason := s.chatUnavailableReason(); strings.Contains(reason, "No LLM configured yet") || strings.Contains(reason, "No active LLM") {
 		t.Fatalf("active reason=%q should not report missing/inactive", reason)
 	}
 }
@@ -60,7 +60,7 @@ func TestChatUnavailableReasonDistinguishesStates(t *testing.T) {
 // TestResolveChatAgentHonoursConversationProfile is the regression guard for the
 // reported bug: a conversation that picked a valid profile must resolve a chat
 // agent even when NO global profile is active, so the send precheck stops
-// rejecting it with "LLM Not configured".
+// rejecting it with "LLM is not ready".
 func TestResolveChatAgentHonoursConversationProfile(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {

@@ -9,19 +9,19 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Overview[Regulation]Manpower CRUD Interface + Injecting range switch resolution. Operating constraints(allow/deny)With agent Side.
-// set_constraints Tool Write Same task_constraints Table;It's human. UI Add or delete directly above. 'Constraint is only
-// Tip Context——Add & Delete[No]Notice planner,Next round of planning natural reading libraries is effective.(By product).Every change handler
-// Let's go. beginTaskOperation/decInflight,Avoids removing competition with the task(Objectives/Intention CRUD Consistent).
+// Human CRUD for the Constraints screen, plus the injection-scope switches. Allow/deny
+// constraints share task_constraints with the agent's set_constraints tool; here a person
+// edits them in the UI. A constraint is only prompt context — create, update, and delete do
+// NOT notify the planner; the next planning round reads the DB (product decision). Every mutating handler uses beginTaskOperation/decInflight so it cannot race task deletion (same as goal/intent CRUD).
 
-// Injecting range switches. settings key,Open by default(GetBool Second parameter = true).
+// Settings keys for the injection-scope switches. Both default on (GetBool's second argument = true).
 const (
 	settingConstraintsInjectPlanner = "constraints_inject_planner"
 	settingConstraintsInjectWorker  = "constraints_inject_worker"
 )
 
-// constraintInjectPlanner / constraintInjectWorker Report whether or not to inject operational constraints agent of
-// System prompt(On by default).As resolver Pass. planner/worker,Rounded → Switches are effective immediately..
+// constraintInjectPlanner / constraintInjectWorker report whether operational constraints
+// are injected into that agent's system prompt (on by default). Passed to planner/worker as resolvers and read every round, so a switch takes effect immediately.
 func (s *Server) constraintInjectPlanner() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectPlanner, true)
 }
@@ -30,7 +30,7 @@ func (s *Server) constraintInjectWorker() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectWorker, true)
 }
 
-// listConstraints Returns all operational constraints of this task(allow In front,deny Behind).
+// listConstraints returns every operational constraint on this task (allows first, then denies).
 func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -45,7 +45,7 @@ func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"constraints": constraintDTOs(rows)})
 }
 
-// addConstraint Add an operational constraint to manual(kind=allow|deny).Not notified planner.
+// addConstraint manually adds one operational constraint (kind=allow|deny). Does not notify the planner.
 func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -73,7 +73,7 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	}
 	kind := normalizeConstraintKind(body.Kind)
 	if kind == "" {
-		writeErr(w, 400, "kind Must be. allow or deny")
+		writeErr(w, 400, "kind must be allow or deny")
 		return
 	}
 	id, err := t.Store.AddConstraint(kind, text, "human")
@@ -84,7 +84,7 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(id, 10), Kind: kind, Text: text, Origin: "human"})
 }
 
-// editConstraint Manually modify a constraint(kind + text).Not notified planner.
+// editConstraint manually updates one constraint (kind + text). Does not notify the planner.
 func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -117,7 +117,7 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	}
 	kind := normalizeConstraintKind(body.Kind)
 	if kind == "" {
-		writeErr(w, 400, "kind Must be. allow or deny")
+		writeErr(w, 400, "kind must be allow or deny")
 		return
 	}
 	if err := t.Store.UpdateConstraint(cid, kind, text); err != nil {
@@ -127,7 +127,7 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(cid, 10), Kind: kind, Text: text})
 }
 
-// deleteConstraint Manually remove a constraint. Not notified planner.
+// deleteConstraint manually deletes one constraint. Does not notify the planner.
 func (s *Server) deleteConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {

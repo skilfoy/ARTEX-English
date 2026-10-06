@@ -59,7 +59,7 @@ type wsEntry struct {
 func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	fi, err := os.Stat(abs)
@@ -68,7 +68,7 @@ func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !fi.IsDir() {
-		writeErr(w, 400, "Not Directory")
+		writeErr(w, 400, "Not a directory")
 		return
 	}
 	ents, err := os.ReadDir(abs)
@@ -90,7 +90,7 @@ func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 			MTime: info.ModTime().UnixMilli(),
 		})
 	}
-	// Directory in front, sort by name.
+	// Directories first, then each group by name.
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Dir != out[j].Dir {
 			return out[i].Dir
@@ -105,7 +105,7 @@ func (s *Server) wsList(w http.ResponseWriter, r *http.Request) {
 func (s *Server) wsRead(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	fi, err := os.Stat(abs)
@@ -114,7 +114,7 @@ func (s *Server) wsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if fi.IsDir() {
-		writeErr(w, 400, "It's a directory, not read as a file")
+		writeErr(w, 400, "This is a directory and cannot be read as a file")
 		return
 	}
 	if fi.Size() > maxWorkspaceRead {
@@ -145,7 +145,7 @@ func (s *Server) wsWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	abs, ok := s.wsResolve(req.Path)
 	if !ok || abs == filepath.Clean(s.m.dir) {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	if fi, err := os.Stat(abs); err == nil && fi.IsDir() {
@@ -174,7 +174,7 @@ func (s *Server) wsMkdir(w http.ResponseWriter, r *http.Request) {
 	}
 	abs, ok := s.wsResolve(req.Path)
 	if !ok || abs == filepath.Clean(s.m.dir) {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
@@ -189,7 +189,7 @@ func (s *Server) wsMkdir(w http.ResponseWriter, r *http.Request) {
 func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	if abs == filepath.Clean(s.m.dir) {
@@ -211,7 +211,7 @@ func (s *Server) wsDelete(w http.ResponseWriter, r *http.Request) {
 func (s *Server) wsDownload(w http.ResponseWriter, r *http.Request) {
 	abs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	fi, err := os.Stat(abs)
@@ -229,7 +229,7 @@ func (s *Server) wsDownload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) wsUpload(w http.ResponseWriter, r *http.Request) {
 	dirAbs, ok := s.wsResolve(r.URL.Query().Get("path"))
 	if !ok {
-		writeErr(w, 400, "Invalid Path")
+		writeErr(w, 400, "Invalid path")
 		return
 	}
 	if fi, err := os.Stat(dirAbs); err != nil || !fi.IsDir() {
@@ -238,12 +238,12 @@ func (s *Server) wsUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxWorkspaceUpload)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, 400, "Parsing upload failed or exceeded size limit:"+err.Error())
+		writeErr(w, 400, "Failed to parse the upload, or it exceeded the size limit: "+err.Error())
 		return
 	}
 	files := r.MultipartForm.File["file"]
 	if len(files) == 0 {
-		writeErr(w, 400, "Missing upload file(Table Fields file)")
+		writeErr(w, 400, "Missing upload file (form field file)")
 		return
 	}
 	saved := 0

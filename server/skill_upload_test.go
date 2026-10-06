@@ -54,7 +54,7 @@ func TestSkillRelPath(t *testing.T) {
 	bad := []string{
 		"", "../etc/passwd", "a/../../b", "/abs/path", "a//b", `..\..\x`,
 		"%2e%2e/x", "a\x00b", "\u4e2d\u6587 \u540d.md", "\u4e2d‮\u6587.md", "a#b.md", "a?b.md",
-		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // \u88f8 GBK \u5b57\u8282：\u975e\u6cd5 UTF-8
+		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // raw GBK bytes: not valid UTF-8
 		strings.Repeat("a", maxSkillPathLen+1),
 	}
 	for _, in := range bad {
@@ -73,7 +73,7 @@ type zipFile struct {
 	name    string
 	body    string
 	method  uint16
-	nonUTF8 bool // write the name bytes as-is (GBK \u5305)
+	nonUTF8 bool // write the name bytes as-is (GBK archive)
 }
 
 func buildZip(t *testing.T, files ...zipFile) []byte {
@@ -81,8 +81,8 @@ func buildZip(t *testing.T, files ...zipFile) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	zw.RegisterCompressor(zipMethodZstd, zstd.ZipCompressor())
-	// Deflate64 \u6ca1\u6709\u7eaf Go \u7f16\u7801\u5668；\u8fd9\u91cc\u539f\u6837\u5199\u5165，\u53ea\u662f\u4e3a\u4e86\u7ed9\u6761\u76ee\u6253\u4e0a method 9 \u7684\u6807\u8bb0 ——
-	// \u65ad\u8a00\u7684\u662f「\u65b9\u6cd5\u4e0d\u652f\u6301\u65f6\u7ed9\u4ec0\u4e48\u63d0\u793a」，\u4e0d\u4f1a\u771f\u53bb\u89e3\u538b\u5b83。
+	// Deflate64 has no pure-Go encoder. The bytes are written unchanged only to mark the
+	// entry as method 9. The assertion is the "unsupported method" message; nothing is actually decompressed.
 	zw.RegisterCompressor(zipMethodDeflate64, func(w io.Writer) (io.WriteCloser, error) {
 		return nopWriteCloser{w}, nil
 	})
@@ -128,7 +128,7 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 
 const zhSkillMD = "---\nname: \u4e2d\u6587\u6280\u80fd\ndescription: \u6d4b\u8bd5\n---\n\u6b63\u6587\n"
 
-// A zstd-compressed archive (WinZip \u7684\u53ef\u9009\u538b\u7f29\u65b9\u5f0f) used to blow up with
+// A zstd-compressed archive (an optional WinZip method) used to fail with
 // "zip: unsupported compression"; it now installs like any Deflate archive.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
@@ -151,7 +151,7 @@ func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	}
 }
 
-// GBK-named entries (7-Zip / \u8d44\u6e90\u7ba1\u7406\u5668 on Chinese Windows) must be decoded rather
+// GBK-named entries (7-Zip / Explorer on Chinese Windows) must be decoded rather
 // than rejected as invalid UTF-8 paths.
 func TestUploadSkillGBKNames(t *testing.T) {
 	gbk := func(s string) string {
@@ -178,8 +178,8 @@ func TestUploadSkillGBKNames(t *testing.T) {
 	}
 }
 
-// An archive we genuinely cannot decode should name the method in Chinese instead of
-// surfacing "zip: unsupported compression algorithm".
+// An archive we genuinely cannot decode should name the method in the error
+// instead of surfacing "zip: unsupported compression algorithm".
 func TestUploadSkillUnsupportedMethod(t *testing.T) {
 	data := buildZip(t,
 		zipFile{name: "demo/SKILL.md", body: "---\nname: demo\n---\n", method: zipMethodDeflate64},
@@ -226,7 +226,7 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "Invalid Path") {
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "Invalid path") {
 		t.Fatalf("error = %q, want an invalid path error", msg)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {

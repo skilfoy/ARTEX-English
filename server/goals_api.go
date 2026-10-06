@@ -9,12 +9,12 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Overview[Goal management]Manpower CRUD Interface. and agent Side. set_goals It's the same tool. goal node,
-// But the entrance is human. UI Add & Delete;New/Modified Reuse[Resurrection mission]Logical(admitTask resume:
-// Final state→running,Lift the pause and line up if necessary),Delete Not Again(By product).Every change handler Let's go.
-// beginTaskOperation/decInflight,Avoids removing competition with the task(And intent. CRUD Consistent).
+// Human CRUD for the Goals screen. It writes the same goal nodes as the agent's set_goals
+// tool, but a person adds, edits, and deletes them in the UI. After an add or edit, revive
+// the task (admitTask resume: terminal → running, clear pause, queue if needed). Delete does
+// not revive (product decision). Every mutating handler uses beginTaskOperation/decInflight so it cannot race task deletion (same as intent CRUD).
 
-// listGoals Return all objectives of this task(text/vulnclass/state Open it.),For target management card rendering.
+// listGoals returns every goal on this task (text, vulnclass, and state already split) for the goals card.
 func (s *Server) listGoals(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -29,8 +29,8 @@ func (s *Server) listGoals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"goals": goalDTOs(goals)})
 }
 
-// addGoal Add a target manually:Drop the library.(Synchronising folder spawns Down)→ Remember one.[New target.]Trigger awakening
-// planner → Resurrection mission,Let the planners judge whether the new target has been met or not..
+// addGoal manually adds a goal: persist it (under the task root's spawns), record an
+// "added a goal" trigger that wakes the planner, then revive the task so the new goal is re-judged.
 func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -53,7 +53,7 @@ func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(body.Text)
 	if text == "" {
-		writeErr(w, 400, "Target content cannot be empty")
+		writeErr(w, 400, "Goal text cannot be empty")
 		return
 	}
 	payload := map[string]any{"text": text}
@@ -68,18 +68,18 @@ func (s *Server) addGoal(w http.ResponseWriter, r *http.Request) {
 	if of, _ := t.Store.OriginFactID(); of > 0 && id > 0 {
 		_ = t.Store.Link(of, db.RelSpawns, id) // goal descends from the task root (origin fact)
 	}
-	t.NotifyGoal([]string{text}) // note[People have added targets.:…]Trigger and wake up planner
-	s.reviveTask(t)              // Finish/Suspended task pulls back into operational mode and continues to run.
+	t.NotifyGoal([]string{text}) // record "a person added a goal: …", which wakes the planner
+	s.reviveTask(t)              // pull a completed or paused task back to running
 	node, _ := t.Store.GetNode(id)
 	if node == nil {
-		writeErr(w, 500, "Failed to read after target writing")
+		writeErr(w, 500, "Failed to read the goal after writing it")
 		return
 	}
 	writeJSON(w, 200, goalDTO(node))
 }
 
-// editGoal Manually modify a target text(and vulnclass):Change library → note[User modified target by old become new]
-// Trigger awakening planner → Resurrection mission,Let the planners re-orient themselves to new targets..
+// editGoal manually changes a goal's text (and vulnclass): update the row, record that the
+// user changed the goal from old to new (wakes the planner), then revive the task so it follows the new goal.
 func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -107,7 +107,7 @@ func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(body.Text)
 	if text == "" {
-		writeErr(w, 400, "Target content cannot be empty")
+		writeErr(w, 400, "Goal text cannot be empty")
 		return
 	}
 	node, err := t.Store.GetNode(gid)
@@ -116,7 +116,7 @@ func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if node == nil || node.Kind != db.KindGoal {
-		writeErr(w, 404, "Target does not exist.")
+		writeErr(w, 404, "Goal does not exist")
 		return
 	}
 	oldText := goalDTO(node).Text
@@ -124,18 +124,18 @@ func (s *Server) editGoal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	t.NotifyGoalEdited(oldText, text) // note[People modified the target by old become new]Trigger and wake up planner
-	s.reviveTask(t)                   // Consistent with new:The resuscitation mission has been reset by new targets.
+	t.NotifyGoalEdited(oldText, text) // record "a person changed the goal from old to new", which wakes the planner
+	s.reviveTask(t)                   // same as add: revive the task so it is re-judged against the new goal
 	updated, _ := t.Store.GetNode(gid)
 	if updated == nil {
-		writeErr(w, 500, "Failed to read after target update")
+		writeErr(w, 500, "Failed to read the goal after updating it")
 		return
 	}
 	writeJSON(w, 200, goalDTO(updated))
 }
 
-// deleteGoal Remove a target manually(Hard Delete,Declining cascades/anchor):Delete Library → note[User deleted the target X]
-// Trigger awakening planner The remaining targets will be recast accordingly. By product,Delete[No]Resurrection mission.
+// deleteGoal manually deletes a goal (hard delete; edges and anchors cascade): remove the row,
+// record that the user deleted goal X, and wake the planner to re-judge what remains. Delete does NOT revive the task.
 func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -159,7 +159,7 @@ func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if node == nil || node.Kind != db.KindGoal {
-		writeErr(w, 404, "Target does not exist.")
+		writeErr(w, 404, "Goal does not exist")
 		return
 	}
 	text := goalDTO(node).Text
@@ -167,6 +167,6 @@ func (s *Server) deleteGoal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	t.NotifyGoalDeleted(text) // note[People deleted the target.:…]Trigger and wake up planner(I'm not going back on a mission.)
+	t.NotifyGoalDeleted(text) // record "a person deleted this goal: …", which wakes the planner (does not revive the task)
 	writeJSON(w, 200, map[string]bool{"ok": true})
 }

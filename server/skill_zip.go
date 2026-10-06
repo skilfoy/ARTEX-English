@@ -14,18 +14,18 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-// Go of archive/zip Internal only Store(0) and Deflate(8) Two decompressors. They'll return when they find another way.
-// "zip: unsupported compression algorithm".Compression software often writes other methods under non-default slots
-// (7-Zip of bzip2,WinZip of zstd),So here's the pure. Go Two things you can solve; you can't.
-// (Deflate64 / LZMA / XZ / PPMd / Encryption package) Before the pressure is lifted, give a sign in Chinese, not lower.
-// Error is thrown to user.
+// archive/zip only ships decompressors for Store (0) and Deflate (8). Any other method
+// comes back as "zip: unsupported compression algorithm". Archivers often write other
+// methods outside the defaults (7-Zip's bzip2, WinZip's zstd), so register the two pure-Go
+// methods we can decompress. Methods we cannot handle (Deflate64 / LZMA / XZ / PPMd /
+// encrypted archives) get a clear error before extraction, instead of the raw library error.
 const (
 	zipMethodStore     = 0
 	zipMethodDeflate   = 8
 	zipMethodDeflate64 = 9
 	zipMethodBzip2     = 12
 	zipMethodLZMA      = 14
-	zipMethodZstdPKW   = 20 // PKWARE Early delivery zstd Number assigned
+	zipMethodZstdPKW   = 20 // method number PKWARE originally assigned to zstd
 	zipMethodZstd      = 93
 	zipMethodXZ        = 95
 	zipMethodJPEG      = 96
@@ -61,7 +61,7 @@ func zipMethodName(m uint16) string {
 func newSkillZipReader(buf []byte) (*zip.Reader, error) {
 	zr, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 	if err != nil {
-		return nil, fmt.Errorf("Could not parse compression package(Required zip Format):%w", err)
+		return nil, fmt.Errorf("could not parse the archive (expected a zip): %w", err)
 	}
 	zr.RegisterDecompressor(zipMethodBzip2, func(r io.Reader) io.ReadCloser {
 		return io.NopCloser(bzip2.NewReader(r))
@@ -90,16 +90,16 @@ func skillZipEntries(zr *zip.Reader) []skillZipEntry {
 		name := zipEntryName(f)
 		if strings.HasPrefix(name, "__MACOSX/") || strings.Contains(name, "/__MACOSX/") ||
 			path.Base(name) == ".DS_Store" {
-			continue // macOS Pack the residue.
+			continue // macOS packaging leftovers
 		}
 		out = append(out, skillZipEntry{f: f, name: name})
 	}
 	return out
 }
 
-// zipEntryName returns the entry path as UTF-8. Windows Top 7-Zip / WinRAR / Resource manager
-// It's still there. UTF-8 The Chinese file name will be pressed when marked GBK Write zip,Go Keep these bytes as they are, then name
-// It's not legal. UTF-8 I can't cross the path. —— Here. GBK Undercover decoded.
+// zipEntryName returns the entry path as UTF-8. 7-Zip / WinRAR / Explorer on Windows
+// still write non-ASCII names as GBK when the UTF-8 flag is off. Go keeps those bytes
+// as-is, so the name is not valid UTF-8 and fails the path check — decode GBK here.
 func zipEntryName(f *zip.File) string {
 	if utf8.ValidString(f.Name) {
 		return f.Name
