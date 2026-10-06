@@ -40,7 +40,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 			if data, rerr := os.ReadFile(legacy); rerr == nil {
 				if werr := os.WriteFile(path, data, 0o600); werr == nil {
 					_ = os.Remove(legacy)
-					log.Printf("[auth] JWT key From %s Move To %s(Move out of browsable workspace)", legacy, path)
+					log.Printf("[auth] JWT key moved from %s to %s (out of the browsable workspace)", legacy, path)
 				}
 			}
 		}
@@ -110,7 +110,7 @@ func (s *Server) requireAuth(h http.Handler) http.Handler {
 			return
 		}
 		if !verifyJWT(tok, s.jwtKey) {
-			writeErr(w, 401, "token Invalid or expired")
+			writeErr(w, 401, "Token is invalid or expired")
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -135,7 +135,7 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	}
 	existing, _, _ := pg.GetSetting(authPassKey)
 	if existing != "" {
-		writeErr(w, 403, "Password set")
+		writeErr(w, 403, "Password is already set")
 		return
 	}
 	var req struct {
@@ -156,7 +156,7 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
-		writeErr(w, 500, "token Failed to generate")
+		writeErr(w, 500, "Failed to generate token")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
@@ -179,7 +179,7 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"new_password"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, 400, "Request format error")
+		writeErr(w, 400, "Invalid request body")
 		return
 	}
 	if req.NewPassword == "" {
@@ -188,11 +188,11 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, ok, _ := pg.GetSetting(authPassKey)
 	if !ok || hash == "" {
-		writeErr(w, 403, "The password has not been initialised. Set the password first.")
+		writeErr(w, 403, "Password is not set yet; set a password first")
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.OldPassword)); err != nil {
-		writeErr(w, 401, "Current password error")
+		writeErr(w, 401, "Current password is incorrect")
 		return
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
@@ -218,7 +218,7 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, 400, "Request format error")
+		writeErr(w, 400, "Invalid request body")
 		return
 	}
 	if req.Username != "ARTEX" {
@@ -227,7 +227,7 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, ok, _ := pg.GetSetting(authPassKey)
 	if !ok || hash == "" {
-		writeErr(w, 403, "The password has not been initialised. Set the password first.")
+		writeErr(w, 403, "Password is not set yet; set a password first")
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
@@ -236,7 +236,7 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
-		writeErr(w, 500, "token Failed to generate")
+		writeErr(w, 500, "Failed to generate token")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})

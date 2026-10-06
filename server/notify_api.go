@@ -12,14 +12,14 @@ import (
 	"github.com/skilfoy/ARTEX-English/notify"
 )
 
-// It's a delivery function. HTTP Interface. All routers hung on requireAuth After Handler()),
-// Consistent with other management interfaces.
+// HTTP API for notifications. Every route sits behind requireAuth (see Handler()),
+// like the other management endpoints.
 
-// notifyChannelDTO It's the external expression of the channel..
+// notifyChannelDTO is the external shape of a channel.
 //
-// Config Yes**Under cover.**Configuration: the proof field was replaced with notify.MaskedPrefix Starting value.
-// The front side submits the mask value as it is.[This field hasn't changed.],The service maintains the original library value accordingly
-// (See notify.MergeConfig).
+// Config is the masked config: credential fields are replaced with a value that starts with notify.MaskedPrefix.
+// Sending that masked value back means "this field did not change"; the server keeps the stored value
+// (see notify.MergeConfig).
 type notifyChannelDTO struct {
 	ID         int64          `json:"id"`
 	Name       string         `json:"name"`
@@ -31,12 +31,12 @@ type notifyChannelDTO struct {
 	RatePerMin int            `json:"rate_per_min"`
 	CreatedAt  time.Time      `json:"created_at"`
 	UpdatedAt  time.Time      `json:"updated_at"`
-	// SecretKeys Inform the front-end which fields are based on which password frames and[Leave blank to make no changes]Other Organiser.
-	// By the channel itself.(notify.Channel.SecretKeys),Knowledge of front end unhard-coding channels.
+	// SecretKeys tells the frontend which fields are credentials, so it can render a password box and the "leave blank to keep" hint.
+	// The channel declares them (notify.Channel.SecretKeys); the frontend does not hard-code channel knowledge.
 	SecretKeys []string `json:"secret_keys"`
 }
 
-// notifyDeliveryDTO It's an external representation of the past..
+// notifyDeliveryDTO is the external shape of a delivery-history row.
 type notifyDeliveryDTO struct {
 	ID          int64      `json:"id"`
 	FindingID   int64      `json:"finding_id,string"`
@@ -51,7 +51,7 @@ type notifyDeliveryDTO struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	SentAt      *time.Time `json:"sent_at,omitempty"`
 	NextAttempt time.Time  `json:"next_attempt_at"`
-	// Message header summary, so that the history list doesn't need to be expanded to see what this push is..
+	// Message title summary, so the history list shows what was pushed without expanding the row.
 	Title    string `json:"title"`
 	Severity string `json:"severity"`
 }
@@ -109,8 +109,8 @@ func toNotifyDeliveryDTO(dl *db.NotificationDelivery) notifyDeliveryDTO {
 	return dto
 }
 
-// notifyMeta Return static metadata and global settings required for the notification page, requested once All,
-// Avoid requesting three times by front-end to render a drop-down frame.
+// notifyMeta returns the static metadata and global settings the notifications page needs, in one request,
+// so the frontend does not make three requests to render one dropdown.
 func (s *Server) notifyMeta(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -161,10 +161,10 @@ func (s *Server) notifyListChannels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"channels": out})
 }
 
-// notifyChannelRequest New/Request for an updated channel.
+// notifyChannelRequest is the body for creating or updating a channel.
 //
-// Use a pointer for all business fields to distinguish between[Nothing.]With[Zero.]:PATCH Semantic,
-// Unextended fields must preserve original library values.
+// Every business field is a pointer so "omitted" is distinct from "sent as the zero value": on PATCH,
+// an omitted field must keep the stored value.
 type notifyChannelRequest struct {
 	Name       *string        `json:"name"`
 	Kind       *string        `json:"kind"`
@@ -182,11 +182,11 @@ func (s *Server) notifyCreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req notifyChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "The request is not legal. JSON: "+err.Error())
+		writeErr(w, 400, "Request body is not valid JSON: "+err.Error())
 		return
 	}
 	if req.Kind == nil || !notify.ValidKind(*req.Kind) {
-		writeErr(w, 400, fmt.Sprintf("Channel type invalid, optional:%s", strings.Join(notify.Kinds(), " / ")))
+		writeErr(w, 400, fmt.Sprintf("Invalid channel type; choose one of: %s", strings.Join(notify.Kinds(), " / ")))
 		return
 	}
 	name := ""
@@ -211,28 +211,28 @@ func (s *Server) notifyCreateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Mode != nil {
 		if !db.ValidNotifyMode(*req.Mode) {
-			writeErr(w, 400, "Send mode invalid, optional:realtime / digest")
+			writeErr(w, 400, "Invalid delivery mode; choose realtime or digest")
 			return
 		}
 		ch.Mode = *req.Mode
 	}
 	if req.RatePerMin != nil {
-		// Show it to the value.——Including 0,It means[No current limit],is a valid configuration.
+		// An explicit value is used as given — including 0, which means unlimited and is a valid setting.
 		if *req.RatePerMin < 0 {
-			writeErr(w, 400, "The limit value cannot be negative")
+			writeErr(w, 400, "Rate limit cannot be negative")
 			return
 		}
 		ch.RatePerMin = *req.RatePerMin
 	}
-	// Only[Field default]Use channel default only. The default value must be determined here, not here. db Layer:
-	// Only requests for physical differentiation.[No message.]With[It's coming out. 0],And the meaning of both is completely different.
-	// (The former=Use default, the latter=No current limit).db Clanks. 0 And when it's not specified, it'll make the flow impossible..
+	// Only an omitted field gets the channel default. The default has to be chosen here, not in db:
+	// only the request body can tell "field omitted" from "explicitly 0", and they mean different things
+	// (omitted = use the default; 0 = unlimited). The db layer treats 0 as unspecified, which would make unlimited unreachable.
 	if req.RatePerMin == nil {
 		ch.RatePerMin = channel.DefaultRatePerMin()
 	}
 	if req.Filter != nil {
-		// Check filter fields with limited access values when writing (e. g. min_severity).For more details. notify.Filter.Validate:
-		// The hyphenation of the threshold will render the filter silent and full thrust, and must be stopped at the entrance..
+		// On write, validate filter fields with a closed set of values (such as min_severity). See notify.Filter.Validate:
+		// a misspelled threshold silently disables the filter and pushes everything, so it must be rejected at the door.
 		if err := req.Filter.Validate(); err != nil {
 			writeErr(w, 400, err.Error())
 			return
@@ -258,7 +258,7 @@ func (s *Server) notifyUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Channel id Invalid")
+		writeErr(w, 400, "Invalid channel id")
 		return
 	}
 	current, err := pg.NotificationChannelByID(r.Context(), id)
@@ -268,15 +268,15 @@ func (s *Server) notifyUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	var req notifyChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "The request is not legal. JSON: "+err.Error())
+		writeErr(w, 400, "Request body is not valid JSON: "+err.Error())
 		return
 	}
 
-	// kind Allows changes, but a change in type means replacing with a base field package and cannot be merged with the old configuration.
+	// kind may be changed, but a new type replaces the whole credential set; it must not be merged with the old config.
 	kind := current.Kind
 	if req.Kind != nil {
 		if !notify.ValidKind(*req.Kind) {
-			writeErr(w, 400, fmt.Sprintf("Channel type invalid, optional:%s", strings.Join(notify.Kinds(), " / ")))
+			writeErr(w, 400, fmt.Sprintf("Invalid channel type; choose one of: %s", strings.Join(notify.Kinds(), " / ")))
 			return
 		}
 		kind = *req.Kind
@@ -292,8 +292,8 @@ func (s *Server) notifyUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	if stored == nil {
 		stored = map[string]any{}
 	}
-	// Use PrepareConfigUpdate Not naked. MergeConfig:Target address must be changed to the operator
-	// Restatement of evidence fields, otherwise[Only change of address.]We'll send the evidence to the new address..
+	// Use PrepareConfigUpdate rather than a bare MergeConfig: when the destination address changes, the operator
+	// must restate credential fields. Otherwise "change only the address and keep the credentials" would send the stored secrets to the new address.
 	merged, err := notify.PrepareConfigUpdate(kind, stored, req.Config)
 	if err != nil {
 		writeErr(w, 400, err.Error())
@@ -326,14 +326,14 @@ func (s *Server) notifyUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Mode != nil {
 		if !db.ValidNotifyMode(*req.Mode) {
-			writeErr(w, 400, "Send mode invalid, optional:realtime / digest")
+			writeErr(w, 400, "Invalid delivery mode; choose realtime or digest")
 			return
 		}
 		ch.Mode = *req.Mode
 	}
 	if req.RatePerMin != nil {
 		if *req.RatePerMin < 0 {
-			writeErr(w, 400, "The limit value cannot be negative")
+			writeErr(w, 400, "Rate limit cannot be negative")
 			return
 		}
 		ch.RatePerMin = *req.RatePerMin
@@ -347,13 +347,13 @@ func (s *Server) notifyUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		ch.Filter = raw
 	}
 
-	// Go SetNotificationChannelEnabled instead of SaveNotificationChannel Path to,
-	// It's about letting[Disable]Also mark the inventory for release as skipped,Received while avoiding restarting
+	// Go through SetNotificationChannelEnabled, not SaveNotificationChannel, so that disabling a channel
+	// also marks pending deliveries skipped. Re-enabling must not deliver a backlog of stale messages.
 	// A backlog of outdated information.
 	enabledChanged := ch.Enabled != nil && current.Enabled != nil && *ch.Enabled != *current.Enabled
 	if enabledChanged {
-		// Update configuration first. enabled Use old values to avoid pre-activating the logic.),
-		// Separately. There is no parallel window between two steps: This interface is the only entry point for changing both fields.
+		// Persist the config update first (enabled stays at the old value, so the skip logic does not fire early),
+		// then flip the switch. There is no concurrency window between the two steps: this endpoint is the only writer of both fields.
 		prev := ch.Enabled
 		ch.Enabled = current.Enabled
 		if _, err := pg.SaveNotificationChannel(r.Context(), ch); err != nil {
@@ -381,7 +381,7 @@ func (s *Server) notifyDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Channel id Invalid")
+		writeErr(w, 400, "Invalid channel id")
 		return
 	}
 	if err := pg.DeleteNotificationChannel(r.Context(), id); err != nil {
@@ -391,11 +391,11 @@ func (s *Server) notifyDeleteChannel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// notifyTestChannel Send a test message with the currently saved configuration.
+// notifyTestChannel sends one test message with the config currently saved.
 //
-// Direct Call Channel Send Without delivering queues: The purpose of the test is to inform the user immediately[Is this configuration okay?
-// Send it.],The queue will hide the results into the delivery history. Users will have to go over them again to see if it's working..
-// So this interface is...**Sync**by notify The bag. HTTP Client Decision(15 second).
+// It calls the channel Send directly and does not use the delivery queue: the point of a test is to tell the user
+// immediately whether this config can send. A queue would hide the result in history, and the user would have to go look.
+// So this endpoint is synchronous. The timeout is the notify package's HTTP client timeout (15 seconds).
 func (s *Server) notifyTestChannel(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
 	if pg == nil {
@@ -403,7 +403,7 @@ func (s *Server) notifyTestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Channel id Invalid")
+		writeErr(w, 400, "Invalid channel id")
 		return
 	}
 	ch, err := pg.NotificationChannelByID(r.Context(), id)
@@ -413,7 +413,7 @@ func (s *Server) notifyTestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	channel, ok := notify.Get(ch.Kind)
 	if !ok {
-		writeErr(w, 400, fmt.Sprintf("Channel type %q Unregistered", ch.Kind))
+		writeErr(w, 400, fmt.Sprintf("channel type %q is not registered", ch.Kind))
 		return
 	}
 	var cfg map[string]any
@@ -426,10 +426,10 @@ func (s *Server) notifyTestChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	msg := notifyTestMessage(s.notifierBaseURL(pg))
 	start := time.Now()
-	// There's only one test message, and the number of service orders is not required here.
-	// It's off the block. It doesn't involve segments.).
+	// A test message is a single item, so the delivered count is unused here (the channel length limit
+	// truncates a single message; it does not split a batch).
 	if _, err := channel.Send(r.Context(), cfg, msg); err != nil {
-		// Revert the original error of the channel back to the user.——It's their only clue to debug the configuration..
+		// Return the channel's raw error to the user — it is the only clue they have for debugging the config.
 		writeErr(w, 502, err.Error())
 		return
 	}
@@ -439,16 +439,16 @@ func (s *Server) notifyTestChannel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// notifyTestMessage Construct a test message. It's a test.:
-// The person receiving it should not have misjudged it to be a real leak. Hole.
+// notifyTestMessage builds a test message. The wording is deliberately obvious so a recipient
+// cannot mistake it for a real finding.
 func notifyTestMessage(baseURL string) notify.Message {
 	return notify.Message{
 		Items: []notify.Item{{
 			FindingID: 0,
-			Name:      "Test messages.",
-			VulnClass: "Connectivity testing",
+			Name:      "Test message: channel configuration is working",
+			VulnClass: "connectivity test",
 			Severity:  "low",
-			Summary:   "This is... ARTEX We're sending a test message from the channel, which means that the channel is available..",
+			Summary:   "This is a test message from an ARTEX notification channel. Receiving it means the channel is configured and working.",
 			Assets:    []string{"artex.example.com"},
 			DetailURL: baseURL,
 		}},
@@ -456,7 +456,7 @@ func notifyTestMessage(baseURL string) notify.Message {
 	}
 }
 
-// notifierBaseURL External address for readback chain.
+// notifierBaseURL reads the external base URL used for links.
 func (s *Server) notifierBaseURL(pg *db.DB) string {
 	v, _, _ := pg.GetSetting(settingNotifyPublicBaseURL)
 	return trimTrailingSlash(v)
@@ -495,7 +495,7 @@ func (s *Server) notifyRetryDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Organisation id Invalid")
+		writeErr(w, 400, "Invalid delivery id")
 		return
 	}
 	if err := pg.RetryNotificationDelivery(r.Context(), id); err != nil {
@@ -505,10 +505,10 @@ func (s *Server) notifyRetryDelivery(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// notifyChannelLookupErr handle[There is no channel.]Translation 404,Other Errors 500.
+// notifyChannelLookupErr maps "channel does not exist" to 404; everything else is 500.
 func notifyChannelLookupErr(w http.ResponseWriter, err error) {
 	if errors.Is(err, db.ErrNotificationChannelNotFound) {
-		writeErr(w, 404, "No channels of notification exist")
+		writeErr(w, 404, "Notification channel does not exist")
 		return
 	}
 	writeErr(w, 500, err.Error())

@@ -26,13 +26,13 @@ func findingPaginationParam(raw string, fallback, upperBound int) int {
 }
 
 // findingFilterFromQuery builds the shared findings filter from a request's
-// query string. List / Group / Asset tree / Export the same resolution,New filter items can only be changed here.
+// query string. List, groups, the asset tree, and export share this parser; add a new filter only here.
 func findingFilterFromQuery(q url.Values) db.FindingFilter {
 	return db.FindingFilter{
 		Severity:  normFilter(q.Get("severity")),
 		Status:    normFilter(q.Get("status")),
 		VulnClass: normFilter(q.Get("vulnclass")),
-		// task_id(It's gonna happen independently.[By Task Node]Branch. task Parameter):global table filtered by task.
+		// task_id (independent of the task parameter, which switches into the "by task node" branch): filter the global table by task.
 		TaskID:     normFilter(q.Get("task_id")),
 		Query:      q.Get("q"),
 		Sort:       q.Get("sort"),
@@ -40,7 +40,7 @@ func findingFilterFromQuery(q url.Values) db.FindingFilter {
 	}
 }
 
-// findingAssetTree serves the[By assets]view's left-hand tree: every asset that
+// findingAssetTree serves the "by asset" view's left-hand tree: every asset that
 // carries at least one matching finding, plus the ancestors needed to place it.
 func (s *Server) findingAssetTree(w http.ResponseWriter, r *http.Request) {
 	tree, err := s.m.pg.BuildFindingAssetTree(findingFilterFromQuery(r.URL.Query()))
@@ -102,7 +102,7 @@ func (s *Server) deepenFinding(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, "bad json: "+err.Error())
 		}
@@ -145,7 +145,7 @@ func (s *Server) deepenFinding(w http.ResponseWriter, r *http.Request) {
 	audit := db.Activity{
 		Worker:  "system",
 		Kind:    "text",
-		Summary: "Artificial submission of loopholes with deep intent",
+		Summary: "Manually submitted a deep-exploitation intent for this finding",
 		Detail:  description,
 	}
 	intentID, audit, err := t.Store.AddFindingFollowUpIntent(id, *finding.NodeID, description, audit)

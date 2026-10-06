@@ -136,7 +136,7 @@ type assetInterceptRuleReq struct {
 func validateAssetInterceptRuleReq(req *assetInterceptRuleReq) error {
 	req.Pattern = strings.TrimSpace(req.Pattern)
 	if req.Pattern == "" {
-		return fmt.Errorf("pattern Cannot be empty")
+		return fmt.Errorf("pattern cannot be empty")
 	}
 	switch req.Kind {
 	case "exact_domain", "exact_url", "fuzzy_domain", "fuzzy_ip", "fuzzy_url":
@@ -147,10 +147,10 @@ func validateAssetInterceptRuleReq(req *assetInterceptRuleReq) error {
 		}
 	case "cidr":
 		if _, _, err := net.ParseCIDR(req.Pattern); err != nil {
-			return fmt.Errorf("cidr Not a valid segment 192.168.0.0/16):%s", req.Pattern)
+			return fmt.Errorf("cidr is not a valid network (for example 192.168.0.0/16): %s", req.Pattern)
 		}
 	default:
-		return fmt.Errorf("kind Invalid:%s", req.Kind)
+		return fmt.Errorf("invalid kind: %s", req.Kind)
 	}
 	return nil
 }

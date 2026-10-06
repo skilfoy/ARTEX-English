@@ -50,7 +50,7 @@ func (sc *Scheduler) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			sc.s.reconcileConcurrency() // Concurrency upper limit:If you're free, start the queue.
+			sc.s.reconcileConcurrency() // Concurrency cap: when a slot is free, start the next queued task.
 			sc.step()
 		}
 	}
@@ -142,8 +142,8 @@ func (sc *Scheduler) fireIntervals(triggers []*db.AgentTrigger) {
 			continue
 		}
 		_ = sc.pg.TouchTriggerFire(tr.ID)
-		ctx := "\n\n[This time trigger]" + now.Format(" 2006-01-02 15:04:05 MST")
-		sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Timing trigger · %s", now.Format("15:04")), tr.IntervalMessage+ctx, 0, false, "", "")
+		ctx := "\n\n[This run was started by a schedule]" + now.Format(" 2006-01-02 15:04:05 MST")
+		sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Scheduled trigger · %s", now.Format("15:04")), tr.IntervalMessage+ctx, 0, false, "", "")
 	}
 }
 
@@ -172,10 +172,10 @@ func (sc *Scheduler) fireFindings(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		msgCtx := fmt.Sprintf("\n\n[This mission found out. finding Trigger]\nDiscover: [%s/%s] %s",
+		msgCtx := fmt.Sprintf("\n\n[This run was triggered by a finding on the task]\nFinding: [%s/%s] %s",
 			e.VulnClass, e.Severity, e.Summary)
 		for _, tr := range want {
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("finding Trigger · task#%d", e.TaskID), tr.FindingMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
+			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Finding trigger · task#%d", e.TaskID), tr.FindingMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
 		}
 	}
 	_ = sc.pg.SetSchedState(schedKeyLastFinding, strconv.FormatInt(maxID, 10))
@@ -206,9 +206,9 @@ func (sc *Scheduler) fireGoals(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		msgCtx := fmt.Sprintf("\n\n[This is a mission-completed target.]\nGoal achieved: %s", e.Summary)
+		msgCtx := fmt.Sprintf("\n\n[This run was triggered because a task goal was met]\nGoal met: %s", e.Summary)
 		for _, tr := range want {
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Target trigger. · task#%d", e.TaskID), tr.GoalMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
+			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Goal trigger · task#%d", e.TaskID), tr.GoalMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
 		}
 	}
 	if changed {
@@ -239,9 +239,9 @@ func (sc *Scheduler) fireTaskTimeouts(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		msgCtx := "\n\n[This is a time-out.]"
+		msgCtx := "\n\n[This run was triggered because the task timed out]"
 		for _, tr := range want {
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Timetime trigger · task#%d", e.TaskID), tr.TaskTimeoutMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
+			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Timeout trigger · task#%d", e.TaskID), tr.TaskTimeoutMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
 		}
 	}
 	_ = sc.pg.SetSchedState(schedKeyLastTimeout, strconv.FormatInt(maxID, 10))
@@ -270,9 +270,9 @@ func (sc *Scheduler) fireTaskCreates(triggers []*db.AgentTrigger) {
 		if len(want) == 0 {
 			continue
 		}
-		msgCtx := "\n\n[This mission was created to trigger]"
+		msgCtx := "\n\n[This run was triggered because a task was created]"
 		for _, tr := range want {
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Job creation trigger · task#%d", e.TaskID), tr.TaskCreateMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
+			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Task-created trigger · task#%d", e.TaskID), tr.TaskCreateMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
 		}
 	}
 	_ = sc.pg.SetSchedState(schedKeyLastTaskCreate, strconv.FormatInt(maxID, 10))
@@ -311,13 +311,13 @@ func (sc *Scheduler) fireToolCalls(triggers []*db.AgentTrigger) {
 		if e.ToolIsErr {
 			errTag = "[error] "
 		}
-		msgCtx := fmt.Sprintf("\n\n[This time triggered by a tool]\nTools: %s\nParticipation: %s\nReturn: %s%s",
+		msgCtx := fmt.Sprintf("\n\n[This run was triggered by a tool call]\nTool: %s\nArguments: %s\nResult: %s%s",
 			e.Tool, trunc(e.ToolInput, 1500), errTag, trunc(e.ToolOutput, 1500))
 		for _, tr := range want {
 			if !containsFold(tr.ToolNames, e.Tool) {
 				continue
 			}
-			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Tool Trigger · %s · task#%d", e.Tool, e.TaskID), tr.ToolCallMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
+			sc.s.StartTriggeredRun(tr.AgentKey, fmt.Sprintf("Tool trigger · %s · task#%d", e.Tool, e.TaskID), tr.ToolCallMessage+msgCtx, e.TaskID, true, e.TaskDesc, e.TaskGoal)
 		}
 	}
 	_ = sc.pg.SetSchedState(schedKeyLastToolCall, strconv.FormatInt(maxID, 10))
@@ -339,7 +339,7 @@ func trunc(s string, max int) string {
 	if len(r) <= max {
 		return s
 	}
-	return string(r[:max]) + fmt.Sprintf("…(Truncated,Total %d Words)", len(r))
+	return string(r[:max]) + fmt.Sprintf("…(truncated, %d characters total)", len(r))
 }
 
 func (sc *Scheduler) mustState(key string) string {

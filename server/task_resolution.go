@@ -19,7 +19,7 @@ type taskLLMResolution struct {
 
 func (s *Server) resolutionFromProfile(p *db.LLMProfile, source string) taskLLMResolution {
 	if p == nil {
-		return taskLLMResolution{Source: source, Reason: "LLM Configuration does not exist"}
+		return taskLLMResolution{Source: source, Reason: "LLM profile does not exist"}
 	}
 	id := p.ID
 	result := taskLLMResolution{
@@ -30,11 +30,11 @@ func (s *Server) resolutionFromProfile(p *db.LLMProfile, source string) taskLLMR
 		Source:    source,
 	}
 	if p.APIKey == "" {
-		result.Reason = "LLM Configuration not set API Key"
+		result.Reason = "LLM profile has no API key"
 		return result
 	}
 	if _, _, ok := s.providerForProfile(p.ID); !ok {
-		result.Reason = "LLM Invalid configuration format or parameters"
+		result.Reason = "LLM profile format or parameters are invalid"
 		return result
 	}
 	result.Available = true
@@ -67,7 +67,7 @@ func (s *Server) resolveTaskRoleLLM(t *Task, agentKey string) (taskLLMResolution
 	state := t.llmStateSnapshot()
 	if len(state.ProfileIDs) > 0 {
 		if state.ActiveID == nil {
-			return taskLLMResolution{Source: "task_chain", Reason: "Task LLM The configuration chain quota has been exhausted"}, nil
+			return taskLLMResolution{Source: "task_chain", Reason: "The task LLM profile chain is out of quota"}, nil
 		}
 		p, err := s.m.pg.ProfileByID(*state.ActiveID)
 		if err != nil {
@@ -97,7 +97,7 @@ func (s *Server) resolveTaskRoleLLM(t *Task, agentKey string) (taskLLMResolution
 			Source: "environment", Available: true,
 		}, nil
 	}
-	return taskLLMResolution{Source: "global", Reason: "None available LLM Configuration"}, nil
+	return taskLLMResolution{Source: "global", Reason: "No LLM profile is available"}, nil
 }
 
 func (s *Server) taskLLMResolutionHandler(w http.ResponseWriter, r *http.Request) {

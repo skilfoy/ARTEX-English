@@ -12,18 +12,18 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Task Level Timeout Coordinater(See docs/Task-level overtime and end-of-service design.md §4/§8.5).
-// Absolute Wall clock:Every belt. timeout A time-bound mission. goroutine,To point-driven orderly closing sequence:
-//   ① settling → ② worker Stop taking new intentions. / ③ planner Drop Normal notify
-//   ④ Waiting to run. worker drain(Yes. grace) → ⑤ Final round planner Decision → ⑥ Finality(With guards.)
+// Task-level timeout coordinator (see the task-timeout and shutdown design notes, §4 / §8.5).
+// Absolute wall clock: each task that has a timeout gets one timer goroutine. When it fires, shutdown runs in order:
+//   ① settling → ② workers stop claiming new intents / ③ planner drops ordinary notifies
+//   ④ wait for in-flight workers to drain (bounded by grace) → ⑤ one final planner round → ⑥ set the terminal status (guarded)
 
 const (
-	settleDrainGrace     = 90 * time.Second // Waiting to run. worker The upper limit of elegant closing;More than hard cancel
-	deadlinePollInterval = 2 * time.Second  // deadline Unsealed/LLM Interrogation interval when not ready
-	deadlineMaxSleep     = 30 * time.Second // Single maximum sleep(Finality of periodic review)
+	settleDrainGrace     = 90 * time.Second // cap on waiting for in-flight workers to shut down gracefully; after this, hard-cancel
+	deadlinePollInterval = 2 * time.Second  // poll interval while the deadline is not yet stamped or the LLM is not ready
+	deadlineMaxSleep     = 30 * time.Second // longest single sleep, so terminal status is rechecked periodically
 )
 
-// ---------- settling Status ----------
+// ---------- settling state ----------
 
 func (e *Engine) isSettling(taskID string) bool {
 	v, _ := e.settling.Load(taskID)
@@ -37,7 +37,7 @@ func (e *Engine) markSettling(taskID string) bool {
 	return !loaded
 }
 
-// ---------- I'm counting.(worker.Execute + planner.Plan),for drain ----------
+// ---------- in-flight count (worker.Execute + planner.Plan), used for drain ----------
 
 func (e *Engine) inflightCounter(taskID string) *int64 {
 	v, _ := e.inflight.LoadOrStore(taskID, new(int64))
@@ -103,12 +103,12 @@ func (e *Engine) stampFirstRun(t *Task) {
 	dl, err := e.m.StampTaskFirstRun(t.ID)
 	if err != nil {
 		log.Printf("[deadline] task %s failed to mark first run complete: %v", t.ID, err)
-		e.stamped.Delete(t.ID) // Allows the next attempt
+		e.stamped.Delete(t.ID) // allow a retry next time
 		return
 	}
 	if dl > 0 {
 		e.deadline.Store(t.ID, dl)
-		log.Printf("[deadline] task %s First run,As of %s", t.ID, time.Unix(dl, 0).Format("2006-01-02 15:04:05"))
+		log.Printf("[deadline] task %s first run, deadline %s", t.ID, time.Unix(dl, 0).Format("2006-01-02 15:04:05"))
 	}
 }
 
@@ -123,7 +123,7 @@ func (e *Engine) clockCtx(base context.Context, t *Task, final bool) context.Con
 	return agent.WithTaskClock(base, agent.TaskClock{DeadlineUnix: dl, Final: final})
 }
 
-// ---------- Coordinater ----------
+// ---------- coordinator ----------
 
 // startDeadlineCoordinator launches the per-task deadline timer once (idempotent).
 // Called from Run() and from the restart reload path, so non-active timeout tasks
@@ -185,32 +185,32 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 	if !e.markSettling(t.ID) {
 		return
 	}
-	log.Printf("[deadline] task %s Overtime limit reached,Enter closing order", t.ID)
+	log.Printf("[deadline] task %s reached its timeout; starting shutdown", t.ID)
 
-	// ④ Waiting to run. worker/planner drain(He's running. run It's a trap. MaxDuration Finish your own business.);
-	// Over grace It's still empty. → Hard cancel The task exec ctx(settling-aware Branches correctly classified).
+	// ④ Wait for in-flight worker/planner runs to drain (a running run finishes itself under the clamped MaxDuration);
+	// if the count is still non-zero after grace, hard-cancel that task's exec ctx (the settling-aware branch classifies it).
 	hardStop := time.Now().Add(settleDrainGrace)
 	for e.inflightCount(t.ID) > 0 {
 		if time.Now().After(hardStop) {
 			log.Printf("[deadline] task %s drain timed out after %s; canceling the run", t.ID, settleDrainGrace)
 			e.cancelExec(t.ID, agent.AbortSettleDrainTimeout)
-			_ = sleepCtx(ctx, 3*time.Second) // Give worker A little bit of time for the branch./Category
+			_ = sleepCtx(ctx, 3*time.Second) // give the worker branch a moment to persist and classify
 			break
 		}
 		if sleepCtx(ctx, 500*time.Millisecond) {
-			return // All engines shut down.
+			return // the engine is shutting down
 		}
 	}
 
-	// ⑤ Final round planner(Task timeout,Final target determination,No new intentions.).
+	// ⑤ One final planner round (task-timeout wording, last goal judgment, no new intents).
 	met := e.runFinalPlannerRound(ctx, t)
 	if !e.beginTaskOperation(t.ID) {
 		return
 	}
 	defer e.decInflight(t.ID)
 
-	// ⑥ Finality(With guards.):met → done(completed);Otherwise timeout.If the normal path has been set first done,
-	// Guard!(SetTaskStatusGuarded)You will refuse to overwrite,Reservations completed Semantic.
+	// ⑥ Set the terminal status (guarded): met → done (completed); otherwise timeout. If the
+	// normal path already stored done, SetTaskStatusGuarded refuses to overwrite it and completed is kept.
 	status := "timeout"
 	if met {
 		status = "done"
@@ -218,9 +218,9 @@ func (e *Engine) settleTask(ctx context.Context, t *Task) {
 	won, err := e.m.SetTaskStatusGuarded(t.ID, status)
 	switch {
 	case err != nil:
-		log.Printf("[deadline] task %s End of story failure: %v", t.ID, err)
+		log.Printf("[deadline] task %s failed to set terminal status: %v", t.ID, err)
 	case won:
-		log.Printf("[deadline] task %s Finish,Final state=%s", t.ID, status)
+		log.Printf("[deadline] task %s shutdown complete, terminal status=%s", t.ID, status)
 	default:
 		log.Printf("[deadline] task %s deadline reached; preserving task status", t.ID)
 	}
@@ -246,7 +246,7 @@ func (e *Engine) runFinalPlannerRound(ctx context.Context, t *Task) (met bool) {
 		}
 		planner, _ = e.snapshotFor(t)
 	}
-	// Independent ctx(Hang up. execCancel,Avoid pause/Hard cancel Break this last round.),With Final Injection task timeout.
+	// Separate ctx (not hung off execCancel, so pause or a hard cancel cannot cut off this last round), with Final injecting the task-timeout wording.
 	fctx := e.clockCtx(ctx, t, true)
 	if !e.beginTaskOperation(t.ID) {
 		return false
@@ -254,15 +254,15 @@ func (e *Engine) runFinalPlannerRound(ctx context.Context, t *Task) (met bool) {
 	defer e.decInflight(t.ID)
 	emit := func(r db.Activity) { e.emitActivity(t, r) }
 	e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round",
-		Summary: fmt.Sprintf("Overtime. Final decision.(No. %d wheel)", e.nextPlannerRound(t.ID))})
+		Summary: fmt.Sprintf("Timeout shutdown, final decision (round %d)", e.nextPlannerRound(t.ID))})
 	tTaskID, _ := strconv.ParseInt(t.ID, 10, 64)
 	e.BeginLLMCall(t.ID)
 	met, reason, err := planner.Plan(fctx, tTaskID, e.m.assets, t.Store, t.Goal, t.drainTriggers(), emit)
 	e.EndLLMCall(t.ID)
 	if err != nil {
-		log.Printf("[deadline] task %s Final planning error: %v", t.ID, err)
+		log.Printf("[deadline] task %s final planning failed: %v", t.ID, err)
 	} else if met {
-		log.Printf("[deadline] task %s Final target is met.: %s", t.ID, reason)
+		log.Printf("[deadline] task %s final decision: goal met: %s", t.ID, reason)
 	}
 	return met
 }

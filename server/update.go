@@ -14,31 +14,31 @@ import (
 	"github.com/skilfoy/ARTEX-English/selfupdate"
 )
 
-// Page One Update HTTP Noodles. Real Download/Verification/It's all about changing. selfupdate In the bag.,
-// It's only about border control, cross-examination, broadcasting, and..."Time to quit."Tell main.
+// HTTP surface for one-click updates. Download, verification, and swap all live in the selfupdate
+// package; this file only owns the auth boundary, the single-flight lock, progress broadcast, and telling main "it is time to exit".
 //
-// Restart not completed by this process: save a new version after the process is completed selfupdate.ExitRestart Exit,
-// By Guardian Script(start.sh / start.bat,Docker Here we go. ENTRYPOINT)Pull up again..
+// This process does not restart itself. Once the new version is staged it exits with selfupdate.ExitRestart,
+// and the supervisor (start.sh / start.bat, or the Docker ENTRYPOINT) starts it again.
 
-// restartCh Close after upgrade is ready or roll back,main After receipt ExitRestart Exit.
+// restartCh is closed when an upgrade is staged or a rollback finishes. main then exits with ExitRestart.
 var (
 	restartOnce sync.Once
 	restartCh   = make(chan struct{})
 )
 
-// RestartRequested Return one in"Please quit and let the daemon pull me back."Closed on time channel.
+// RestartRequested returns a channel that closes when the process should exit so the supervisor can start it again.
 func RestartRequested() <-chan struct{} { return restartCh }
 
 func requestRestart() { restartOnce.Do(func() { close(restartCh) }) }
 
-// bootState This is when it starts. selfupdate.Bootstrap (upgraded successfully) / Just roll back. /
-// Other Organiser main Injecting, for /api/update/check Tell them what happened to the last upgrade..
+// bootState is what selfupdate.Bootstrap concluded for this start (upgrade succeeded / just rolled back /
+// the staged file was discarded). main injects it so /api/update/check can tell the frontend how the last upgrade ended.
 var (
 	bootStateMu sync.Mutex
 	bootState   selfupdate.State
 )
 
-// SetBootUpdateState By main Call once on startup.
+// SetBootUpdateState is called once by main at startup.
 func SetBootUpdateState(st selfupdate.State) {
 	bootStateMu.Lock()
 	defer bootStateMu.Unlock()
@@ -51,35 +51,35 @@ func bootUpdateState() selfupdate.State {
 	return bootState
 }
 
-// releaseCache Cache GitHub Other Organiser.
+// releaseCache caches the latest-version query against GitHub.
 //
-// top bar"There is a new version"The hint is checked once every full page load without authentication GitHub API Yes
-// each IP Hourly 60 times——If you don't slow down, open more tabs or brush more pages and run out the quota.,
-// It's hard to find out when I really want to update. User Visibility Point"Check for updates"Time is good. force Cache around.
+// The "update available" hint in the top bar checks on every full page load, and the unauthenticated GitHub
+// API allows 60 requests per IP per hour. Without a cache, a few tabs or reloads exhaust the quota, and a
+// real update check then fails. An explicit "Check for updates" can pass force and bypass the cache.
 type releaseCache struct {
 	mu  sync.Mutex
 	rel *selfupdate.Release
 	err error
 	at  time.Time
-	// fetch is the numbering function, only the injection point left for the test; nil It's time to go real. GitHub Query.
+	// fetch is the lookup function, an injection point for tests; nil means the real GitHub query.
 	fetch func(context.Context, *http.Client) (*selfupdate.Release, error)
 }
 
 const (
 	releaseTTL = 30 * time.Minute
-	// If you fail, you'll have to wait a while. GitHub Every time you can't reach a page, you'll have to wait for a timeout.;
-	// But... TTL Short. The network will be back on its own soon. Okay..
+	// Failures are cached briefly too. Otherwise every page load waits out a timeout while GitHub is unreachable.
+	// The TTL stays short so the cache heals itself soon after the network recovers.
 	releaseErrTTL = 2 * time.Minute
-	// Timeout for queries.NewClient of 30 The minutes are for downloading the whole package. Long.
+	// Timeout for the lookup. NewClient's 30-minute timeout is for downloading a whole package, not for a version check.
 	releaseTimeout = 20 * time.Second
 )
 
 var relCache = &releaseCache{}
 
-// get Return Update Release,Cache on impact does not access the network.
+// get returns the latest Release and does not touch the network on a cache hit.
 //
-// Always holding locks during the countout: Queue requests will match the results of the same query, instead of fighting separately GitHub
-// (Multiple tabs were checked when the page was loaded at the same time, which is the easiest time to trigger the limit.).
+// The lock is held for the whole fetch: concurrent callers queue for that one result instead of each hitting
+// GitHub (several tabs querying at once, right when the page loads, is exactly when rate limits fire).
 func (c *releaseCache) get(ctx context.Context, client *http.Client, force bool) (*selfupdate.Release, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -101,8 +101,8 @@ func (c *releaseCache) get(ctx context.Context, client *http.Client, force bool)
 	ctx, cancel := context.WithTimeout(ctx, releaseTimeout)
 	defer cancel()
 	rel, err := fetch(ctx, client)
-	// Cancelled (user closes tab) does not represent GitHub There's a problem. Don't put it in the cache.,
-	// Otherwise, the next visitor will get a weird one."Cancelled"Error.
+	// A cancelled request (the user closed the tab) does not mean GitHub is broken. Do not cache it,
+	// or the next visitor gets a mysterious "cancelled" error.
 	if err != nil && ctx.Err() != nil && errors.Is(ctx.Err(), context.Canceled) {
 		return c.rel, err
 	}
@@ -110,19 +110,19 @@ func (c *releaseCache) get(ctx context.Context, client *http.Client, force bool)
 	return rel, err
 }
 
-// updateProgress It's a step forward..
+// updateProgress is one progress event pushed to the frontend.
 type updateProgress struct {
 	Phase   selfupdate.Phase `json:"phase"`
-	Percent int              `json:"percent"` // Only download stages are meaningful; the rest are -1
+	Percent int              `json:"percent"` // meaningful only during download; -1 otherwise
 	Message string           `json:"message"`
 	Version string           `json:"version,omitempty"`
 	Error   string           `json:"error,omitempty"`
 }
 
-// updateHub Holds an upgrade and broadcasts to SSE Subscriptions.
+// updateHub holds the progress of one upgrade and broadcasts it to SSE subscribers.
 //
-// running At the same time, acting as a mutually exclusive: again during promotion POST /api/update/apply Direct 409,
-// Avoid two. goroutine At the same time. artex.new Write.
+// running is also the mutex: another POST /api/update/apply during an upgrade returns 409,
+// so two goroutines never write the same artex.new.
 type updateHub struct {
 	mu      sync.Mutex
 	running bool
@@ -135,7 +135,7 @@ var updHub = &updateHub{
 	subs: map[chan updateProgress]struct{}{},
 }
 
-// begin Seize upgrades, return in progress false.
+// begin claims the right to upgrade. Returns false if one is already running.
 func (h *updateHub) begin(version string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -148,7 +148,7 @@ func (h *updateHub) begin(version string) bool {
 	return true
 }
 
-// finish End one upgrade.err for nil Express suspense successful until restart.
+// finish ends one upgrade. A nil err means the new version is staged and waiting for restart.
 func (h *updateHub) finish(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -156,7 +156,7 @@ func (h *updateHub) finish(err error) {
 	if err != nil {
 		h.cur = updateProgress{Phase: selfupdate.PhaseFailed, Percent: -1, Message: "Update failed", Error: err.Error(), Version: h.cur.Version}
 	} else {
-		h.cur = updateProgress{Phase: selfupdate.PhaseStaged, Percent: 100, Message: "New version ready, restarting.…", Version: h.cur.Version}
+		h.cur = updateProgress{Phase: selfupdate.PhaseStaged, Percent: 100, Message: "New version is ready; restarting…", Version: h.cur.Version}
 	}
 	h.fanout(h.cur)
 }
@@ -168,8 +168,8 @@ func (h *updateHub) publish(ph selfupdate.Phase, pct int, msg string) {
 	h.fanout(h.cur)
 }
 
-// fanout Must hold h.mu . Subscriptions channel There's a buffer. If it's full, throw it away.——
-// Progress is a momentary information that can be discarded. SSE Connection block upgrade itself.
+// fanout must be called while holding h.mu. Subscriber channels are buffered; a full channel drops the event.
+// Progress is disposable. A stuck SSE connection must never block the upgrade itself.
 func (h *updateHub) fanout(p updateProgress) {
 	for ch := range h.subs {
 		select {
@@ -201,12 +201,12 @@ func (h *updateHub) subscribe() (<-chan updateProgress, func()) {
 	}
 }
 
-// updateCheck Query GitHub the most recent official version and comparison with the current version.
+// updateCheck looks up the latest stable release on GitHub and compares it with the current version.
 //
-// It'll be straight in front. api.github.com(GitHub of CORS Yes *),But...**Based on this interface**:
-// Downloads are done at the back end. Only the back end can access them. GitHub The browser can't connect to the server.
-// It's very common (server inside, or proxy on browsers only), when a point update is bound to fail.,
-// Why don't you tell the truth about this?.
+// The frontend can also call api.github.com directly (GitHub's CORS is *), but this endpoint is authoritative:
+// the download happens on the server, and an update is only possible if the server can reach GitHub. A browser
+// that can connect while the server cannot is common (the server is on a private network, or the proxy is only
+// configured in the browser). Updating would then fail, so report that honestly at check time.
 func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 	current := BuildVersion
 	mode := "binary"
@@ -225,7 +225,7 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 		"rolled_back": boot.RolledBack,
 	}
 
-	// Topbar Cache (default); user points"Check for updates"Timeband force=1 Forced return to source.
+	// The top-bar hint uses the cache (the default). "Check for updates" passes force=1 and bypasses it.
 	force := r.URL.Query().Get("force") != ""
 	client := selfupdate.NewClient(s.m.GlobalProxy())
 	rel, err := relCache.get(r.Context(), client, force)
@@ -256,21 +256,21 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 	out["comparable"] = comparable
 	out["has_update"] = comparable && cmp < 0
 	if !comparable {
-		// Develop Build(dev / git describe No comparable version number. Just let go.
-		// Override local debugging binaries with an official version, so do not update them directly.
-		out["reason"] = fmt.Sprintf("Current version %q Not officially released, one key update disabled", current)
+		// A dev build (dev, or git describe with a suffix) has no comparable version. Allowing the update would
+		// overwrite the binary you are debugging with a release build, so one-click update is disabled.
+		out["reason"] = fmt.Sprintf("version %q is not a release build; one-click update is disabled", current)
 	}
 	writeJSON(w, 200, out)
 }
 
-// updateApply Download and save a new version, and then get the process out to the Guardian script to restart.
+// updateApply downloads and stages the new version, then exits so the supervisor script can restart the process.
 //
-// Return immediately. 202,The actual work is backstage. goroutine Up and running: The whole package may take a few minutes to download.,
-// Hanging on a request can be cut off by an inverse timeout. Let's go. /api/update/stream.
+// Returns 202 immediately. The work runs on a background goroutine: a full download can take minutes,
+// and doing it inside the request would be cut off by a reverse-proxy timeout. Progress is /api/update/stream.
 func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	current := BuildVersion
 
-	// Cache: Make sure it's the version the user saw and confirmed on the interface..
+	// Use the cache, so what gets installed is the version the user saw and confirmed in the UI.
 	client := selfupdate.NewClient(s.m.GlobalProxy())
 	rel, err := relCache.get(r.Context(), client, false)
 	if err != nil {
@@ -279,31 +279,31 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	}
 	cmp, comparable := selfupdate.CompareVersions(current, rel.TagName)
 	if !comparable {
-		writeErr(w, 400, fmt.Sprintf("Current version %q Not officially released, one key update disabled", current))
+		writeErr(w, 400, fmt.Sprintf("version %q is not a release build; one-click update is disabled", current))
 		return
 	}
 	if cmp >= 0 {
-		writeErr(w, 400, fmt.Sprintf("This is the latest version %s", current))
+		writeErr(w, 400, fmt.Sprintf("already on the latest version %s", current))
 		return
 	}
 	if !updHub.begin(rel.TagName) {
-		writeErr(w, 409, "An update is in progress")
+		writeErr(w, 409, "An update is already in progress")
 		return
 	}
 
 	go func() {
-		// Use it deliberately. s.ctx Not the request. ctx:HTTP It's over as soon as we get back.,
-		// If you hang on to it, the download will be canceled immediately..
+		// Deliberately s.ctx, not the request ctx: the request ends as soon as the HTTP response is written,
+		// and a download bound to it would be cancelled immediately.
 		err := selfupdate.Stage(s.ctx, client, rel, current, func(ph selfupdate.Phase, pct int, msg string) {
 			updHub.publish(ph, pct, msg)
 		})
 		updHub.finish(err)
 		if err != nil {
-			log.Printf("[update] Update failed:%v", err)
+			log.Printf("[update] update failed: %v", err)
 			return
 		}
-		log.Printf("[update] %s → %s Saved pending exit to complete replacement", current, rel.TagName)
-		// Leave some time to push the last progress to the front and trigger the exit..
+		log.Printf("[update] %s → %s staged; exiting to finish the swap", current, rel.TagName)
+		// Leave a moment for the last progress event to reach the frontend, then trigger the exit.
 		time.Sleep(1500 * time.Millisecond)
 		requestRestart()
 	}()
@@ -311,17 +311,17 @@ func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{"ok": true, "target": rel.TagName})
 }
 
-// updateRollback Actively return the previous version (backup before reloading) artex.old).
+// updateRollback returns to the previous version (artex.old, saved before the swap).
 func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 	if _, running := updHub.snapshot(); running {
-		writeErr(w, 409, "Update is ongoing and cannot roll back")
+		writeErr(w, 409, "An update is in progress and cannot be rolled back")
 		return
 	}
 	if err := selfupdate.Rollback(); err != nil {
 		writeErr(w, 400, err.Error())
 		return
 	}
-	log.Printf("[update] Manually roll back to the previous version, about to exit to complete the switch")
+	log.Printf("[update] rolled back to the previous version; exiting to finish the switch")
 	writeJSON(w, 202, map[string]any{"ok": true})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -329,7 +329,7 @@ func (s *Server) updateRollback(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// updateStream With SSE Send Update Progress.
+// updateStream pushes update progress over SSE.
 func (s *Server) updateStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -349,7 +349,7 @@ func (s *Server) updateStream(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: %s\n\n", b)
 		flusher.Flush()
 	}
-	// Add a current status and you can see an ongoing upgrade as soon as the page is refreshed..
+	// Send the current state first, so a refreshed page immediately sees an upgrade in progress.
 	cur, _ := updHub.snapshot()
 	send(cur)
 

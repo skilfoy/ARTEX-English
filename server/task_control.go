@@ -112,10 +112,10 @@ func (s *Server) applyTaskControlWithCause(t *Task, action string, pauseCause er
 		defer s.engine.decInflight(t.ID)
 		lifecycle := t.lifecycleSnapshot()
 		if isTerminalStatus(lifecycle.Status) {
-			return out, fmt.Errorf("The mission cannot be suspended.")
+			return out, fmt.Errorf("A finished task cannot be paused")
 		}
 		if lifecycle.Paused {
-			return out, fmt.Errorf("The task has been suspended")
+			return out, fmt.Errorf("The task is already paused")
 		}
 		wasQueued := lifecycle.Queued
 		wasEnginePaused := s.engine.IsPaused(t.ID)
@@ -145,11 +145,12 @@ func (s *Server) applyTaskControlWithCause(t *Task, action string, pauseCause er
 	default:
 		return out, fmt.Errorf("action must be pause|resume")
 	}
-	log.Printf("[task] #%s %s", t.ID, map[string]string{"pause": "Suspended", "resume": "Continued"}[action])
+	log.Printf("[task] #%s %s", t.ID, map[string]string{"pause": "paused", "resume": "resumed"}[action])
 	return out, nil
 }
 
-// intentSummaryOf Intention payload inside summary,Disappear notice for deletion at intended node(True delete)Keep it..
+// intentSummaryOf reads the intent payload summary so the delete notice can keep it
+// after a hard delete removes the intent node.
 func intentSummaryOf(n *db.Node) string {
 	if n == nil {
 		return ""
@@ -171,7 +172,7 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 	}
 	if node == nil {
 		if inherited, sourceErr := t.Store.GetNodeWithSources(iid); sourceErr == nil && inherited != nil && inherited.Inherited {
-			return out, fmt.Errorf("Inheritance is read-only, beyond control.")
+			return out, fmt.Errorf("Inherited intents are read-only and cannot be controlled")
 		}
 		return out, fmt.Errorf("intent not found")
 	}
@@ -181,7 +182,7 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 	switch action {
 	case "pause":
 		if node.State != "running" {
-			return out, fmt.Errorf("Only running intentions can be suspended")
+			return out, fmt.Errorf("Only a running intent can be paused")
 		}
 		if err := s.engine.ControlWork(ctx, iid, "pause"); err != nil {
 			return out, err
@@ -189,26 +190,29 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 		out.State = "paused"
 	case "resume":
 		if node.State != "paused" {
-			return out, fmt.Errorf("Only the paused intention can be restored.")
+			return out, fmt.Errorf("Only a paused intent can be resumed")
 		}
 		changed, err := t.Store.CompareAndSetIntentState(iid, "paused", "open")
 		if err != nil {
 			return out, err
 		}
 		if !changed {
-			return out, fmt.Errorf("%w: The intention is no longer. paused Status", db.ErrIntentStateConflict)
+			return out, fmt.Errorf("%w: intent is no longer paused", db.ErrIntentStateConflict)
 		}
 		t.Notify()
 		out.State = "open"
 	case "cancel":
-		// Delete Support for Two Modes:
-		//   soft(Default,Fake deletion):Intent to stop. state='deleted',Reason for deletion delete_reason Field,
-		//     Retain intended nodes and all outputs/Blood.,No longer on the chart fact.
-		//   hard(True delete):Physically delete the intent and"Supported only by it"The Monopolies of Sons and Sons(The cascade to the leaves.),Avoid staying.
-		//     Isolated data;Shared Nodes,goal,Mandate-based factual reservation.
-		// Both models. cancelled Trigger Notification planner(Intention + Reason for deletion),Let's reprogramme it..
+		// Delete supports two modes:
+		//   soft (default, fake delete): stop the intent at state='deleted' and store the
+		//     reason in delete_reason. Keep the intent node and all output and lineage;
+		//     do not hang an extra fact on the graph.
+		//   hard (real delete): physically delete the intent and descendant nodes that
+		//     only it supports, cascading to the leaves, so no orphan data is left.
+		//     Shared nodes, goals, and task-root facts are kept.
+		// Both modes notify the planner with a cancelled trigger (intent text + reason)
+		// so it can replan.
 		if node.State != "running" && node.State != "paused" && node.State != "open" {
-			return out, fmt.Errorf("Just waiting./Running/The suspended intention may be deleted")
+			return out, fmt.Errorf("Only open, running, or paused intents can be deleted")
 		}
 		reason = strings.TrimSpace(reason)
 		if reason == "" {
@@ -228,7 +232,7 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 			s.cancelWorkerSide(t.ID, t.ExpID, iid)
 			t.NotifyCancelled(iid, summary, reason)
 			out.Deleted = &cleanup
-			out.State = "" // Node deleted,Front File Deleted Remove from list
+			out.State = "" // Node is gone; the UI removes it when Deleted is set
 		} else {
 			if _, err := t.Store.SoftDeleteIntent(iid, reason); err != nil {
 				return out, err
@@ -259,7 +263,7 @@ func (s *Server) controlTasksBatch(w http.ResponseWriter, r *http.Request) {
 	}
 	taskIDs := normalizeBatchTaskIDs(req.TaskIDs)
 	if len(taskIDs) == 0 || len(taskIDs) > maxBatchControlIDs {
-		writeErr(w, 400, fmt.Sprintf("task_ids Quantity must be 1-%d", maxBatchControlIDs))
+		writeErr(w, 400, fmt.Sprintf("task_ids must contain 1-%d items", maxBatchControlIDs))
 		return
 	}
 	items := make([]batchControlItem, 0, len(taskIDs))

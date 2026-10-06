@@ -54,7 +54,7 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "Request too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 			return
 		}
 		writeErr(w, http.StatusBadRequest, "bad json: "+err.Error())
@@ -71,7 +71,7 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validWorkerMessageRequestID(requestID) {
-		writeErr(w, http.StatusBadRequest, "request_id Must be. 1-128 Bit Letters, Numbers,-,_,. or :")
+		writeErr(w, http.StatusBadRequest, "request_id must be 1-128 characters from letters, digits, -, _, ., or :")
 		return
 	}
 
@@ -79,22 +79,22 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	// instead of a silent no-op. The intent itself must be paused: the UI flow is
 	// interrupt (pause) first, then send.
 	if s.engine.IsDeleting(t.ID) {
-		writeErr(w, http.StatusConflict, "Worker is running; message cannot be sent")
+		writeErr(w, http.StatusConflict, "Task is being deleted; cannot message the worker")
 		return
 	}
 	lifecycle := t.lifecycleSnapshot()
 	switch {
 	case lifecycle.Paused || s.engine.IsPaused(t.ID):
-		writeErr(w, http.StatusConflict, "The mission has been suspended. Worker Send message")
+		writeErr(w, http.StatusConflict, "Task is paused; resume it before messaging the worker")
 		return
 	case lifecycle.Queued:
-		writeErr(w, http.StatusConflict, "Queued tasks cannot be directed Worker Send message")
+		writeErr(w, http.StatusConflict, "A queued task cannot message the worker")
 		return
 	case isTerminalStatus(lifecycle.Status):
-		writeErr(w, http.StatusConflict, "The final task cannot be directed Worker Send message")
+		writeErr(w, http.StatusConflict, "A finished task cannot message the worker")
 		return
 	case s.engine.isSettling(t.ID):
-		writeErr(w, http.StatusConflict, "The mission is closing. Worker Send message")
+		writeErr(w, http.StatusConflict, "Task is shutting down; cannot message the worker")
 		return
 	}
 
@@ -105,7 +105,7 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if node == nil {
 		if inherited, sourceErr := t.Store.GetNodeWithSources(iid); sourceErr == nil && inherited != nil && inherited.Inherited {
-			writeErr(w, http.StatusConflict, "Inheritance is intended to be read-only and cannot be sent Worker Message")
+			writeErr(w, http.StatusConflict, "Inherited intents are read-only; cannot message the worker")
 			return
 		}
 		writeErr(w, http.StatusNotFound, "intent not found")
@@ -116,7 +116,7 @@ func (s *Server) sendWorkerMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if node.State != "paused" {
-		writeErr(w, http.StatusConflict, "Suspended only Worker Message can be sent, please pause first")
+		writeErr(w, http.StatusConflict, "Only a paused worker can receive a message; pause it first")
 		return
 	}
 	agentMessage, ok := s.prepareChatMentionMessage(w, message)

@@ -12,8 +12,9 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Platform Operating Tool(Home Auto agent Use):Build/Change skill,Custom tools,MCP.Both. host Tools,
-// seed In. tools Table, default binding auto,Sutra hostTools Injecting. Reuse existing db/File system logic.
+// Platform tools for the built-in Auto agent: create and edit skills, custom tools, and MCP servers.
+// They are host tools, seeded into the tools table, bound to auto by default, and injected via hostTools.
+// They reuse the existing db and filesystem logic.
 
 func (s *Server) platformTools() []actool.CoreTool {
 	return []actool.CoreTool{
@@ -38,27 +39,27 @@ var platformToolKeys = []string{
 // ---- assets ----
 
 // toolDeleteAssetsByHost hard-deletes every asset tied to one host (exact match).
-// Platform-level (not a per-task tool): operates on the global, cross-task assetLibrary.
+// Platform-level (not a per-task tool): operates on the global, cross-task asset library.
 func (s *Server) toolDeleteAssetsByHost() actool.CoreTool {
 	return wrTool("delete_assets_by_host",
-		"Press host Exact deletion of assets: delete the host Domain Name/Sub-domain name and services under it(service),Interface(endpoint).\n"+
-			"host Perfect match.(Lowercase, to spaces.),Not blurry./Match.\n"+
-			"root domain name(As example.com)We'll remove its sub-domain name and its service./interfaces;subdomain names(As a.example.com)or IP Just delete it. host Self and its services/Interface.\n"+
-			"⚠️ Hard-deleted, working on global asset bank(Cross-task sharing),Unrevocable.",
+		"Delete assets by exact host: the domain or subdomain, plus services and endpoints under it.\n"+
+			"host is an exact match (lowercased, trimmed), not a fuzzy or wildcard match.\n"+
+			"A root domain (example.com) also deletes its subdomains and their services and endpoints; a subdomain (a.example.com) or an IP deletes only that host and its services and endpoints.\n"+
+			"Hard delete on the global asset library (shared across tasks). It cannot be undone.",
 		objSchema(map[string]any{
-			"host": strParam("To delete host:Domain name/Subdomain name/IP.Perfect match, like example.com or a.example.com or 1.2.3.4"),
+			"host": strParam("host to delete: domain, subdomain, or IP. Exact match, such as example.com, a.example.com, or 1.2.3.4"),
 		}, "host"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			as := s.assetStore()
 			if as == nil {
-				return actool.Errorf("Asset bank not initialized"), nil
+				return actool.Errorf("Asset library is not initialized"), nil
 			}
 			var a struct {
 				Host string `json:"host"`
 			}
 			_ = json.Unmarshal(in, &a)
 			if strings.TrimSpace(a.Host) == "" {
-				return actool.Errorf("host Cannot be empty"), nil
+				return actool.Errorf("host cannot be empty"), nil
 			}
 			counts, err := as.DeleteByHost(a.Host)
 			if err != nil {
@@ -80,24 +81,24 @@ func (s *Server) toolDeleteAssetsByHost() actool.CoreTool {
 
 func (s *Server) toolCreateSkill() actool.CoreTool {
 	return wrTool("create_skill",
-		"Create a new skill(Write SKILL.md,agentskills.io Normative).name lowercase letters/Number/hyphen.",
+		"Create a skill (writes SKILL.md, agentskills.io). name is lowercase letters, digits, and hyphens.",
 		objSchema(map[string]any{
-			"name":         strParam("skill name(First letter, letter./Number/hyphen)"),
-			"description":  strParam("skill Description(It has to be filled out, indicating what it does./When?)"),
-			"instructions": strParam("Markdown Contents(Optional)"),
+			"name":         strParam("skill name (starts with a lowercase letter; letters, digits, hyphens)"),
+			"description":  strParam("skill description (required: what it does and when to use it)"),
+			"instructions": strParam("Markdown body (optional)"),
 		}, "name", "description"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct{ Name, Description, Instructions string }
 			_ = json.Unmarshal(in, &a)
 			if !validSkillName(a.Name) {
-				return actool.Errorf("skill Name is illegal.(The lowercase letter begins with a letter only/Number/hyphen,≤64)"), nil
+				return actool.Errorf("invalid skill name (must start with a lowercase letter and contain only letters, digits, and hyphens, ≤64)"), nil
 			}
 			if strings.TrimSpace(a.Description) == "" {
-				return actool.Errorf("description Required"), nil
+				return actool.Errorf("description is required"), nil
 			}
 			path := filepath.Join(s.skillDir, a.Name)
 			if _, err := os.Stat(path); err == nil {
-				return actool.Errorf("skill Already exists: " + a.Name), nil
+				return actool.Errorf("skill already exists: " + a.Name), nil
 			}
 			if err := os.MkdirAll(path, 0o755); err != nil {
 				return actool.Errorf(err.Error()), nil
@@ -122,17 +123,17 @@ func (s *Server) toolCreateSkill() actool.CoreTool {
 
 func (s *Server) toolUpdateSkillFile() actool.CoreTool {
 	return wrTool("update_skill_file",
-		"Write/Overwrite Some skill A file inside(Default SKILL.md).For modifying skills or adding scripts/References.",
+		"Write or overwrite one file inside a skill (default SKILL.md). Use it to edit the skill or add a script or reference.",
 		objSchema(map[string]any{
 			"name":    strParam("skill name"),
-			"file":    strParam("Relative Path(Optional, Default SKILL.md,As scripts/run.py)"),
-			"content": strParam("Full Document"),
+			"file":    strParam("relative path (optional, default SKILL.md, for example scripts/run.py)"),
+			"content": strParam("full file contents"),
 		}, "name", "content"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct{ Name, File, Content string }
 			_ = json.Unmarshal(in, &a)
 			if !validSkillName(a.Name) {
-				return actool.Errorf("skill Name is illegal."), nil
+				return actool.Errorf("invalid skill name"), nil
 			}
 			skillPath := filepath.Join(s.skillDir, a.Name)
 			if _, err := os.Stat(skillPath); os.IsNotExist(err) {
@@ -144,7 +145,7 @@ func (s *Server) toolUpdateSkillFile() actool.CoreTool {
 			}
 			clean, msg := skillRelPath(rel)
 			if msg != "" {
-				return actool.Errorf("Invalid Path: " + msg), nil
+				return actool.Errorf("Invalid path: " + msg), nil
 			}
 			full := filepath.Join(skillPath, clean)
 			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -173,13 +174,13 @@ type customToolToolInput struct {
 func customToolSchema(keyDesc string) map[string]any {
 	return objSchema(map[string]any{
 		"key":         strParam(keyDesc),
-		"description": strParam("Description to Model"),
-		"kind":        strParam("shell | command | script(OnlyPython) | http.shell=bash Environmental Statement(Only tell the model that the tool is available bash Direct call, no need exec/schema);The remaining three are required exec"),
-		"exec":        map[string]any{"type": "object", "description": "Implementation specifications(shell Type not required): command→{command}; script→{code}; http→{method,url,headers,body,proxy,use_recording_proxy}"},
-		"schema":      map[string]any{"type": "object", "description": "Parameter JSON-Schema(shell/command/script I can leave it empty.; http Required and required to include properties)"},
-		"agents":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Bound agent key(Optional)"},
-		"deferred":    map[string]any{"type": "boolean", "description": "Delay(shell type invalid;only command/script/http It's not a common tool.)"},
-		"enabled":     map[string]any{"type": "boolean", "description": "Enable(Default true)"},
+		"description": strParam("description shown to the model"),
+		"kind":        strParam("shell | command | script (Python only) | http. shell is a bash environment note (tells the model the tool can be called directly from bash; no exec or schema). The other three require exec"),
+		"exec":        map[string]any{"type": "object", "description": "execution spec (not used for shell): command→{command}; script→{code}; http→{method,url,headers,body,proxy,use_recording_proxy}"},
+		"schema":      map[string]any{"type": "object", "description": "parameter JSON Schema (optional for shell/command/script; required for http and must include properties)"},
+		"agents":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "agent keys to bind (optional)"},
+		"deferred":    map[string]any{"type": "boolean", "description": "defer loading (ignored for shell; enable only for uncommon command, script, or http tools)"},
+		"enabled":     map[string]any{"type": "boolean", "description": "enabled (default true)"},
 	}, "key", "kind")
 }
 
@@ -195,23 +196,23 @@ func toDBTool(a customToolToolInput) *db.Tool {
 }
 
 func (s *Server) toolCreateCustomTool() actool.CoreTool {
-	return wrTool("create_custom_tool", "[Important]When some tools are installed that are not available on the platform, use the tool to put the installed tools into the platform so that it can be called! Create a custom tool(shell/command/script/http).shell=bash Environment statement, just key+description+agents,No need exec/schema.",
-		customToolSchema("Tools key(First letter, letter./Number/Underline)"),
+	return wrTool("create_custom_tool", "[Important] When you install a tool the platform does not have yet, call this to register it so the platform can invoke it. Creates a custom tool (shell/command/script/http). shell is a bash environment note and needs only key, description, and agents — no exec or schema.",
+		customToolSchema("tool key (starts with a lowercase letter; letters, digits, underscores)"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a customToolToolInput
 			_ = json.Unmarshal(in, &a)
 			a.Key = strings.TrimSpace(a.Key)
 			if !reToolKey.MatchString(a.Key) {
-				return actool.Errorf("key Needs to start with a lowercase letter, only contains lowercase letters/Number/Underline"), nil
+				return actool.Errorf("key must start with a lowercase letter and contain only lowercase letters, digits, and underscores"), nil
 			}
 			if a.Kind != "shell" && a.Kind != "command" && a.Kind != "script" && a.Kind != "http" {
-				return actool.Errorf("kind Required shell / command / script / http"), nil
+				return actool.Errorf("kind must be shell, command, script, or http"), nil
 			}
 			if a.Kind == "http" && !hasSchemaProps(a.Schema) {
-				return actool.Errorf("http Tools must provide parameters JSON Schema(Cannot be left blank)"), nil
+				return actool.Errorf("an http tool must provide a parameter JSON Schema (it cannot be empty)"), nil
 			}
 			if exist, _ := s.m.pg.GetTool(a.Key); exist != nil {
-				return actool.Errorf("The key Already exists: " + a.Key), nil
+				return actool.Errorf("key already exists: " + a.Key), nil
 			}
 			if err := s.m.pg.CreateCustomTool(toDBTool(a)); err != nil {
 				return actool.Errorf(err.Error()), nil
@@ -221,8 +222,8 @@ func (s *Server) toolCreateCustomTool() actool.CoreTool {
 }
 
 func (s *Server) toolUpdateCustomTool() actool.CoreTool {
-	return wrTool("update_custom_tool", "Modify an existing custom tool(Press key).",
-		customToolSchema("Custom tool to modify key"),
+	return wrTool("update_custom_tool", "Update an existing custom tool by key.",
+		customToolSchema("key of the custom tool to update"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a customToolToolInput
 			_ = json.Unmarshal(in, &a)
@@ -231,10 +232,10 @@ func (s *Server) toolUpdateCustomTool() actool.CoreTool {
 				return actool.Errorf("Only custom tools can be modified: " + a.Key), nil
 			}
 			if a.Kind != "shell" && a.Kind != "command" && a.Kind != "script" && a.Kind != "http" {
-				return actool.Errorf("kind Required shell / command / script / http"), nil
+				return actool.Errorf("kind must be shell, command, script, or http"), nil
 			}
 			if a.Kind == "http" && !hasSchemaProps(a.Schema) {
-				return actool.Errorf("http Tools must provide parameters JSON Schema(Cannot be left blank)"), nil
+				return actool.Errorf("an http tool must provide a parameter JSON Schema (it cannot be empty)"), nil
 			}
 			if err := s.m.pg.UpdateCustomTool(toDBTool(a)); err != nil {
 				return actool.Errorf(err.Error()), nil
@@ -259,18 +260,18 @@ type mcpToolInput struct {
 
 func mcpSchema(withID bool) map[string]any {
 	props := map[string]any{
-		"name":      strParam("MCP Server Name"),
+		"name":      strParam("MCP server name"),
 		"transport": strParam("stdio | http / sse"),
 		"command":   strParam("stdio command, such as npx"),
-		"args":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Command Arguments"},
-		"env":       map[string]any{"type": "object", "description": "Environmental variables {KEY:VALUE}"},
-		"url":       strParam("http/sse of URL"),
-		"enabled":   map[string]any{"type": "boolean", "description": "Enable(Default true)"},
-		"insecure":  map[string]any{"type": "boolean", "description": "http: Skip TLS Certificate Validation(From Visa Book true, Default false)"},
+		"args":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "command arguments"},
+		"env":       map[string]any{"type": "object", "description": "environment variables {KEY:VALUE}"},
+		"url":       strParam("URL for http or sse"),
+		"enabled":   map[string]any{"type": "boolean", "description": "enabled (default true)"},
+		"insecure":  map[string]any{"type": "boolean", "description": "http: skip TLS certificate verification (set true for a self-signed certificate; default false)"},
 	}
 	required := []string{"name", "transport"}
 	if withID {
-		props["id"] = map[string]any{"type": "integer", "description": "Changed MCP Server id"}
+		props["id"] = map[string]any{"type": "integer", "description": "id of the MCP server to update"}
 		required = []string{"id", "name", "transport"}
 	}
 	return objSchema(props, required...)
@@ -292,14 +293,14 @@ func (a mcpToolInput) toDB() *db.MCPServer {
 }
 
 func (s *Server) toolCreateMCP() actool.CoreTool {
-	return wrTool("create_mcp", "Create a MCP Server(stdio/http/sse).You have to press the tool after creation agent Visibility authorization.",
+	return wrTool("create_mcp", "Create an MCP server (stdio/http/sse). After creation its tools still need per-agent visibility grants.",
 		mcpSchema(false),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a mcpToolInput
 			_ = json.Unmarshal(in, &a)
 			a.ID = 0
 			if strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.Transport) == "" {
-				return actool.Errorf("name / transport Required"), nil
+				return actool.Errorf("name and transport are required"), nil
 			}
 			id, err := s.m.pg.SaveMCP(a.toDB())
 			if err != nil {
@@ -310,13 +311,13 @@ func (s *Server) toolCreateMCP() actool.CoreTool {
 }
 
 func (s *Server) toolUpdateMCP() actool.CoreTool {
-	return wrTool("update_mcp", "Modify an existing MCP Server(Press id).",
+	return wrTool("update_mcp", "Update an existing MCP server by id.",
 		mcpSchema(true),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a mcpToolInput
 			_ = json.Unmarshal(in, &a)
 			if a.ID == 0 {
-				return actool.Errorf("id Required"), nil
+				return actool.Errorf("id is required"), nil
 			}
 			if _, err := s.m.pg.SaveMCP(a.toDB()); err != nil {
 				return actool.Errorf(err.Error()), nil

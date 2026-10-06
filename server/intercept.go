@@ -40,11 +40,11 @@ func (s *Server) wireInterceptReviewer() {
 			}
 		}
 		if profileID == 0 {
-			return intercept.Decision{}, fmt.Errorf("Not configured available referee model")
+			return intercept.Decision{}, fmt.Errorf("No usable judge model is configured")
 		}
 		prov, _, ok := s.providerForProfile(profileID)
 		if !ok {
-			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("referee model profile %d Not Available", profileID)
+			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("judge model profile %d is not available", profileID)
 		}
 		// Tag this call's usage as the "judge" lane so the config page can report
 		// how much the fallback approval has spent, separate from model profiles.
@@ -55,7 +55,7 @@ func (s *Server) wireInterceptReviewer() {
 		}
 		v := intercept.ParseVerdict(text)
 		if v.Action == "" {
-			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("Model award format is invalid and must include award, actual operation, post-success consequences and hit rules")
+			return intercept.Decision{ProfileID: profileID}, fmt.Errorf("The model verdict is invalid; it must include the decision, the actual operation, the consequence if it succeeds, and the matched rule")
 		}
 		return intercept.Decision{Action: v.Action, Message: v.Reason, ProfileID: profileID}, nil
 	})
@@ -325,12 +325,12 @@ func interceptFilterParams(q url.Values) (db.InterceptApprovalFilter, error) {
 	switch filter.Status {
 	case "", "pending", "allowed", "denied", "timeout":
 	default:
-		return filter, fmt.Errorf("status Must be. pending,allowed,denied or timeout")
+		return filter, fmt.Errorf("status must be pending, allowed, denied, or timeout")
 	}
 	switch filter.DecisionSource {
 	case "", "model", "rule", "unknown":
 	default:
-		return filter, fmt.Errorf("decision_source Must be. model,rule or unknown")
+		return filter, fmt.Errorf("decision_source must be model, rule, or unknown")
 	}
 	return filter, nil
 }
@@ -364,7 +364,7 @@ func (s *Server) interceptDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Decision != "allowed" && req.Decision != "denied" {
-		writeErr(w, 400, "decision Must be. allowed or denied")
+		writeErr(w, 400, "decision must be allowed or denied")
 		return
 	}
 	if err := s.m.interceptor.Decide(id, req.Decision == "allowed"); err != nil {
@@ -411,7 +411,7 @@ func (s *Server) interceptSetToolConfig(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
-// --- LLM fallback judge config (Global Model Bottom) ---
+// --- LLM fallback judge config (global model fallback) ---
 
 // interceptGetJudgeConfig returns the resolved judge configuration. Prompt is the
 // effective prompt (built-in template when unset), so the UI can prefill it.
@@ -429,13 +429,13 @@ func (s *Server) interceptSetJudgeConfig(w http.ResponseWriter, r *http.Request)
 	switch req.FailAction {
 	case "allow", "ask", "deny":
 	default:
-		writeErr(w, 400, "fail_action Must be. allow,ask or deny")
+		writeErr(w, 400, "fail_action must be allow, ask, or deny")
 		return
 	}
 	switch req.AskTimeoutAction {
 	case "allow", "deny":
 	default:
-		writeErr(w, 400, "ask_timeout_action Must be. allow or deny")
+		writeErr(w, 400, "ask_timeout_action must be allow or deny")
 		return
 	}
 	if err := s.m.interceptor.SetJudgeConfig(req); err != nil {
@@ -480,25 +480,25 @@ type interceptRuleReq struct {
 
 func validateInterceptRuleReq(req interceptRuleReq) error {
 	if req.Name == "" {
-		return fmt.Errorf("name Cannot be empty")
+		return fmt.Errorf("name cannot be empty")
 	}
 	switch req.MatchTarget {
 	case "tool_name", "tool_input":
 	default:
-		return fmt.Errorf("match_target Must be. tool_name or tool_input")
+		return fmt.Errorf("match_target must be tool_name or tool_input")
 	}
 	switch req.MatchType {
 	case "string", "regex":
 	default:
-		return fmt.Errorf("match_type Must be. string or regex")
+		return fmt.Errorf("match_type must be string or regex")
 	}
 	if req.Pattern == "" {
-		return fmt.Errorf("pattern Cannot be empty")
+		return fmt.Errorf("pattern cannot be empty")
 	}
 	switch req.Action {
 	case "allow", "deny", "ask":
 	default:
-		return fmt.Errorf("action Must be. allow,deny or ask")
+		return fmt.Errorf("action must be allow, deny, or ask")
 	}
 	if req.MatchType == "regex" {
 		if _, err := regexp.Compile(req.Pattern); err != nil {

@@ -10,9 +10,9 @@ import (
 	"github.com/skilfoy/ARTEX-English/selfupdate"
 )
 
-// releaseCache It's protection. GitHub Level of quota: uncertified API Only 60 times/hours/IP,
-// And the top bar."There is a new version"The prompt is checked every time the entire page is loaded. Once the cache fails, the user opens more.
-// The tab will run out of quotas, and then I can't find it..
+// releaseCache protects the GitHub quota. Unauthenticated API calls are 60 per hour per IP,
+// and the top-bar "update available" hint checks on every full page load. Once the cache misses,
+// a few extra tabs exhaust the quota, and a real update check then fails.
 
 func newTestCache(fetch func(context.Context, *http.Client) (*selfupdate.Release, error)) *releaseCache {
 	return &releaseCache{fetch: fetch}
@@ -35,7 +35,7 @@ func TestReleaseCacheServesFromCache(t *testing.T) {
 		}
 	}
 	if calls != 1 {
-		t.Errorf("5 SubQuery should only be returned to source 1 Second, actual %d times", calls)
+		t.Errorf("5 lookups should hit the origin once, got %d", calls)
 	}
 }
 
@@ -49,12 +49,12 @@ func TestReleaseCacheForceBypasses(t *testing.T) {
 	if _, err := c.get(t.Context(), nil, false); err != nil {
 		t.Fatal(err)
 	}
-	// User Point[Check for updates]We have to get real-time results, or we'll have to wait for the release to expire..
+	// Check for updates must bypass the cache, or a release that just shipped stays invisible until the TTL expires.
 	if _, err := c.get(t.Context(), nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {
-		t.Errorf("force Should be bypassing the cache, expecting a return. 2 Second, actual %d times", calls)
+		t.Errorf("force should bypass the cache: expected 2 origin calls, got %d", calls)
 	}
 }
 
@@ -68,13 +68,13 @@ func TestReleaseCacheExpiresAfterTTL(t *testing.T) {
 	if _, err := c.get(t.Context(), nil, false); err != nil {
 		t.Fatal(err)
 	}
-	// Putting down the library until it just expired. Simulation. TTL To the point..
+	// Move the stored time to just past expiry to simulate the TTL elapsing.
 	c.at = time.Now().Add(-releaseTTL - time.Second)
 	if _, err := c.get(t.Context(), nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 2 {
-		t.Errorf("TTL It should be returned after expiry, with expectations 2 Second, actual %d times", calls)
+		t.Errorf("after the TTL expires it should hit the origin again: expected 2 calls, got %d", calls)
 	}
 }
 
@@ -82,30 +82,30 @@ func TestReleaseCacheUsesShorterTTLForErrors(t *testing.T) {
 	calls := 0
 	c := newTestCache(func(context.Context, *http.Client) (*selfupdate.Release, error) {
 		calls++
-		return nil, errors.New("github Unreachable")
+		return nil, errors.New("github unreachable")
 	})
 
 	if _, err := c.get(t.Context(), nil, false); err == nil {
-		t.Fatal("Expect to return error")
+		t.Fatal("expected an error")
 	}
-	// If you fail, you'll have to wait. GitHub Every time you can't reach it, every page load will wait for a timeout..
+	// Failures are cached briefly too. Otherwise every page load waits out a timeout while GitHub is unreachable.
 	if _, err := c.get(t.Context(), nil, false); err == nil {
-		t.Fatal("Expect to return error")
+		t.Fatal("expected an error")
 	}
 	if calls != 1 {
-		t.Errorf("Errors should cache short and expect returns 1 Second, actual %d times", calls)
+		t.Errorf("an error should be cached briefly: expected 1 origin call, got %d", calls)
 	}
 
-	// But it was wrong. TTL It has to be significantly shorter than success..
+	// The error TTL must be clearly shorter than the success TTL so the cache heals soon after the network recovers.
 	if releaseErrTTL >= releaseTTL {
-		t.Fatalf("Error TTL(%v) It has to be shorter than success. TTL(%v)", releaseErrTTL, releaseTTL)
+		t.Fatalf("error TTL (%v) must be shorter than the success TTL (%v)", releaseErrTTL, releaseTTL)
 	}
 	c.at = time.Now().Add(-releaseErrTTL - time.Second)
 	if _, err := c.get(t.Context(), nil, false); err == nil {
-		t.Fatal("Expect to return error")
+		t.Fatal("expected an error")
 	}
 	if calls != 2 {
-		t.Errorf("Error TTL It should be repeated after expiry, with expectations 2 Second, actual %d times", calls)
+		t.Errorf("after the error TTL expires it should retry: expected 2 calls, got %d", calls)
 	}
 }
 
@@ -118,38 +118,38 @@ func TestReleaseCacheDoesNotPoisonOnCallerCancel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Visitors close tabs and cancel requests. That doesn't mean... GitHub There's a problem."Cancelled"
-	// Write Cache——Otherwise, 30 Every visitor in a minute will get an incredible mistake..
+	// A visitor closing the tab cancels the request. That is not a GitHub failure and must not be
+	// written into the cache, or every visitor for the next 30 minutes would see a bogus error.
 	c.fetch = func(ctx context.Context, _ *http.Client) (*selfupdate.Release, error) {
 		return nil, ctx.Err()
 	}
-	c.at = time.Now().Add(-releaseTTL - time.Second) // Let the cache expire and force it back.
+	c.at = time.Now().Add(-releaseTTL - time.Second) // Expire the cache so the next call has to hit the origin.
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := c.get(ctx, nil, false); err == nil {
-		t.Fatal("If the caller is cancelled, pass it through.")
+		t.Fatal("a cancelled caller should see the cancellation error")
 	}
 
-	// Key non-variant: No trace from the time it was cancelled——Not in the cache."Cancelled"This mistake.,
-	// And the last good results..
+	// The cancelled call must leave no trace: the cache must not store "cancelled",
+	// and it must still hold the previous good result.
 	if c.err != nil {
-		t.Fatalf("Undo errors should not be written into the cache, get %v", c.err)
+		t.Fatalf("a cancellation must not be written into the cache, got %v", c.err)
 	}
 	if c.rel == nil || c.rel.TagName != "v0.3.8" {
-		t.Fatalf("Cache should keep the last good result. %+v", c.rel)
+		t.Fatalf("the cache should keep the previous good result, got %+v", c.rel)
 	}
 
-	// That cancellation didn't bring in any new data, so the next visitor was supposed to start over. Back Source——And it's normal to get results.,
-	// It won't get into trouble with the last cancellation..
+	// That cancellation fetched nothing, so the next visitor should hit the origin again
+	// and get a normal result, not inherit the previous cancellation.
 	c.fetch = func(context.Context, *http.Client) (*selfupdate.Release, error) {
 		return good, nil
 	}
 	rel, err := c.get(t.Context(), nil, false)
 	if err != nil {
-		t.Fatalf("Regular requests after cancellation should not be misreported.: %v", err)
+		t.Fatalf("a normal request after a cancellation should not fail: %v", err)
 	}
 	if rel == nil || rel.TagName != "v0.3.8" {
-		t.Fatalf("We should get normal results. %+v", rel)
+		t.Fatalf("expected a normal result, got %+v", rel)
 	}
 }

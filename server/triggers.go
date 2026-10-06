@@ -6,7 +6,7 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// ---------- P3 agent triggers (Customize only agent) ----------
+// ---------- P3 agent triggers (custom agents only) ----------
 
 func (s *Server) pgListTriggers(w http.ResponseWriter, r *http.Request) {
 	pg, a, ok := s.agentByKey(w, r)
@@ -42,10 +42,10 @@ type triggerReq struct {
 // at least one condition, and on_tool_call requires a non-empty tool set.
 func validateTrigger(req *triggerReq) string {
 	if req.IntervalSec == 0 && !req.OnFinding && !req.OnGoalMet && !req.OnTaskTimeout && !req.OnToolCall && !req.OnTaskCreate {
-		return "Choose at least one trigger condition(Timing/Discoverfinding/Goal achieved/Task timeout/Tool call/Task creation)"
+		return "Select at least one trigger (schedule, finding created, goal met, task timeout, tool call, or task created)"
 	}
 	if req.OnToolCall && len(req.ToolNames) == 0 {
-		return "Tool call triggers at least one tool selected"
+		return "Select at least one tool for a tool-call trigger"
 	}
 	return ""
 }
@@ -56,7 +56,7 @@ func (s *Server) pgCreateTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.Builtin {
-		writeErr(w, 400, "Trigger only supports customisation agent")
+		writeErr(w, 400, "Triggers are only supported on custom agents")
 		return
 	}
 	var req triggerReq

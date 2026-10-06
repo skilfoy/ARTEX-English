@@ -26,8 +26,8 @@ type chatAttachment struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
-	// Abs It's the absolute path to the drop.(m.dir Absolutely.).Save pending tasks(scope=staging)Use it for the front end.
-	// Plugin Description;task/session Go composeAgentMessage Synchronising folder,Do not depend on this field.
+	// Abs is the absolute path on disk (m.dir is already absolute). For a staging upload
+	// before the task exists (scope=staging), the frontend writes this path into the description. task/session paths are built by composeAgentMessage and do not use this field.
 	Abs string `json:"abs,omitempty"`
 }
 
@@ -41,8 +41,8 @@ type chatAttachment struct {
 //
 //	scope=task    → <workDir>/tasks/<id>/uploads/
 //	scope=session → <workDir>/sessions/<id>/uploads/
-//	scope=staging → <workDir>/drafts/<id>/uploads/   (Save pending tasks:Not yet. ID,
-//	                The file is here first.,Frontend Press Back abs Absolute path to task description)
+//	scope=staging → <workDir>/drafts/<id>/uploads/   (staged before the task exists; there is no task ID yet,
+//	                the file lands here, and the frontend writes the returned absolute abs path into the task description)
 func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	var sub string
 	taskScoped := false
@@ -55,12 +55,12 @@ func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	case "staging":
 		sub = "drafts"
 	default:
-		writeErr(w, 400, "scope Must be. task / session / staging")
+		writeErr(w, 400, "scope must be task, session, or staging")
 		return
 	}
 	id := r.URL.Query().Get("id")
 	if !safeChatID.MatchString(id) {
-		writeErr(w, 400, "Illegal id")
+		writeErr(w, 400, "Invalid id")
 		return
 	}
 	if taskScoped {
@@ -69,24 +69,24 @@ func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.engine.beginTaskOperation(id) {
-			writeErr(w, http.StatusConflict, "Task is being deleted. Could not upload attachments")
+			writeErr(w, http.StatusConflict, "Task is being deleted; cannot upload attachments")
 			return
 		}
 		defer s.engine.decInflight(id)
 	}
 	dir := filepath.Join(s.m.dir, sub, id, "uploads")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		writeErr(w, 500, "Synchronising folder: "+err.Error())
+		writeErr(w, 500, "Failed to create directory: "+err.Error())
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxChatUpload)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, 400, "Parsing upload failed or exceeded size limit: "+err.Error())
+		writeErr(w, 400, "Failed to parse the upload, or it exceeded the size limit: "+err.Error())
 		return
 	}
 	files := r.MultipartForm.File["file"]
 	if len(files) == 0 {
-		writeErr(w, 400, "Missing upload file(Table Fields file)")
+		writeErr(w, 400, "Missing upload file (form field file)")
 		return
 	}
 	out := make([]chatAttachment, 0, len(files))

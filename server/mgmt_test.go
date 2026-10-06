@@ -58,7 +58,7 @@ func TestMgmtAPI(t *testing.T) {
 	}
 
 	// valid template using seeded catalog vars → 200
-	code, _ = do("PUT", "/api/agents/planner/prompt", map[string]string{"template": "You're the planner, target.:{{.Goal}},Abstract {{.AssetSummary}}"})
+	code, _ = do("PUT", "/api/agents/planner/prompt", map[string]string{"template": "You are the planner. Goal: {{.Goal}}. Summary: {{.AssetSummary}}"})
 	if code != 200 {
 		t.Fatalf("valid prompt save: %d", code)
 	}
@@ -68,7 +68,7 @@ func TestMgmtAPI(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("preview: %d", code)
 	}
-	if rendered, _ := out["rendered"].(string); rendered == "" || rendered == "You're the planner, target.:{{.Goal}},Abstract {{.AssetSummary}}" {
+	if rendered, _ := out["rendered"].(string); rendered == "" || rendered == "You are the planner. Goal: {{.Goal}}. Summary: {{.AssetSummary}}" {
 		t.Fatalf("preview did not substitute: %q", out["rendered"])
 	}
 

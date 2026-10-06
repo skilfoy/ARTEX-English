@@ -178,7 +178,7 @@ func TestDeepenFindingCreatesAuditedIntentAndRevivesTask(t *testing.T) {
 	s := &Server{m: m, engine: NewEngine(m), ctx: ctx}
 	live, unsubscribe := s.engine.Broadcaster().Subscribe(task.ID)
 	defer unsubscribe()
-	body := bytes.NewBufferString(`{"description":"Validate complete utilization chain and retain replicable evidence"}`)
+	body := bytes.NewBufferString(`{"description":"Verify the full exploit chain and keep reproducible evidence"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/exploration/findings/1/deepen", body)
 	req.SetPathValue("id", strconv.FormatInt(findingID, 10))
 	rec := httptest.NewRecorder()
@@ -216,7 +216,7 @@ func TestDeepenFindingCreatesAuditedIntentAndRevivesTask(t *testing.T) {
 	var persistedAudit db.Activity
 	auditCount := 0
 	for _, item := range activity {
-		if item.Worker == "system" && strings.Contains(item.Summary, "Artificial submission of loopholes with deep intent") {
+		if item.Worker == "system" && strings.Contains(item.Summary, "Manually submitted a deep-exploitation intent for this finding") {
 			persistedAudit = item
 			auditCount++
 		}

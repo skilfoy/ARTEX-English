@@ -7,14 +7,14 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Retest the service end resolution. See docs/LLMRetry Design.md.Five floors.:
-//   - Jianlian / Empty response / Same provider Safe window. Yes.[Follow the endpoint]Every one. LLM Configure to Overwrite
-//     Global Default(profile If you leave any space, you'll inherit the whole picture.);
-//   - Melting / I'm trying to run again..
+// Server-side resolution of the retry policy; see the LLM retry design notes. Of the five layers:
+//   - connect, empty-response, and same-provider safe window follow the endpoint. Each LLM
+//     profile may override the global default (a blank field inherits global; if global is also
+//     unset, the built-in default applies);
+//   - circuit-breaking and intent replay are process-wide; there is only one global copy.
 //
-// Global strategy read it once. DB One line. settings,Call points are on low frequency path (build) provider,work End,
-// Save Configuration) is not worth adding another cache; the melting parameter is the exception——It has to read every time it fails, so...
-// By applyRetryPolicy Push. Registry Save.
+// The global policy is a single settings row, read on cold paths (building a provider, finishing
+// work, saving config), so another cache is not worth it. Breaker parameters are the exception — they are read on every failure — so applyRetryPolicy pushes them into the Registry.
 
 // retryPolicy reads the global policy; a nil DB yields the zero policy (all
 // layers on their built-in defaults).
@@ -33,8 +33,8 @@ func resolveRetry(o db.RetryOverride, pol db.LLMRetryPolicy) agent.RetryConfig {
 	empty := o.Empty.Or(pol.Empty)
 	stream := o.Stream.Or(pol.Stream)
 	return agent.RetryConfig{
-		// Keep the number here.[0=Default / Negative=Close]Original semantics:SDK of MaxRetries /
-		// EmptyResponseRetries It's identical.,Just leave it to itself..
+		// Keep the raw "0 = default / negative = disabled" semantics here: the SDK's MaxRetries /
+		// EmptyResponseRetries use the same shape, so leave the parsing to them.
 		ConnectAttempts: connect.Attempts, ConnectInterval: connect.Interval(),
 		EmptyAttempts: empty.Attempts, EmptyInterval: empty.Interval(),
 		StreamAttempts: stream.Attempts, StreamInterval: stream.Interval(),
@@ -49,8 +49,8 @@ func (s *Server) applyProfileRetry(cfg *agent.Config, p *db.LLMProfile) {
 	cfg.Retry = resolveRetry(p.Retry, s.retryPolicy())
 }
 
-// Melting(Query cooling)Default value,With llmpool Embedded Consistency —— It's just here.[User with value]Other Organiser.
-// See default value for attempted runback engine.go of modelErrorRetries / modelErrorRetryBackoff.
+// Circuit-breaker (poll cooldown) defaults match llmpool's built-ins and are overridden here
+// only when the user set a value. Intent-replay defaults are modelErrorRetries / modelErrorRetryBackoff in engine.go.
 
 // applyRetryPolicy pushes the process-wide layers of the policy into the objects
 // that consume them on a hot path: the circuit-breaker registry. Called at
@@ -80,17 +80,17 @@ func (e *Engine) modelErrorRetryPolicy() (retries int, backoff time.Duration) {
 }
 
 // emptyTurnNudgeLimit resolves how many empty-turn continuations one work may
-// inject (see steerHooks.Stop). It deliberately reuses layer ②'s knob —— [Empty response
-// Number of retries]:They're the same two ways..SDK The tube.[Not a single piece.],The means are to...
-// Reissuance of the same request;Here.[Just think, have no text or tools.],The way to do this is to add an order to
-// The model goes on with the thought.(Re-issuance does not make sense for such an empty rotation determined by context shapes).Declining calibration
-// It's different because SDK With[Did you? yield Events]That's right. Thinking about incremental is an event.——But users match
-// [We'll try again.]The point is,[If the model doesn't produce the substance, do it again.],One on both floors.
-// That's why you're right..
+// inject (see steerHooks.Stop). It deliberately reuses layer ②'s empty-response retry
+// count: they are one idea with two mechanisms. The SDK handles "no content block at all"
+// by resending the same request. This layer handles "thinking only, no text and no tools"
+// by appending an instruction so the model continues from thinking it already produced
+// (resending unchanged cannot fix an empty turn caused by the shape of the context). The
+// emptiness checks differ because the SDK keys off whether any event was yielded, and a
+// thinking delta is itself an event — but "retry empty responses N times" means "try again
+// if the model produced nothing substantive", so both layers share one count.
 //
-// Read a global strategy instead of one. profile Overwrite:one run It's probably a bad move. profile,And this...
-// It's the whole intended volume gate. It's not supposed to change with the other end. Semantics and SDK of emptyRetries() Compositing:
-// 0 = Default defaultEmptyTurnNudges;-1(Negative) = Turn off the air and run.;>0 = Use this value.
+// Read the global policy, not a profile override: a run may fail over to another profile,
+// and this cap covers the whole intent, so it must not change with the endpoint. Same shape as the SDK emptyRetries(): 0 = defaultEmptyTurnNudges; -1 = disable empty-turn continuation; >0 = use that value.
 func (e *Engine) emptyTurnNudgeLimit() int {
 	if e == nil || e.m == nil || e.m.pg == nil {
 		return defaultEmptyTurnNudges

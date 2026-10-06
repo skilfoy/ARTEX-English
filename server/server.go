@@ -75,11 +75,11 @@ type Server struct {
 	chatCancel map[string]context.CancelCauseFunc
 
 	// triggerQ buffers P3 trigger fires PER AGENT. A per-agent "pump" launches runs up
-	// to a concurrency limit derived from the agent'sStrategy: serial → limit 1 (+ optional
+	// to a concurrency limit derived from the agent's strategy: serial → limit 1 (+ optional
 	// merge); parallel → limit = trigger_max_parallel (0=∞), no merge. triggerActive
 	// counts in-flight runs per agent (replaces a boolean drain flag); a run's
 	// completion decrements it and re-pumps to fill the freed slot. triggerCfg caches
-	// the agent's last-readStrategy so the pump never queries the DB while holding queueMu.
+	// the agent's last-read strategy so the pump never queries the DB while holding queueMu.
 	// Distinct agents always run concurrently. Queue is in-memory (matches chatBusy); a
 	// restart drops pending fires — the scheduler re-fires from watermarks next tick.
 	queueMu       sync.Mutex
@@ -102,7 +102,7 @@ type Server struct {
 	provByProfile map[int64]*provEntry
 	provCacheGen  uint64
 
-	// llmHealth is the process-wide circuit-breaker state for LLM failover (Polling).
+	// llmHealth is the process-wide circuit-breaker state for LLM failover (polling).
 	// It deliberately lives OUTSIDE the provider caches: rebuilding the chain
 	// (saving an unrelated profile, flipping a setting) must not erase what we
 	// learned about which backends are out of credit / rate-limited.
@@ -133,10 +133,10 @@ type provEntry struct {
 type triggeredRun struct {
 	agentKey  string
 	title     string
-	message   string // Event Body(Trigger + Tools/Participation/Return etc.);Other Organiser/Target header
+	message   string // event body (trigger text + tool, arguments, and result); not the task description or goal header
 	taskID    int64  // source task for finding/goal triggers; 0 for interval/none
-	taskDesc  string // Synchronising folder(Task level,Same job.);Render only once in merging
-	taskGoal  string // Mission objective(Task level,Same job.);Render only once in merging
+	taskDesc  string // task description (task-level, same for every event of the task); rendered once when merged
+	taskGoal  string // task goal (task-level, same for every event of the task); rendered once when merged
 	mergeable bool   // true for finding/goal event triggers (merge by taskID)
 }
 
@@ -152,8 +152,8 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		provByProfile:  map[int64]*provEntry{}, llmHealth: newLLMHealthRegistry(m.pg),
 		taskAgents: map[string]*taskAgentBundle{}, archiveWake: make(chan struct{}, 1)}
 	s.initSideQuestions()
-	// Melting threshold/Cold is the thermal parameter on the failed path, pushing the global retest strategy to the start. Registry Once.;
-	// And then every time you save it, you push it again.(saveLLMRetryPolicy).
+	// Breaker threshold and cooldown are hot on the failure path. Push the global retry policy
+	// to the Registry once at startup, and again each time it is saved (saveLLMRetryPolicy).
 	s.applyRetryPolicy()
 	// Every task uses a stable task router. An empty explicit chain is resolved by
 	// that router through Agent bindings and then the global provider, so adding a
@@ -172,7 +172,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 		defer s.cfgMu.Unlock()
 		return s.llmOn
 	})
-	// Wire DB-stored prompt templates into the agents (New programme §3.3 / §5a). With no
+	// Wire DB-stored prompt templates into the agents (prompt-template plan §3.3 / §5a). With no
 	// override row, agents keep their built-in defaults — behavior is unchanged.
 	if m.pg != nil {
 		agent.PromptOverride = func(key string) (string, bool) {
@@ -217,19 +217,20 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 			}
 			return a.TaskTimeoutWrapupMaxTurns, true
 		}
-		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // Visible skills/MCP + Traffic/Organization host Tool Loading agent Toolset
+		wireAgentAugment(m.pg, s.skillDir, s.hostTools) // visible skills/MCP plus traffic and orchestration host tools, assembled into the agent tool set
 		domainReg := buildDomainReg(m.Assets())
-		wireTools(m.pg, domainReg) // Internal tool sheet: Press agent Filter + Overwrite Description/schema + Injection Default
-		seedPrompts(m.pg)          // Built-in agent Default hint body seeding agent_prompts(Time only)
-		s.seedOrchestrationTools() // P2 Cross-mission organization tool seed In. tools Table(Pressable agent Binding)
+		wireTools(m.pg, domainReg) // built-in tool table: filter by agent, override description/schema, inject defaults
+		seedPrompts(m.pg)          // seed built-in agent default prompt bodies into agent_prompts (only when empty)
+		s.seedOrchestrationTools() // P2 cross-task orchestration tools seeded into the tools table (bindable per agent)
 		if err := s.seedFindingRetester(); err != nil {
 			log.Printf("[retester] seed: %v", err)
 		}
 		go s.evidenceStore().RunGC(s.ctx)
-		s.seedPythonInterpreter()     // Custom Script Tool:Onboard testing. python Interpret library(Time only)
-		go newScheduler(s).Run(s.ctx) // P3 Trigger Schedule(Timing/finding/Target event),Customize only agent
-		// Vulnerability IM Push the delivery engine. and Scheduler Parallel but independent: real-time requirement for delivery(3s)
-		// The operational tempo of the trigger is different, and the failure of both is independent. Company——It doesn't matter if it's stuck. agent Trigger.
+		s.seedPythonInterpreter()     // custom script tools: detect the python interpreter at startup and store it (only when empty)
+		go newScheduler(s).Run(s.ctx) // P3 trigger scheduler (schedule, finding, goal events), custom agents only
+		// Finding IM notification delivery engine. Runs beside the Scheduler but independently:
+		// delivery wants ~3s latency, which is a different cadence from trigger business logic,
+		// and a stuck notifier must not block agent triggers.
 		go newNotifier(s).Run(s.ctx)
 		// Fill the tool cache for any enabled MCP that has none yet (notably the
 		// seeded browser MCP on first run). Async so it never blocks startup.
@@ -255,7 +256,7 @@ func New(ctx context.Context, m *Manager, skillDir string, dataDir string, keyDi
 	s.restoreTaskRuntimes()
 	go s.reconcileConcurrency()
 	s.startTaskArchiveWorker()
-	s.wireInterceptReviewer() // LLM Undercover approval.:The order to intercept is given to the model.
+	s.wireInterceptReviewer() // LLM fallback review: commands that miss intercept rules are judged by the model
 	return s
 }
 
@@ -270,13 +271,14 @@ func (s *Server) restoreTaskRuntimes() {
 		// clear stale 'running' intents from a prior crash/restart (no live worker
 		// owns them) so they re-claim instead of spinning forever in the UI.
 		if n, _ := t.Store.ResetRunningIntents(); n > 0 {
-			log.Printf("[engine] task %s Reset %d Residues running Intent open", t.ID, n)
+			log.Printf("[engine] task %s reset %d leftover running intents to open", t.ID, n)
 		}
 		if lifecycle.Paused {
 			s.engine.Pause(t.ID, agent.AbortPausedOnReload)
 		}
-		// Task level timeout:For each unfinal, belt timeout The mission begins. deadline Coordinater,Independent planner/worker
-		// loop——Inactive missions can be closed after point after restart.(deadline Once it's over, we'll finish it.).
+		// Task-level timeout: start a deadline coordinator for every non-terminal task that has a
+		// timeout, independent of the planner/worker loops. An inactive task is still shut down
+		// after restart when the deadline hits (immediately if it has already passed).
 		if !isTerminalStatus(lifecycle.Status) {
 			s.engine.startDeadlineCoordinator(s.ctx, t)
 		}
@@ -349,12 +351,12 @@ func (s *Server) saveLLMConfig(cfg agent.Config) error {
 	// (anthropic / openai / openai-responses), matching the DB CHECK constraint.
 	format := cfg.Provider()
 	var id int64
-	// This legacy End of request does not contain question/Receiving and outgoing/Output cap parameters,So take the stored value of the library. Back —
-	// Otherwise, every time you save it, you'll have to... profile of priority,pool_exclude,streaming and output ceilings
-	// (max_tokens / max_tokens_field)Reset quietly to zero.
+	// This legacy endpoint's body has no polling, streaming, or output-cap fields, so copy the
+	// stored values back. Otherwise every save would quietly reset the profile's priority,
+	// pool_exclude, streaming, and output cap (max_tokens / max_tokens_field) to zero.
 	var priority int
 	var poolExclude bool
-	streaming := true // Old Library/New Default Stream
+	streaming := true // existing rows and new profiles default to streaming
 	var maxTokens int
 	var maxTokensField string
 	var sessionHeaderKey string
@@ -450,9 +452,10 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	s.cfgMu.Lock()
 	s.llmDirect = prov
 	s.cfgMu.Unlock()
-	// LLM Polling(Default off):Pack active configuration into the malfunction transfer chain.,Automatically cut next when the current configuration is not available.
-	// Impact only[Walk Global Activate Configuration]This path——agent Binding / Task pin Let's go. providerForProfile,
-	// Default still monopolizes the configuration(See poolForBinding).Return when off or no alternative Original provider,Behaviour remains unchanged..
+	// LLM polling (off by default): wrap the active profile in a failover chain and switch to the
+	// next profile when the current one is unavailable. This only affects the global-active path.
+	// Agent bindings and task pins use providerForProfile and stay exclusive (see poolForBinding)
+	// unless pool fallback is on. Off, or with no alternate, the original provider is returned.
 	if act, err := s.m.pg.ActiveProfile(); err == nil && act != nil {
 		prov = s.poolForActive(act.ID, prov, cfg)
 	}
@@ -468,14 +471,14 @@ func (s *Server) applyLLM(cfg agent.Config) error {
 	// own via agentsForTask (task-routed), so nothing is constructed for it here.
 	s.cfgMu.Lock()
 	// chat agent serves MANY custom agents by key → it holds the GLOBAL opts
-	// (backend/key) and gates Enabled per-conversation-agent at Chat time. Dialogue always active configuration.
+	// (backend/key) and gates Enabled per-conversation-agent at Chat time. Chat always uses the active profile.
 	s.chatAgent = agent.NewChatAgent(prov, cfg.Model, s.m.dir, tx, win) // chat page runner
 	s.chatAgent.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	s.chatAgent.SetWebSearch(s.m.WebSearchOpts())
 	s.chatAgent.SetGuard(s.chatGuard())
 	s.chatAgent.SetNonStreaming(nonStreamingResolver(cfg))
 	s.chatAgent.SetMaxTokens(maxTokensResolver(cfg))
-	s.chatAgent.SetNoaEnabled(s.m.NoaCompactionEnabled) // Experimental features:noa Context compression(each run Read)
+	s.chatAgent.SetNoaEnabled(s.m.NoaCompactionEnabled) // experimental: noa context compaction (read once per run)
 	s.llmProv = prov
 	s.llmCfg = cfg
 	s.llmOn = true
@@ -529,7 +532,7 @@ func (s *Server) effectiveProfileForAgent(agentKey string, pinID *int64) *int64 
 // binding or this conversation's chosen profile first, the global active config
 // only as a fallback. Both the send precheck and the background runner MUST use
 // this — resolving differently in the two paths is how a conversation that had
-// picked a valid profile still got rejected with "LLM Not configured" when no global
+// picked a valid profile still got rejected with "LLM is not configured" when no global
 // config was active.
 func (s *Server) resolveChatAgent(c *db.Conversation) *agent.ChatAgent {
 	ca := s.chatAgentRef()
@@ -547,13 +550,13 @@ func (s *Server) resolveChatAgent(c *db.Conversation) *agent.ChatAgent {
 func (s *Server) chatUnavailableReason() string {
 	if s.m.pg != nil {
 		if profiles, err := s.m.pg.ListProfiles(); err == nil && len(profiles) == 0 {
-			return "Not configured yet LLM:System, please. → LLM Configure Add a Profile"
+			return "No LLM configured yet: go to System → LLM configuration and add a profile"
 		}
 		if active, err := s.m.pg.ActiveProfile(); err == nil && active == nil {
-			return "No activated LLM Configure: Please go to System → LLM Configure Activate One, or specify a configuration for this session in this dialogue"
+			return "No active LLM configuration: go to System → LLM configuration and activate one, or assign a configuration to this conversation"
 		}
 	}
-	return "LLM Not ready to speak: Check System → LLM Configure whether there are available and activated configurations"
+	return "LLM is not ready for chat: check System → LLM configuration for an available, active profile"
 }
 
 // providerForProfile returns a cached provider+cfg for a profile id, so every agent
@@ -616,7 +619,7 @@ func (s *Server) chatAgentForProfile(id int64) *agent.ChatAgent {
 	ca.SetGuard(s.chatGuard())
 	ca.SetNonStreaming(nonStreamingResolver(cfg))
 	ca.SetMaxTokens(maxTokensResolver(cfg))
-	ca.SetNoaEnabled(s.m.NoaCompactionEnabled) // Experimental features:noa Context compression(each run Read)
+	ca.SetNoaEnabled(s.m.NoaCompactionEnabled) // experimental: noa context compaction (read once per run)
 	s.profMu.Lock()
 	if ex := s.profChatAgents[id]; ex != nil { // lost the race → keep the winner
 		ca = ex
@@ -663,8 +666,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs/history", s.getLogsHistory)
 	mux.HandleFunc("GET /api/logs/stream", s.streamLogs)
 
-	// Page one key update. The default is followed JWT Jurisdiction(auth.go Release only /api/auth/* and
-	// /api/health),So the interfaces of these changers themselves naturally require login..
+	// One-click update. It uses the default JWT auth (auth.go only exempts /api/auth/* and
+	// /api/health), so these endpoints that change the program itself require a login.
 	mux.HandleFunc("GET /api/update/check", s.updateCheck)
 	mux.HandleFunc("POST /api/update/apply", s.updateApply)
 	mux.HandleFunc("POST /api/update/rollback", s.updateRollback)
@@ -684,7 +687,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}", s.getTask)
 	mux.HandleFunc("PATCH /api/tasks/{id}", s.updateTaskMetadata)
 	mux.HandleFunc("PATCH /api/tasks/{id}/category", s.updateTaskCategory)
-	// Task-level asset interception/Allow rules
+	// Task-level asset intercept and allow rules
 	mux.HandleFunc("GET /api/tasks/{id}/intercept-rules", s.taskInterceptListRules)
 	mux.HandleFunc("POST /api/tasks/{id}/intercept-rules", s.taskInterceptCreateRule)
 	mux.HandleFunc("PUT /api/tasks/{id}/intercept-rules/{rid}", s.taskInterceptUpdateRule)
@@ -717,21 +720,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{id}/scope", s.taskScopeList)
 	mux.HandleFunc("POST /api/tasks/{id}/scope", s.taskScopeAdd)
 	mux.HandleFunc("DELETE /api/tasks/{id}/scope/{sid}", s.taskScopeDelete)
-	mux.HandleFunc("GET /api/tasks/{id}/goals", s.listGoals)                       // Goal management:List all objectives of this task
-	mux.HandleFunc("POST /api/tasks/{id}/goals", s.addGoal)                        // Goal management:Add Manual Target(Resurrection mission)
-	mux.HandleFunc("PATCH /api/tasks/{id}/goals/{gid}", s.editGoal)                // Goal management:Modify Target(Resurrection mission)
-	mux.HandleFunc("DELETE /api/tasks/{id}/goals/{gid}", s.deleteGoal)             // Goal management:Hard Delete Target(Not resurrected.)
-	mux.HandleFunc("GET /api/tasks/{id}/constraints", s.listConstraints)           // Regulation:List the operational constraints of this task
-	mux.HandleFunc("POST /api/tasks/{id}/constraints", s.addConstraint)            // Regulation:Add Constraint(Not notified planner)
-	mux.HandleFunc("PATCH /api/tasks/{id}/constraints/{cid}", s.editConstraint)    // Regulation:Modify the bounds
-	mux.HandleFunc("DELETE /api/tasks/{id}/constraints/{cid}", s.deleteConstraint) // Regulation:Delete constraints
+	mux.HandleFunc("GET /api/tasks/{id}/goals", s.listGoals)                       // goals: list every goal on this task
+	mux.HandleFunc("POST /api/tasks/{id}/goals", s.addGoal)                        // goals: a person adds a goal (revives the task)
+	mux.HandleFunc("PATCH /api/tasks/{id}/goals/{gid}", s.editGoal)                // goals: edit a goal (revives the task)
+	mux.HandleFunc("DELETE /api/tasks/{id}/goals/{gid}", s.deleteGoal)             // goals: hard-delete a goal (does NOT revive the task)
+	mux.HandleFunc("GET /api/tasks/{id}/constraints", s.listConstraints)           // constraints: list this task's operation constraints
+	mux.HandleFunc("POST /api/tasks/{id}/constraints", s.addConstraint)            // constraints: add a constraint (does NOT notify the planner)
+	mux.HandleFunc("PATCH /api/tasks/{id}/constraints/{cid}", s.editConstraint)    // constraints: edit a constraint
+	mux.HandleFunc("DELETE /api/tasks/{id}/constraints/{cid}", s.deleteConstraint) // constraints: delete a constraint
 	mux.HandleFunc("POST /api/tasks/{id}/control", s.control)
 	mux.HandleFunc("PUT /api/tasks/{id}/llm", s.updateTaskLLMProfiles)
 	mux.HandleFunc("GET /api/tasks/{id}/llm/resolution", s.taskLLMResolutionHandler)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/control", s.controlIntent)
 	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/messages", s.sendWorkerMessage)
-	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/rerun", s.rerunIntent)    // Run again. blocked/exhausted/stopped Intention
-	mux.HandleFunc("POST /api/tasks/{id}/intents/rerun-blocked", s.rerunBlocked) // Rerun all tasks in batches blocked Intention
+	mux.HandleFunc("POST /api/tasks/{id}/intents/{iid}/rerun", s.rerunIntent)    // rerun one blocked, exhausted, or stopped intent
+	mux.HandleFunc("POST /api/tasks/{id}/intents/rerun-blocked", s.rerunBlocked) // rerun every blocked intent on this task
 	mux.HandleFunc("POST /api/active", s.setActive)
 
 	mux.HandleFunc("GET /api/llm", s.getLLM)
@@ -779,7 +782,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/exploration/tokens", s.tokenStats)
 	mux.HandleFunc("GET /api/tokens/daily", s.tokenDailyStats)
 	mux.HandleFunc("GET /api/tokens/conversations", s.conversationTokens)
-	mux.HandleFunc("GET /api/tokens/usage", s.pgUsageStats) // Global llm_usage Aggregation (new version of dashboard view)
+	mux.HandleFunc("GET /api/tokens/usage", s.pgUsageStats) // global llm_usage aggregate (dashboard view)
 
 	mux.HandleFunc("GET /api/audit", s.getAudit)
 	mux.HandleFunc("POST /api/gc", s.gc)
@@ -791,16 +794,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/traffic/exchange", s.getTrafficExchange)
 	mux.HandleFunc("GET /api/traffic/blob", s.getTrafficBlob)
 	mux.HandleFunc("GET /api/commands", s.pgListCommands)
-	mux.HandleFunc("GET /api/commands/stats", s.pgToolStats) // Number of calls by tool aggregate
+	mux.HandleFunc("GET /api/commands/stats", s.pgToolStats) // call counts aggregated by tool
 	mux.HandleFunc("GET /api/llm/records", s.pgListLLMRecords)
 	mux.HandleFunc("DELETE /api/llm/records", s.pgDeleteLLMRecords)
 	mux.HandleFunc("GET /api/llm/records/tasks", s.pgLLMTasks)
-	mux.HandleFunc("GET /api/llm/records/by-model", s.pgTokenByModel) // Synchronising folder token Dosage
+	mux.HandleFunc("GET /api/llm/records/by-model", s.pgTokenByModel) // token usage for this task, aggregated by model
 	mux.HandleFunc("GET /api/llm/records/{id}", s.pgGetLLMRecord)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
-	// Vulnerability IM Push. The channel is...[Multiple Examples + Separate Filter Rules]It's a group of resources.
-	// REST The interface, not the flat. /api/settings Key value.
+	// Finding IM notifications. A channel is a multi-instance resource with its own filter,
+	// so it is its own REST group rather than a flat /api/settings key.
 	mux.HandleFunc("GET /api/notify/meta", s.notifyMeta)
 	mux.HandleFunc("GET /api/notify/channels", s.notifyListChannels)
 	mux.HandleFunc("POST /api/notify/channels", s.notifyCreateChannel)
@@ -813,11 +816,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/report", s.getReport)
 	mux.HandleFunc("GET /api/chat/mentions", s.searchChatMentions)
 	mux.HandleFunc("POST /api/chat", s.chat)
-	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // Way1 File upload:Fall into session/Task working directory uploads/
+	mux.HandleFunc("POST /api/chat/upload", s.chatUpload) // chat file upload: written under the session or task work directory uploads/
 	mux.HandleFunc("GET /api/tasks/{id}/chat/status", s.taskChatStatus)
 	mux.HandleFunc("POST /api/tasks/{id}/chat/stop", s.stopChat)
 
-	// --- Manage backstage API (PostgreSQL Data source; New version of the database and management back-office programme) ---
+	// --- admin API (PostgreSQL; management backend) ---
 	mux.HandleFunc("DELETE /api/tasks/{id}", s.pgDeleteTask)
 	// Agents
 	// conversations (chat page)
@@ -853,7 +856,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agents/{key}/prompt/preview", s.pgPreviewPrompt)
 	mux.HandleFunc("GET /api/agents/{key}/visibility", s.pgGetAgentVisibility)
 	mux.HandleFunc("PUT /api/agents/{key}/visibility", s.pgSetAgentVisibility)
-	// Internal Tool Directory (Description)/Parameter default value reable, press agent Binding;key With handler On the code floor.)
+	// built-in tool catalog (description and default arguments are editable and bound per agent; key and handler live in code)
 	mux.HandleFunc("GET /api/tools", s.pgListTools)
 	mux.HandleFunc("PUT /api/tools/{key}", s.pgUpdateTool)
 	mux.HandleFunc("POST /api/tools/custom", s.pgCreateCustomTool)
@@ -868,19 +871,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/mcp/{id}", s.pgDeleteMCP)
 	mux.HandleFunc("GET /api/mcp/{id}/tools", s.pgMCPTools)
 	mux.HandleFunc("POST /api/mcp/{id}/refresh", s.pgRefreshMCP)
-	// Asset synchronization — ScopeSentry Data source
+	// asset sync — ScopeSentry data source
 	mux.HandleFunc("GET /api/sync/scopesentry/status", s.syncSSStatus)
 	mux.HandleFunc("POST /api/sync/scopesentry/datasource", s.syncSSDatasource)
 	mux.HandleFunc("GET /api/sync/scopesentry/projects", s.syncSSProjects)
 	mux.HandleFunc("GET /api/sync/scopesentry/tasks", s.syncSSTasks)
 	mux.HandleFunc("POST /api/sync/scopesentry/sync", s.syncSSRun)
-	// Skill CRUD (File system)
+	// skill CRUD (filesystem)
 	mux.HandleFunc("GET /api/skills", s.fsListSkills)
 	mux.HandleFunc("POST /api/skills", s.fsCreateSkill)
 	mux.HandleFunc("POST /api/skills/upload", s.fsUploadSkill)
 	mux.HandleFunc("DELETE /api/skills/{name}", s.fsDeleteSkill)
-	mux.HandleFunc("GET /api/skills/missing", s.fsMissingSkills)   // miss(It's not true.)of skill name
-	mux.HandleFunc("GET /api/skills/{name}/usage", s.fsSkillUsage) // Single skill Other Organiser
+	mux.HandleFunc("GET /api/skills/missing", s.fsMissingSkills)   // names of skills the model tried to call that do not exist
+	mux.HandleFunc("GET /api/skills/{name}/usage", s.fsSkillUsage) // recent calls for one skill
 	mux.HandleFunc("PUT /api/skills/{name}/meta", s.fsUpdateSkillMeta)
 	mux.HandleFunc("POST /api/skills/{name}/dirs", s.fsCreateDir)
 	mux.HandleFunc("GET /api/skills/{name}/files", s.fsListFiles)
@@ -888,13 +891,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/skills/{name}/files/{file...}", s.fsReadFile)
 	mux.HandleFunc("PUT /api/skills/{name}/files/{file...}", s.fsWriteFile)
 	mux.HandleFunc("DELETE /api/skills/{name}/files/{file...}", s.fsDeletePath)
-	// MCP Resource side visibility (more specific) skill Routes will match first.)
+	// MCP resource visibility (more specific skill routes match first)
 	mux.HandleFunc("GET /api/visibility/{kind}/{id}", s.pgResourceVisibility)
 	mux.HandleFunc("POST /api/visibility/toggle", s.pgToggleVisibility)
-	// Skill Visibility (by name, more specifically, in preference to the pattern above))
+	// skill visibility by name (more specific than the wildcard route above)
 	mux.HandleFunc("GET /api/visibility/skill/{name}", s.pgSkillVisibility)
 	mux.HandleFunc("POST /api/visibility/skill/toggle", s.pgToggleSkillVisibility)
-	// LLM More profile
+	// multiple LLM profiles
 	mux.HandleFunc("GET /api/llm/profiles", s.pgListProfiles)
 	mux.HandleFunc("POST /api/llm/profiles", s.pgSaveProfile)
 	mux.HandleFunc("DELETE /api/llm/profiles/{id}", s.pgDeleteProfile)
@@ -905,14 +908,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/llm/pool/reset", s.pgLLMPoolReset)
 	mux.HandleFunc("POST /api/llm/models", s.pgListModels)
 
-	// Interception rule management
+	// intercept rule management
 	mux.HandleFunc("GET /api/intercept/rules", s.interceptListRules)
 	mux.HandleFunc("POST /api/intercept/rules", s.interceptCreateRule)
 	mux.HandleFunc("PUT /api/intercept/rules/{id}", s.interceptUpdateRule)
 	mux.HandleFunc("DELETE /api/intercept/rules/{id}", s.interceptDeleteRule)
 	mux.HandleFunc("POST /api/intercept/rules/{id}/toggle", s.interceptToggleRule)
 
-	// Asset interdiction rule management (global blacklist: domain name)/IP/URL/CIDR)
+	// asset intercept rules (global block list: domain, IP, URL, CIDR)
 	mux.HandleFunc("GET /api/asset-intercept/rules", s.assetInterceptListRules)
 	mux.HandleFunc("POST /api/asset-intercept/rules", s.assetInterceptCreateRule)
 	mux.HandleFunc("PUT /api/asset-intercept/rules/{id}", s.assetInterceptUpdateRule)
@@ -930,7 +933,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/intercept/tool-config", s.interceptSetToolConfig)
 	mux.HandleFunc("GET /api/intercept/judge", s.interceptGetJudgeConfig)
 	mux.HandleFunc("PUT /api/intercept/judge", s.interceptSetJudgeConfig)
-	mux.HandleFunc("GET /api/intercept/judge/usage", s.interceptJudgeUsage) // Pool approval cumulative token Dosage
+	mux.HandleFunc("GET /api/intercept/judge/usage", s.interceptJudgeUsage) // cumulative token usage of the fallback judge
 
 	// /api/* goes through CORS + JWT; everything else is served by the embedded
 	// frontend (public — auth is enforced client-side and on the API). With the
@@ -1103,7 +1106,7 @@ func (s *Server) setActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// resume the engine for the opened task (idempotent — no-op if already running).
-	// Queue Tasks:Set active viewable only,Do not start the engine.(Maintenance of the concurrent ceiling,By reconcile Supplement).
+	// Queued tasks: mark them active so they can be viewed, but do not start the engine (the concurrency cap stays; reconcile fills slots).
 	if t, ok := s.m.Task(req.ID); ok && !t.lifecycleSnapshot().Queued {
 		s.engine.Run(s.ctx, t)
 	}
@@ -1146,7 +1149,7 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "Tasks are being deleted, no control of intent.")
+		writeErr(w, 409, "Task is being deleted; intents cannot be controlled")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -1158,8 +1161,8 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Action string `json:"action"`
-		Reason string `json:"reason"` // cancel(Delete)Always.:Reason for deletion
-		Mode   string `json:"mode"`   // cancel Specialized:soft(Default,Fake deletion)| hard(True delete,Cascade removal of exclusive descendants)
+		Reason string `json:"reason"` // required on cancel (delete): the deletion reason
+		Mode   string `json:"mode"`   // cancel only: soft (default, fake delete) | hard (real delete, cascade exclusive descendants)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, "bad json: "+err.Error())
@@ -1178,9 +1181,10 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, result)
 }
 
-// rerunIntent The intention of re-running an unsuccessful run(blocked/exhausted/stopped):Put it back. open,worker
-// Will claim it again and run again from the beginning(Other Organiser fact/finding/asset Reservations);If the mission is finished/The pause and the resurrection..
-// for[Error work Click to continue running]——Network/LLM Vibration caused blocked Then you can try again with one key..
+// rerunIntent reruns an intent that did not finish (blocked, exhausted, or stopped): set it
+// back to open so a worker claims it and runs it from the start. Facts, findings, and assets
+// already written stay. A terminal or paused task is revived along the way.
+// This is "continue" on a failed work item — one click retries a block caused by network or LLM jitter.
 func restoreRerunIntent(t *Task, before *db.Node) error {
 	if t == nil || before == nil {
 		return fmt.Errorf("missing intent rollback snapshot")
@@ -1203,7 +1207,7 @@ func (s *Server) rerunIntent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "The mission is being deleted. We can't run again.")
+		writeErr(w, 409, "Task is being deleted; intents cannot be rerun")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -1218,7 +1222,7 @@ func (s *Server) rerunIntent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !reopened {
-		writeErr(w, 409, "The intention is not to run again.(Only blocked/exhausted/stopped Rerunable)")
+		writeErr(w, 409, "This intent cannot be rerun (only blocked, exhausted, or stopped)")
 		return
 	}
 	queued, err := s.admitTask(t, "resume")
@@ -1229,12 +1233,12 @@ func (s *Server) rerunIntent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	log.Printf("[task] #%s Intention #%d Reopened(Rerun)", t.ID, iid)
+	log.Printf("[task] #%s intent #%d reopened (rerun)", t.ID, iid)
 	writeJSON(w, 200, map[string]any{"id": t.ID, "reopened": iid, "queued": queued})
 }
 
-// rerunBlocked Rerun all tasks in batches blocked Intention(It suits the network once./LLM Disconnection leads to multiple blocked After
-// Try all of them again.),Replace open And the mission is revived.;Returns the number of re-opened bars.
+// rerunBlocked reruns every blocked intent on this task (one network or LLM outage often
+// blocks several). They go back to open and the task is revived. Returns how many were reopened.
 func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1242,7 +1246,7 @@ func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "The mission is being deleted. We can't run again.")
+		writeErr(w, 409, "Task is being deleted; intents cannot be rerun")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -1279,7 +1283,7 @@ func (s *Server) rerunBlocked(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, err.Error())
 			return
 		}
-		log.Printf("[task] #%s Reopened %d blocked intentions", t.ID, n)
+		log.Printf("[task] #%s reopened %d blocked intents", t.ID, n)
 	}
 	writeJSON(w, 200, map[string]any{"id": t.ID, "reopened": n, "queued": queued})
 }
@@ -1372,9 +1376,9 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 		APIKey           string `json:"api_key"`
 		ThinkingType     string `json:"thinking_type"`
 		ReasoningEffort  string `json:"reasoning_effort"`
-		ProfileID        *int64 `json:"profile_id"`         // Observed profile Organisation:api_key Save it for empty. key
-		Streaming        *bool  `json:"streaming"`          // Omitted=Fluid, with Save profile Same default
-		SessionHeaderKey string `json:"session_header_key"` // Not empty=Use this custom session header for testing, with a one-time random value session id
+		ProfileID        *int64 `json:"profile_id"`         // when testing a stored profile: if api_key is empty, use the key it has saved
+		Streaming        *bool  `json:"streaming"`          // omitted = streaming, the same default used when saving a profile
+		SessionHeaderKey string `json:"session_header_key"` // non-empty = the test also sends this session header, value a one-shot random session id
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -1385,18 +1389,18 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 	// reasoning_effort/thinking field fails the test too (no false "test ok, run 400").
 	cfg.ThinkingType = req.ThinkingType
 	cfg.ReasoningEffort = req.ReasoningEffort
-	// By the same token, the mode of receipt and delivery is the same. profile Option: the end point that supports only one of the corridors must be here.
-	// Exposure, not waiting for the conversation to find out."The configuration that's been tested can't run.".
+	// Streaming mode follows that profile too: an endpoint that supports only one channel must
+	// fail here, not later in chat when a profile that "passed the test" cannot actually run.
 	if req.Streaming != nil {
 		cfg.Stream = *req.Streaming
 	}
-	// Custom session header is configured: non-empty test requests are sent this way(One-time random value session id,
-	// See TestConnection).opencode zen Waiting for mandatory requests x-opencode-session The endpoint, missing it.
-	// Direct 400,It has to be on the test path, or else."Dialogue, testing 400".
+	// The custom session header follows the profile: if it is set, the test request sends it too
+	// (a one-shot random session id; see TestConnection). Endpoints such as opencode zen require
+	// x-opencode-session and return 400 without it. The test path must send it, or chat works and the test returns 400.
 	cfg.SessionHeaderKey = req.SessionHeaderKey
-	// API Key Parsing priority: Form input > Assign profile Saved key > Global Configuration key.
-	// Saved profile of key Do not return the browser, so the stored configuration table is empty for testing from DB take.
-	// Organisation profile Values at the bottom.
+	// API key precedence: form input > the selected profile's stored key > the global profile's key.
+	// A stored profile's key is not sent back to the browser, so a test of a saved profile has an
+	// empty form and must load the key from the DB. The session header name falls back the same way.
 	if req.ProfileID != nil && (cfg.APIKey == "" || cfg.SessionHeaderKey == "") {
 		if p, err := s.m.pg.ProfileByID(*req.ProfileID); err == nil && p != nil {
 			if cfg.APIKey == "" {
@@ -1413,18 +1417,18 @@ func (s *Server) testLLM(w http.ResponseWriter, r *http.Request) {
 		s.cfgMu.Unlock()
 	}
 	if cfg.APIKey == "" {
-		writeJSON(w, 200, map[string]any{"ok": false, "error": "Not provided API Key"})
+		writeJSON(w, 200, map[string]any{"ok": false, "error": "No API key was provided"})
 		return
 	}
-	// Retry parameters[No]Bring in connection test:There was a test. 30s Hard timeout,Number of times to retry the configuration/It's a long space.
-	// It's only gonna make one end point you could use."Timeout Failed".The test is..."This endpoint doesn't work.",Try the rhythm again.
-	// It's after the run..
+	// Do NOT apply retry settings to the connection test. The test has a 30s hard timeout; stacking
+	// the configured attempt count and long intervals would turn a working endpoint into a timeout.
+	// The test only checks that the endpoint is reachable. Retry rhythm matters after a real run.
 	lat, reply, err := agent.TestConnection(r.Context(), cfg)
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"ok": false, "error": err.Error()})
 		return
 	}
-	// Send back the actual response to the model."Test passed."There's evidence that it did, not just that. HTTP 200.
+	// Return the model's actual reply so "test passed" is evidence it spoke, not just HTTP 200.
 	writeJSON(w, 200, map[string]any{
 		"ok": true, "latency_ms": lat.Milliseconds(), "model": cfg.Model, "reply": truncateReply(reply),
 	})
@@ -1443,19 +1447,19 @@ func truncateReply(s string) string {
 }
 
 type createTaskReq struct {
-	Name                 string   `json:"name,omitempty"` // Optional task name;Omitted/Empty=Unnamed
+	Name                 string   `json:"name,omitempty"` // optional task name; omitted or empty = untitled
 	CategoryID           *int64   `json:"category_id,omitempty"`
 	Description          string   `json:"description"`
 	Goal                 string   `json:"goal"`
-	LLMProfileID         *int64   `json:"llm_profile_id,omitempty"`    // Specify to run this task LLM Configuration;Omitted/null=Use active configuration
-	LLMProfileIDs        []int64  `json:"llm_profile_ids,omitempty"`   // Ordered task-level configuration chain;First entry into force
-	SourceTaskIDs        []string `json:"source_task_ids,omitempty"`   // Direct, read-only source tasks
-	CompanyIDs           []int64  `json:"company_ids,omitempty"`       // Associated enterprise range and quick alignment with current enterprise assets;Do not copy assets or force creation intent
-	TimeoutSeconds       int      `json:"timeout_seconds"`             // Task level timeout(second);0/Omitted=No time limit
-	PlanHeartbeatSeconds int      `json:"plan_heartbeat_seconds"`      // planner Heart beat trigger interval(second);0/Omitted=Default600(10min);Lower limit=Default=600,Lower than Automatic600
-	SeedFirstIntent      *bool    `json:"seed_first_intent,omitempty"` // Sends a feed intent directly when creating(Content=Description+Target),Let worker No need to wait for the first round planner Start running directly;Omitted/null=Close by default,Standard-setting before implementation. Visibility true Just open it.(CTF Changichi! work You can save it from running. planner wheel).
-	CoverageEnabled      *bool    `json:"coverage_enabled,omitempty"`  // Asset coverage function;Omitted/null=On by default(true).false=Close Overwrite Calculator/Display/Autoaccumulation range+Hide add_task_scope/list_untested_assets.company Association is not affected.
-	// InterceptRules Task-level asset interception/Allow rules(Record on creation,Save task_intercept_rules,Do not enter the global table).
+	LLMProfileID         *int64   `json:"llm_profile_id,omitempty"`    // LLM profile for this task; omitted or null = the active profile
+	LLMProfileIDs        []int64  `json:"llm_profile_ids,omitempty"`   // ordered task-level profile chain; the first item starts active
+	SourceTaskIDs        []string `json:"source_task_ids,omitempty"`   // source tasks inherited read-only, direct only
+	CompanyIDs           []int64  `json:"company_ids,omitempty"`       // related companies; snapshot their current assets, do not copy assets or force an intent
+	TimeoutSeconds       int      `json:"timeout_seconds"`             // task timeout in seconds; 0 or omitted = no limit
+	PlanHeartbeatSeconds int      `json:"plan_heartbeat_seconds"`      // planner heartbeat interval in seconds; 0 or omitted = default 600 (10min); values below 600 are raised to 600
+	SeedFirstIntent      *bool    `json:"seed_first_intent,omitempty"` // on create, emit one seed intent (text = description + goal) so the worker starts without waiting for the first planner round; omitted or null = off (plan, then execute). Only an explicit true turns it on (useful when a CTF challenge is one work item and the opening planner round can be skipped).
+	CoverageEnabled      *bool    `json:"coverage_enabled,omitempty"`  // asset coverage; omitted or null = on (true). false disables coverage math, display, and automatic scope growth, and hides add_task_scope and list_untested_assets. Company links are unaffected.
+	// InterceptRules are task-level intercept and allow rules recorded at creation into task_intercept_rules, not the global table.
 	InterceptRules []taskInterceptRuleReq `json:"intercept_rules,omitempty"`
 }
 
@@ -1466,7 +1470,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Description) == "" {
-		req.Description = "Unnamed Task"
+		req.Description = "Untitled task"
 	}
 	if len(req.LLMProfileIDs) == 0 && req.LLMProfileID != nil {
 		req.LLMProfileIDs = []int64{*req.LLMProfileID}
@@ -1479,7 +1483,7 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		req.TimeoutSeconds = 0
 	}
 	if len(req.SourceTaskIDs) > db.MaxTaskSourceCount {
-		writeErr(w, 400, fmt.Sprintf("Most selected associated tasks %d pieces", db.MaxTaskSourceCount))
+		writeErr(w, 400, fmt.Sprintf("Select at most %d related tasks", db.MaxTaskSourceCount))
 		return
 	}
 	sourceIDs := make([]int64, 0, len(req.SourceTaskIDs))
@@ -1487,11 +1491,11 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	for _, raw := range req.SourceTaskIDs {
 		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 		if err != nil || id <= 0 || seenSources[id] {
-			writeErr(w, 400, "Associated tasks id Invalid or repeated")
+			writeErr(w, 400, "Related task ids are invalid or duplicated")
 			return
 		}
 		if _, ok := s.m.Task(strconv.FormatInt(id, 10)); !ok {
-			writeErr(w, 400, fmt.Sprintf("Associated tasks #%d does not exist", id))
+			writeErr(w, 400, fmt.Sprintf("Related task #%d does not exist", id))
 			return
 		}
 		seenSources[id] = true
@@ -1499,13 +1503,13 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	}
 	companyIDs, err := db.NormalizeTaskCompanyIDs(req.CompanyIDs)
 	if err != nil {
-		writeErr(w, 400, fmt.Sprintf("Ineffective associated enterprise: maximum selection %d An effective enterprise", db.MaxTaskCompanyCount))
+		writeErr(w, 400, fmt.Sprintf("Invalid related companies: select at most %d valid companies", db.MaxTaskCompanyCount))
 		return
 	}
 	req.CompanyIDs = companyIDs
 	interceptRules, err := buildTaskInterceptRules(req.InterceptRules)
 	if err != nil {
-		writeErr(w, 400, "Mission-level interception rules are not valid.:"+err.Error())
+		writeErr(w, 400, "Invalid task intercept rules: "+err.Error())
 		return
 	}
 	t, err := s.m.CreateTaskWithOptions(req.Description, req.Goal, db.TaskCreateOptions{
@@ -1517,19 +1521,19 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrTaskCategoryInvalid) || errors.Is(err, db.ErrTaskCategoryNotFound) {
-			writeErr(w, 400, "Job classification does not exist or is invalid")
+			writeErr(w, 400, "Task category does not exist or is invalid")
 			return
 		}
 		if errors.Is(err, db.ErrTaskCompanyIDsInvalid) || errors.Is(err, db.ErrTaskCompanyNotFound) {
-			writeErr(w, 400, "The associated enterprise does not exist or is invalid")
+			writeErr(w, 400, "A related company does not exist or is invalid")
 			return
 		}
 		writeErr(w, 500, err.Error())
 		return
 	}
-	log.Printf("[task] New task #%s «%s» Target: %s", t.ID, req.Description, req.Goal)
-	// Shared Post-Building Processes(seed + Seed intent + Backstage target split. + engine.Run),With spawn_task Repeat the same paragraph.
-	// launchTask Internal travel,No blocking. UI —— The target is decomposition in the backstage..
+	log.Printf("[task] created task #%s «%s» goal: %s", t.ID, req.Description, req.Goal)
+	// Shared post-create path (seed + seed intent + background goal breakdown + engine.Run), the same
+	// path spawn_task uses. launchTask is async and does not block the UI; goal breakdown runs in the background.
 	s.launchTask(t, req.Description+" "+req.Goal, req.SeedFirstIntent != nil && *req.SeedFirstIntent)
 	writeJSON(w, 201, taskDTO(t, s.resolvedTaskStatus(t)))
 }
@@ -1538,11 +1542,11 @@ func (s *Server) validateTaskProfileIDs(ids []int64) error {
 	seen := map[int64]bool{}
 	for _, id := range ids {
 		if id <= 0 || seen[id] {
-			return fmt.Errorf("LLM Configuration id Invalid or repeated")
+			return fmt.Errorf("LLM profile ids are invalid or duplicated")
 		}
 		seen[id] = true
 		if _, ok := s.loadProfileConfig(id); !ok {
-			return fmt.Errorf("LLM Configuration #%d Not available or not set API Key", id)
+			return fmt.Errorf("LLM profile #%d does not exist or has no API key", id)
 		}
 	}
 	return nil
@@ -1554,8 +1558,9 @@ func (s *Server) updateTaskLLMProfiles(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "task not found")
 		return
 	}
-	// Any life cycle state(Contains finality)You can change the chain.:After the mission is over, the main Agent The dialogue still follows this chain,
-	// A model that does not work without changing the chain is the same as locking in the interlocking of a completed task..
+	// The profile chain can change in any lifecycle state, including a terminal one: main-agent chat
+	// still uses the chain after the task finishes. If the model is down and the chain cannot change,
+	// chat on a finished task is stuck too.
 	before := t.llmStateSnapshot()
 	var req struct {
 		LLMProfileIDs      []int64 `json:"llm_profile_ids"`
@@ -1672,7 +1677,7 @@ func (s *Server) seed(t *Task, text string) {
 	}
 	// P0-1 guard: never treat the configured LLM gateway as a target.
 	if gw := s.llmHost(); gw != "" && host == gw {
-		log.Printf("[seed] task %s: Target %q Yes LLM Gateway. Refusal to target infiltration.", t.ID, host)
+		log.Printf("[seed] task %s: target %q is an LLM gateway and was refused as a test target", t.ID, host)
 		return
 	}
 
@@ -1701,28 +1706,29 @@ func (s *Server) seed(t *Task, text string) {
 			_ = t.Store.Anchor(begin, rootID)
 		}
 	}
-	log.Printf("[seed] task %s: Target site %s", t.ID, u)
-	// It's not here. Notify:Whether the first round triggers unification by engine.Run of HasActiveIntent Decision(Feed Intention Task
-	// Skip first round).seed Earlier than Run Execute,If here Notify will buffered To the tunnel. By. plannerLoop On startup
-	// Consuming and bypassing. Run Door control. → Seed jobs still trigger the first round by mistake.
+	log.Printf("[seed] task %s: target site %s", t.ID, u)
+	// Do not Notify here. Whether round 0 runs is decided only by engine.Run's HasActiveIntent gate
+	// (a seed-intent task skips round 0). seed runs before Run; a Notify here would buffer on the
+	// channel and be consumed when plannerLoop starts, bypassing Run's gate, so a seed task would
+	// still fire a first planner round.
 }
 
-// seedFirstIntent writes ONE open intent (summary = Description+Target) into the task's
+// seedFirstIntent writes ONE open intent (summary = description + goal) into the task's
 // frontier at creation, so a worker can claim and run it immediately without first
 // waiting a planner round. Mirrors a planner top-level intent: it links from the
 // origin fact (RelDerivedFrom) so it still traces back to a fact node. Best-effort —
 // a failure just falls back to the normal planner-driven flow.
 func (s *Server) seedFirstIntent(t *Task) {
-	summary := fmt.Sprintf("Fulfilling mission objectives:%s(Task:%s)", t.Goal, t.Description)
+	summary := fmt.Sprintf("Complete the task goal: %s (task: %s)", t.Goal, t.Description)
 	id, err := t.Store.AddIntent(map[string]any{"summary": summary}, 8, nil, "seed")
 	if err != nil {
-		log.Printf("[seed] task %s: Failed to send seed: %v", t.ID, err)
+		log.Printf("[seed] task %s: failed to create the seed intent: %v", t.ID, err)
 		return
 	}
 	if origin, _ := t.Store.OriginFactID(); origin > 0 {
 		_ = t.Store.Link(origin, db.RelDerivedFrom, id)
 	}
-	log.Printf("[seed] task %s: Seed Intended #%d", t.ID, id)
+	log.Printf("[seed] task %s: created seed intent #%d", t.ID, id)
 }
 
 func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
@@ -1746,10 +1752,10 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store Not enabled")
+		writeErr(w, 503, "asset store is not enabled")
 		return
 	}
-	// Asset coverage function is turned off → Shortway Back {enabled:false},This way the frontend hides the overwhelm card/Progress.
+	// Coverage is off → return {enabled:false} immediately so the UI hides the coverage card and progress.
 	if !t.CoverageEnabled {
 		writeJSON(w, 200, &db.Coverage{Enabled: false, ByType: []db.CoverageByType{}})
 		return
@@ -1765,7 +1771,7 @@ func (s *Server) taskCoverage(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskCoverageGraph returns the force-directed asset coverage graph for a task:
-// all in-scope assets (Each type) + Root domain name used for connection/Corporate Node, each carrying tested/in_scope.
+// all in-scope assets (every type) plus the root domain and company nodes used to connect them, each carrying tested/in_scope.
 func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1774,7 +1780,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store Not enabled")
+		writeErr(w, 503, "asset store is not enabled")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -1787,7 +1793,7 @@ func (s *Server) taskCoverageGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 // taskAssetRefs returns the intents / facts / findings in this task anchored to a
-// given asset id — powers the coverage-graph node drawer's[Associative intent / Related facts].
+// given asset id — powers the coverage-graph node drawer's related intents and related facts.
 func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -1796,7 +1802,7 @@ func (s *Server) taskAssetRefs(w http.ResponseWriter, r *http.Request) {
 	}
 	assetID, _ := strconv.ParseInt(r.URL.Query().Get("asset_id"), 10, 64)
 	if assetID <= 0 {
-		writeErr(w, 400, "Need asset_id")
+		writeErr(w, 400, "asset_id is required")
 		return
 	}
 	refs, err := t.Store.AssetRefsWithSources(assetID)
@@ -1830,7 +1836,7 @@ func (s *Server) taskScopeList(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store Not enabled")
+		writeErr(w, 503, "asset store is not enabled")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -1850,7 +1856,7 @@ func (s *Server) taskScopeAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store Not enabled")
+		writeErr(w, 503, "asset store is not enabled")
 		return
 	}
 	var body struct {
@@ -1879,7 +1885,7 @@ func (s *Server) taskScopeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	as := s.m.Assets()
 	if as == nil {
-		writeErr(w, 503, "asset store Not enabled")
+		writeErr(w, 503, "asset store is not enabled")
 		return
 	}
 	taskID, _ := strconv.ParseInt(t.ID, 10, 64)
@@ -1911,13 +1917,13 @@ func (s *Server) frontier(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) findings(w http.ResponseWriter, r *http.Request) {
-	// None task Parameter → Global[Discover]I, resolution 1, annex. findings Table Read (after task deleted) finding Retain).
-	// With task Parameter → Mission only (overview of mandate)/Discover Tab From exploration_nodes Read (task in question node)).
+	// No task parameter → the global findings page, read from the findings table (a finding remains after its task is deleted).
+	// With a task parameter → that task only (task overview / findings tab), read from exploration_nodes (the node exists while the task does).
 	q := r.URL.Query()
 	taskParam := q.Get("task")
 	if taskParam == "" {
-		// With page/limit → Service End Page {items,total,...};No, I don't. → Naked Numerics(dashboard Summary,
-		// With intents Endpoint compatibility policy is consistent. Filter/Scroll down to SQL.
+		// With page/limit → a paginated object {items,total,...}; without them → a bare array (dashboard totals),
+		// the same compatibility rule as the intents endpoint. Filters and sort are pushed down into SQL.
 		if q.Get("page") == "" && q.Get("limit") == "" {
 			fs, _ := s.m.pg.ListFindings(500)
 			assets := s.resolveFindingAssets(fs)
@@ -2045,7 +2051,7 @@ func (s *Server) resolveAssetIDs(ids []int64) map[int64]*db.Asset {
 }
 
 // findingStats serves the whole-table aggregates (stat cards + vuln-class filter)
-// for the paginated Discover page.
+// for the paginated findings page.
 func (s *Server) findingStats(w http.ResponseWriter, r *http.Request) {
 	st, err := s.m.pg.FindingStats()
 	if err != nil {
@@ -2091,13 +2097,13 @@ func (s *Server) getFinding(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, dto)
 }
 
-// findingsExport Export Hole in Found Page.
+// findingsExport exports findings from the findings page.
 //
-//	scope   = filtered(Continue Page Filter)| all(All)| selected(Selected ids)
-//	format  = md-single(Integration .md)| md-zip(A loophole. .md,Packaging zip)
+//	scope   = filtered (current page filters) | all | selected (the ids that were checked)
+//	format  = md-single (one combined .md) | md-zip (one .md per finding, packed in a zip)
 //	          | csv | json
-//	ids     = Comma separated finding id(scope=selected Always.)
-//	Filter parameters severity/status/vulnclass/task_id/q/sort Align with list interface(scope=filtered Use).
+//	ids     = comma-separated finding ids (required when scope=selected)
+//	severity/status/vulnclass/task_id/q/sort match the list API (used when scope=filtered).
 func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	scope := q.Get("scope")
@@ -2124,7 +2130,7 @@ func (s *Server) findingsExport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "all":
-		// Empty filter = Without any conditions..
+		// An empty filter adds no conditions.
 	case "filtered", "":
 		filter = findingFilterFromQuery(q)
 	default:
@@ -2280,9 +2286,9 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "bad status: "+*body.Status)
 			return
 		}
-		// Version with notification: status update and[State change push event]It's in the same business.,
-		// Avoids a window where the status has changed and the event is lost. Event registration failure does not affect status update,
-		// So only logs, no mistakes to callers..
+		// Status change and the "status changed" notify event are written in one transaction, so the
+		// status cannot change while the event is lost. If recording the event fails, the status
+		// update still stands; that is only logged and not returned to the caller.
 		from, found, notified, err := s.m.pg.SetFindingStatusWithNotify(r.Context(), id, *body.Status)
 		if err != nil {
 			writeErr(w, 500, err.Error())
@@ -2293,7 +2299,7 @@ func (s *Server) patchFinding(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !notified && from != *body.Status {
-			log.Printf("[notify] Change of status event not registered finding=%d %s→%s(Status updated)", id, from, *body.Status)
+			log.Printf("[notify] status-change event was not recorded for finding=%d %s→%s (status was updated)", id, from, *body.Status)
 		}
 	}
 	if body.Severity != nil {
@@ -2529,7 +2535,7 @@ func (s *Server) explorationGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"nodes": taskNodeDTOs(nodes), "edges": edgeDTOs(edges)})
 }
 
-// explorationNodes serves the Announcement board: this task's own exploration nodes as a
+// explorationNodes serves the activity board: this task's own exploration nodes as a
 // paged time series (newest first unless ?order=asc), filterable by kind/state
 // and a payload substring. Inherited nodes are deliberately out of scope — the
 // board reports what this task is doing right now, and paging across the source
@@ -2605,7 +2611,7 @@ func (s *Server) explorationNodes(w http.ResponseWriter, r *http.Request) {
 
 // nodeAnchoredAssets resolves the exploration_anchors of the given nodes into
 // display-ready asset labels, keyed by node id. Anchors are provenance decoration
-// for the Announcement board — a failure here must not cost the caller its page, so errors are
+// for the activity board — a failure here must not cost the caller its page, so errors are
 // logged and degrade to "no assets".
 func (s *Server) nodeAnchoredAssets(t *Task, nodeIDs []int64) map[string][]FindingAssetDTO {
 	out := map[string][]FindingAssetDTO{}
@@ -3271,7 +3277,7 @@ func (s *Server) getTrafficBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", hash+".bin"))
 	if _, err := io.Copy(w, f); err != nil {
-		log.Printf("[traffic] Download blob %s Interrupt:%v", hash, err)
+		log.Printf("[traffic] blob download interrupted %s: %v", hash, err)
 	}
 }
 
@@ -3287,7 +3293,7 @@ func (s *Server) settingsPayload() map[string]any {
 	pyStored, _, _ := s.m.pg.GetSetting(settingPythonInterp)
 	concOn, concLimit := s.m.ConcurrencyLimit()
 	if concLimit == 0 {
-		concLimit = defaultConcurrencyLimit // Also display a reasonable default value when closing UI
+		concLimit = defaultConcurrencyLimit // when the cap is off, still show a sensible default to the UI
 	}
 	return map[string]any{
 		"traffic_capture":          s.m.TrafficEnabled(),
@@ -3297,38 +3303,38 @@ func (s *Server) settingsPayload() map[string]any {
 		"web_search_backend":       backend,
 		"brave_key_set":            strings.TrimSpace(braveKey) != "",
 		"tavily_key_set":           strings.TrimSpace(tavilyKey) != "",
-		"web_search_proxy":         proxy,                       // Independent export agent(http/https/socks5),Empty=Direct connection
-		"global_proxy":             s.m.GlobalProxy(),           // Global export agent(http/https/socks5),All target traffic away from it, empty.=Direct connection
-		"python_interpreter":       strings.TrimSpace(pyStored), // User/Automatically set value(Empty=Use run-time detection)
-		"workers":                  s.m.Workers(),               // Concurrent work agent Number(Default3);Effective for tasks started later
-		"task_concurrency_enabled": concOn,                      // Job plus cap switch(Default off)
-		"task_concurrency_limit":   concLimit,                   // Run task ceilings simultaneously(Default after opening5)
-		// LLM Polling(Failover).default level;activating configuration after opening agent When Current Configuration Not Available
-		// Autocut to Next Configuration.bind_fallback It only makes sense when the round starts.(Default off).
+		"web_search_proxy":         proxy,                       // search egress proxy (http/https/socks5); empty = direct
+		"global_proxy":             s.m.GlobalProxy(),           // global egress proxy (http/https/socks5) for all target traffic; empty = direct
+		"python_interpreter":       strings.TrimSpace(pyStored), // user or auto-detected path (empty = detect at runtime)
+		"workers":                  s.m.Workers(),               // concurrent worker agents (default 3); applies to tasks started afterwards
+		"task_concurrency_enabled": concOn,                      // task concurrency cap switch (off by default)
+		"task_concurrency_limit":   concLimit,                   // max tasks running at once (default 5 when the cap is on)
+		// LLM failover (polling). Off by default. When on, an agent on the global active profile
+		// switches to the next profile if the current one is unavailable. bind_fallback matters only while polling is on (off by default).
 		"llm_pool_enabled":       s.m.LLMPoolEnabled(),
 		"llm_pool_bind_fallback": s.m.LLMPoolBindFallback(),
-		// Operation constraint injection range(Open by default):Put this mission allow/deny Constraint spelling correspondence agent system prompts.
+		// Where operation constraints are injected (all on by default): the task's allow/deny rules are appended to that agent's system prompt.
 		"constraints_inject_planner": s.constraintInjectPlanner(),
 		"constraints_inject_worker":  s.constraintInjectWorker(),
-		// Experimental features:noa Model driven context compression(Default off).Four types of platform access after opening agent By noa
-		// Take over context compression,Replace built-in compaction;each run Read once,It started after that. run Effective.
+		// Experimental: noa model-driven context compaction (off by default). When on, the four platform
+		// agents let noa compact context instead of the built-in compactor. Read once per run; applies to runs started afterwards.
 		"noa_compaction": s.m.NoaCompactionEnabled(),
-		// Vulnerability IM Push the global item. The channel itself is an independent resource. Go. /api/notify/* Management;
-		// Only here.[It works in all channels.]Three..
+		// Global finding-notification settings. Channels themselves are separate resources under /api/notify/*;
+		// only the three settings that apply to every channel live here.
 		"notify_enabled":             s.m.pg.GetBool(settingNotifyEnabled, true),
 		"notify_public_base_url":     notifyPublicBaseURL(s.m.pg),
 		"notify_digest_interval_min": notifyDigestIntervalMin(s.m.pg),
 	}
 }
 
-// notifyPublicBaseURL Read the outside address for the back chain.
+// notifyPublicBaseURL reads the external base URL used in notification links.
 func notifyPublicBaseURL(pg *db.DB) string {
 	v, _, _ := pg.GetSetting(settingNotifyPublicBaseURL)
 	return v
 }
 
-// notifyDigestIntervalMin Read summary cycle (minutes), return to default when illegal or unconfigured.
-// Revert default value instead of empty string,UI To fill the input box with the current active value.
+// notifyDigestIntervalMin reads the digest interval in minutes and falls back to the default when unset or invalid.
+// Returning the default instead of an empty string lets the UI fill the input with the value actually in effect.
 func notifyDigestIntervalMin(pg *db.DB) int {
 	v, ok, _ := pg.GetSetting(settingNotifyDigestMinutes)
 	if !ok {
@@ -3345,7 +3351,7 @@ func notifyDigestIntervalMin(pg *db.DB) int {
 func (s *Server) pgDetectPython(w http.ResponseWriter, r *http.Request) {
 	p := detectPython()
 	if p == "" {
-		writeErr(w, 404, "Not detected python(python3/python None. PATH)")
+		writeErr(w, 404, "python was not found (neither python3 nor python is on PATH)")
 		return
 	}
 	if err := s.m.pg.SetSetting(settingPythonInterp, p); err != nil {
@@ -3362,31 +3368,31 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		TrafficCapture      *bool `json:"traffic_capture"`
 		AgentTrafficBinding *bool `json:"agent_traffic_binding"`
-		LLMRecord           *bool `json:"llm_record"` // LLM Recording switches (default level); effective immediately without reconstruction agent
+		LLMRecord           *bool `json:"llm_record"` // LLM recording switch (off by default); takes effect immediately, no agent rebuild
 		// Web search. WebSearchEnabled/Backend toggle the tool + backend; BraveKey/TavilyKey
 		// are optional — omit (null) to leave a stored key untouched, send "" to clear.
 		WebSearchEnabled *bool   `json:"web_search_enabled"`
 		WebSearchBackend *string `json:"web_search_backend"`
 		BraveKey         *string `json:"brave_search_api_key"`
 		TavilyKey        *string `json:"tavily_search_api_key"`
-		WebSearchProxy   *string `json:"web_search_proxy"`   // Independent export agent(http/https/socks5);null=No change,""=Clear
-		GlobalProxy      *string `json:"global_proxy"`       // Global export agent(http/https/socks5);null=No change,""=Clear(Direct connection)
-		PythonInterp     *string `json:"python_interpreter"` // Custom script tool python Interpreter path
-		Workers          *int    `json:"workers"`            // Concurrent work agent Number(>0);Effective for tasks started later
-		// Task concurrency upper limit:At the same time[Running]The maximum number of tasks. closure=No limit;After opening, new tasks will be queued if they exceed the limit.,Automatically start when space is available.
+		WebSearchProxy   *string `json:"web_search_proxy"`   // search egress proxy (http/https/socks5); null = unchanged, "" = clear
+		GlobalProxy      *string `json:"global_proxy"`       // global egress proxy (http/https/socks5); null = unchanged, "" = clear (direct)
+		PythonInterp     *string `json:"python_interpreter"` // python interpreter path for custom script tools
+		Workers          *int    `json:"workers"`            // concurrent worker agents (>0); applies to tasks started afterwards
+		// Task concurrency cap: max tasks in "running" at once. Off = unlimited. When on, a new task past the cap queues and starts automatically when a slot opens.
 		ConcurrencyEnabled *bool `json:"task_concurrency_enabled"`
 		ConcurrencyLimit   *int  `json:"task_concurrency_limit"`
-		// LLM Polling(Failover)Switch + [We've failed to bind the configuration and go back to the chain.]Switches. Both.
-		// Reconstruction provider The chain only works. changed → applyLLM Path.
+		// LLM failover (polling) switch, plus "a failed bound profile also falls back onto the chain".
+		// Both take effect only after the provider chain is rebuilt, via changed → applyLLM below.
 		LLMPoolEnabled      *bool `json:"llm_pool_enabled"`
 		LLMPoolBindFallback *bool `json:"llm_pool_bind_fallback"`
-		// Operating binding injection range switches(Open by default);Effective immediately(planner/worker Rounded),No need to rebuild. agent.
+		// Which agents receive operation constraints (all on by default). Takes effect immediately (planner and worker read it every round); no agent rebuild.
 		ConstraintsInjectPlanner *bool `json:"constraints_inject_planner"`
 		ConstraintsInjectWorker  *bool `json:"constraints_inject_worker"`
-		// Experimental features:noa Context compression switch(Default off);each run Read,It started after that. run Effective,No need to rebuild. agent.
+		// Experimental noa context-compaction switch (off by default). Read once per run and applies to runs started afterwards; no agent rebuild.
 		NoaCompaction *bool `json:"noa_compaction"`
-		// Vulnerability IM Push the global item. All three will be read by the delivery engine once and for immediate effect.,
-		// No need to rebuild. agent Or restart.
+		// Global finding-notification settings. The delivery engine reads all three every round, so a change
+		// takes effect immediately. No agent rebuild and no restart.
 		NotifyEnabled    *bool   `json:"notify_enabled"`
 		NotifyBaseURL    *string `json:"notify_public_base_url"`
 		NotifyDigestMins *int    `json:"notify_digest_interval_min"`
@@ -3408,13 +3414,13 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NoaCompaction != nil {
-		// each run Reader,Toggle immediate start after run Effective,No need applyLLM Reconstruction.
+		// Resolvers read this once per run, so a change applies to runs started afterwards. No applyLLM rebuild.
 		if err := s.m.SetNoaCompaction(*req.NoaCompaction); err != nil {
 			writeErr(w, 500, err.Error())
 			return
 		}
 	}
-	// Send Global Item:Send engine read again every round,That's why it's effective now. It doesn't have to be restarted..
+	// Notification globals: the delivery engine re-reads them every round, so they take effect immediately. No restart.
 	if req.NotifyEnabled != nil {
 		if err := s.m.pg.SetBool(settingNotifyEnabled, *req.NotifyEnabled); err != nil {
 			writeErr(w, 500, err.Error())
@@ -3422,11 +3428,11 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyBaseURL != nil {
-		// Unise the tail slash.:It's a cipher. fmt.Sprintf("%s/function/..."),
-		// Keep the tail slash and output. "//function/..." This double slash path.
+		// Strip a trailing slash. Links are built with fmt.Sprintf("%s/function/..."),
+		// and a trailing slash would produce a double slash ("//function/...").
 		base := trimTrailingSlash(strings.TrimSpace(*req.NotifyBaseURL))
 		if base != "" && !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
-			writeErr(w, 400, "The link address must start with http:// or https://")
+			writeErr(w, 400, "The link base URL must start with http:// or https://")
 			return
 		}
 		if err := s.m.pg.SetSetting(settingNotifyPublicBaseURL, base); err != nil {
@@ -3435,9 +3441,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NotifyDigestMins != nil {
-		// Lower limit 1 min:Shorter cycle equals real time delivery,Then we should just change the channel. realtime Mode.
+		// Floor is 1 minute. A shorter interval is just realtime delivery; switch the channel to realtime mode instead.
 		if *req.NotifyDigestMins < 1 || *req.NotifyDigestMins > 24*60 {
-			writeErr(w, 400, "Summary cycle required 1 Arrived 1440 Between minutes")
+			writeErr(w, 400, "Digest interval must be between 1 and 1440 minutes")
 			return
 		}
 		if err := s.m.pg.SetSetting(settingNotifyDigestMinutes, strconv.Itoa(*req.NotifyDigestMins)); err != nil {
@@ -3452,7 +3458,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.ConcurrencyEnabled != nil || req.ConcurrencyLimit != nil {
-		// Part PUT:Ungiven fields are covered by current values,Avoid changing one to another..
+		// Partial PUT: omitted fields keep the current value so changing one does not reset the other.
 		curOn, curLimit := s.m.ConcurrencyLimit()
 		if curLimit == 0 {
 			curLimit = defaultConcurrencyLimit
@@ -3468,7 +3474,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, err.Error())
 			return
 		}
-		// Coordinate immediately.:Line all at close,Backup start when the ceiling is raised,You don't have to wait. tick.
+		// Reconcile immediately: turning the cap off releases every queued task, and raising the limit starts tasks now, without waiting for the next tick.
 		go s.reconcileConcurrency()
 	}
 	if req.PythonInterp != nil {
@@ -3478,7 +3484,7 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.LLMRecord != nil {
-		// Every time the recorder calls to read the sign, the switch is effective immediately, no need applyLLM Reconstruction.
+		// The recorder reads this flag on every call, so the switch takes effect immediately. No applyLLM rebuild.
 		if err := s.m.SetLLMRecordEnabled(*req.LLMRecord); err != nil {
 			writeErr(w, 500, err.Error())
 			return
@@ -3591,14 +3597,15 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 	cfg := actool.WebSearchConfig{Backend: backend, BraveAPIKey: braveKey, TavilyAPIKey: tavilyKey, Proxy: proxy}
 	// Hard cap so a slow/blocked proxy can't hang the request.
 	wall := 30 * time.Second
-	// deepseek It's not in the form. It's from the active. LLM Configure; while it runs every search
-	// Model reasoning,30s The generic ceiling was tight and was relaxed separately. It's not a predetermined configuration.——Check this out.
-	// It's a means of self-confirmation. It's more informative when you can't make it..
+	// DeepSeek credentials are not in the form; they come from the active LLM profile. Each search
+	// also runs a model completion, so the generic 30s cap is too tight and is relaxed here.
+	// Do not pre-judge whether the profile works — this test is how the user checks, and a real
+	// failure below is more informative than a guess.
 	probeQuery := "test"
 	if strings.TrimSpace(backend) == deepSeekWebSearchBackend {
 		cfg.DeepSeekBaseURL, cfg.DeepSeekAPIKey, cfg.DeepSeekModel = s.m.deepSeekSearchCreds()
 		wall = 120 * time.Second
-		// Other Organiser DeepSeek The end model is up to you.,"test" Space Pan will make it skip the search and answer directly..
+		// DeepSeek's model chooses the search query itself. The generic word "test" makes it skip search and answer directly.
 		probeQuery = "DeepSeek company official website"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), wall)
@@ -3616,7 +3623,7 @@ func (s *Server) testWebSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // mainSessions lists the task's main-agent conversation segments (newest-first) and
-// the current one. The frontend renders these as switchable sessions under Lord Agent.
+// the current one. The frontend renders these as switchable sessions under the main agent.
 func (s *Server) mainSessions(w http.ResponseWriter, r *http.Request) {
 	t := s.m.ResolveTask(r.URL.Query().Get("task"))
 	if t == nil {
@@ -3666,12 +3673,12 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 409, "Task is being deleted; new messages are unavailable")
 		return
 	}
-	// Attention.:Task suspended.(paused)Do not intercept the master. Agent Dialogue. Lord Agent Organisation planner/
-	// worker Pause,Dialogue may continue on the suspension(Pause only the round they're on.,See control()).
+	// A paused task does NOT block main-agent chat. That orchestration session is independent of the
+	// planner/worker pause. Chat can continue while paused (pause only stops the round already in progress; see control()).
 	var req struct {
 		Message     string           `json:"message"`
-		Attachments []chatAttachment `json:"attachments,omitempty"` // Way1 Uploading files(Other Organiser)
-		Seg         *int             `json:"seg,omitempty"`         // Target main session;Default=Latest paragraph
+		Attachments []chatAttachment `json:"attachments,omitempty"` // uploaded files (paths relative to the task work directory)
+		Seg         *int             `json:"seg,omitempty"`         // main-session segment; omitted = the latest segment
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -3692,7 +3699,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.chatBusy[t.ID] {
 		s.chatMu.Unlock()
-		writeErr(w, 409, "Lord Agent Please wait while processing the last message.")
+		writeErr(w, 409, "The main agent is still handling the previous message; please wait")
 		return
 	}
 	ctx, cancel := context.WithCancelCause(s.ctx)
@@ -3713,7 +3720,7 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 	}
 	segPtr := &mainSeg
 
-	// Persist + broadcast the human turn so the Lord Agent Organisation survives page
+	// Persist + broadcast the human turn so the main-agent orchestration session survives page
 	// reloads and updates live: the conversation lives in the activity stream as
 	// worker="mainagent" (the per-task activity table, replayed via SSE). With
 	// attachments, the activity's Detail carries {text, attachments} so the transcript
@@ -3743,16 +3750,16 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) {
 				s.engine.emitActivity(t, rec)
 			}
 			maTaskID, _ := strconv.ParseInt(t.ID, 10, 64)
-			resume := func() { s.reviveTask(t) } // set_goals Add Target → Pull back the mission. running
-			// Upload Attachments[Absolute path]Spell List To agent Message.,It uses it. Read/Bash Open File.
-			// taskDir = agent Other Organiser(CWD),With chatUpload Crash,ensureRunDir Consistent.
+			resume := func() { s.reviveTask(t) } // set_goals adding a goal pulls the task back to running
+			// Append the absolute paths of uploaded attachments to the message sent to the agent so it can open them with Read or Bash.
+			// taskDir is the agent's working directory (CWD), the same place chatUpload and ensureRunDir write.
 			taskDir := filepath.Join(s.m.dir, "tasks", t.ID)
 			agentMsg := composeAgentMessage(agentMessage, req.Attachments, taskDir)
 			s.engine.BeginLLMCall(t.ID)
 			_, err := ma.Chat(ctx, maTaskID, mainSeg, s.m.Assets(), t.Store, t.Goal, agentMsg, emit, t.Notify, resume, t.NotifyGoal, t.NotifyHint)
 			s.engine.EndLLMCall(t.ID)
 			if err != nil && ctx.Err() == nil {
-				s.engine.emitActivity(t, db.Activity{Worker: "mainagent", Kind: "text", IsError: true, Summary: "(Lord Agent Error:" + err.Error() + ")", MainSeg: segPtr})
+				s.engine.emitActivity(t, db.Activity{Worker: "mainagent", Kind: "text", IsError: true, Summary: "(main agent error: " + err.Error() + ")", MainSeg: segPtr})
 			}
 		}()
 		writeJSON(w, 202, map[string]any{"status": "accepted", "mode": "llm"})
@@ -3813,7 +3820,7 @@ func (s *Server) stopChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "stopping"})
 }
 
-// fallbackChat is the no-LLM human-steering handler: simpleCommand + Summary of developments.
+// fallbackChat is the no-LLM human-steering handler: simple commands plus a situation summary.
 func (s *Server) fallbackChat(t *Task, msg string) string {
 	m := strings.TrimSpace(msg)
 	lower := strings.ToLower(m)
@@ -3821,11 +3828,11 @@ func (s *Server) fallbackChat(t *Task, msg string) string {
 	case strings.HasPrefix(m, "Intention") || strings.HasPrefix(lower, "intent"):
 		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "Intention"), "intent"))
 		_, _ = t.Store.AddIntent(map[string]any{"summary": text}, 9, nil, "human")
-		return "A high-priority intent has been injected.:" + text
+		return "A high-priority intent has been injected: " + text
 	case strings.HasPrefix(m, "Tips") || strings.HasPrefix(lower, "hint"):
 		text := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(m, "Tips"), "hint"))
 		_, _ = t.Store.AddNode(db.KindHint, map[string]any{"text": text}, 0, "active", "human", nil)
-		return "It's recorded. The planners will read it next time.:" + text
+		return "Hint recorded; the planner will read it next time: " + text
 	default:
 		assetCounts, _ := s.m.Assets().CountsByType()
 		assets := 0
@@ -3834,7 +3841,7 @@ func (s *Server) fallbackChat(t *Task, msg string) string {
 		}
 		fnd, _ := t.Store.ListByKind(db.KindFinding, 1000)
 		fr, _ := t.Store.Frontier(1000)
-		return fmt.Sprintf("(Rule mode, not configured LLM)Current situation: assets %d,Pending intention %d,Confirm discovery %d.\nAvailable commands: by\"Intention ...\"Injecting intent.,\"Tips ...\"To planner.", assets, len(fr), len(fnd))
+		return fmt.Sprintf("(Rule mode, no LLM configured) Current picture: %d assets, %d intents waiting, %d confirmed findings.\nCommands: \"intent ...\" to inject an intent, \"hint ...\" to leave a hint for the planner.", assets, len(fr), len(fnd))
 	}
 }
 
@@ -3844,7 +3851,7 @@ func (s *Server) getReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 404, "no active task")
 		return
 	}
-	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // Pure holes. KindFact,Not reported)
+	findings, _ := t.Store.ListByKind(db.KindFinding, 1000) // findings only; facts are KindFact and are not in the report
 	counts := map[string]int{}
 	for _, ty := range []string{"root_domain", "ip", "subdomain", "app", "service", "endpoint"} {
 		ns, _ := s.m.Assets().QueryByType(ty, 100000, 0)

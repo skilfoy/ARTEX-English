@@ -135,7 +135,7 @@ func (s *Server) agentFindingTrafficAccess(ctx context.Context, id int64, write 
 			return errors.New("The current task cannot read this finding")
 		}
 		if write && inherited {
-			return errors.New("Inherited finding traffic is read-only in this task.")
+			return errors.New("Inherited finding traffic is read-only; change it in the source task")
 		}
 	}
 	return nil

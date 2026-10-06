@@ -128,7 +128,7 @@ func (s *Server) findingTrafficAccess(w http.ResponseWriter, r *http.Request, wr
 			return 0, false
 		}
 		if write && inherited {
-			writeErr(w, 403, "Inherit loophole read only, change in source task")
+			writeErr(w, 403, "Inherited findings are read-only; change them in the source task")
 			return 0, false
 		}
 	}
@@ -171,7 +171,7 @@ func (s *Server) bindFindingTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(body.Refs) == 0 {
-		writeErr(w, 400, "Please select the flow.")
+		writeErr(w, 400, "Select traffic")
 		return
 	}
 	out, err := s.evidenceStore().Bind(r.Context(), id, body.Refs)
@@ -194,14 +194,14 @@ func (s *Server) editFindingTraffic(w http.ResponseWriter, r *http.Request) {
 		Order   []string `json:"binding_ids"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil || body.Version == nil {
-		writeErr(w, 400, "version And a valid request must be filled.")
+		writeErr(w, 400, "version and a valid request body are required")
 		return
 	}
 	var order []int64
 	bindingID := int64(0)
 	if r.Method == http.MethodPut {
 		if body.Order == nil {
-			writeErr(w, 400, "binding_ids Required")
+			writeErr(w, 400, "binding_ids is required")
 			return
 		}
 		order = []int64{}
@@ -240,7 +240,7 @@ type evidencePreview struct {
 
 func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnapshot, side string, offset, length int64) (out evidencePreview, err error) {
 	if offset < 0 || length < 0 {
-		return out, errors.New("offset / length No negative number.")
+		return out, errors.New("offset and length cannot be negative")
 	}
 	if length == 0 || length > 8192 {
 		length = 8192
@@ -251,7 +251,7 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	}
 	defer f.Close()
 	if offset > total {
-		return out, errors.New("offset More than text length")
+		return out, errors.New("offset is past the end of the body")
 	}
 	if _, err = f.Seek(offset, io.SeekStart); err != nil {
 		return out, err
@@ -274,7 +274,7 @@ func readEvidencePreview(store *evidence.Store, snapshot db.TrafficEvidenceSnaps
 	out = evidencePreview{Offset: offset, Total: total, NextOffset: offset + int64(len(raw)), Truncated: offset+int64(len(raw)) < total,
 		Binary: bytes.IndexByte(raw, 0) >= 0 || (offset == 0 && !utf8.Valid(raw))}
 	if out.Binary {
-		out.Content = fmt.Sprintf("[Binary Body,%d bytes;please download and view]", total)
+		out.Content = fmt.Sprintf("[binary body, %d bytes; download to view]", total)
 	} else {
 		out.Content = string(bytes.ToValidUTF8(raw, []byte("�")))
 	}
@@ -366,8 +366,8 @@ func (s *Server) getFindingTrafficBody(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) toolGetFindingTraffic() actool.CoreTool {
-	return roTool("get_finding_traffic", "Read verified traffic evidence bound to a finding. Use the finding_id returned by report_finding, not the exploration node ID. The result includes binding IDs and evidence_version, even when no traffic is bound. Use binding_id, side, offset, and length to inspect a request or response. Pass evidence_version to update_finding_report.",
-		objSchema(map[string]any{"finding_id": strParam("Independent loophole record ID"), "binding_id": strParam("Binding ID from the evidence list; omit to return the list"), "side": strParam("request or response; defaults to response"), "offset": map[string]any{"type": "integer"}, "length": map[string]any{"type": "integer"}}, "finding_id"),
+	return roTool("get_finding_traffic", "Read real traffic evidence bound to a finding. This does not depend on the capture switch. finding_id is the finding record id returned by report_finding, not the exploration node id. Omit binding_id first to get the list and version; an empty list is normal. For TCP or other non-HTTP findings, or when nothing was captured, still write the report from text or command evidence and do not force a binding. When bindings exist, read the body in chunks with binding_id, side (request or response), and offset. When writing the report, pass the version you read as evidence_version to update_finding_report; that tool's finding_id is still the exploration node id.",
+		objSchema(map[string]any{"finding_id": strParam("finding record id"), "binding_id": strParam("Binding ID from the evidence list; omit to return the list"), "side": strParam("request or response; defaults to response"), "offset": map[string]any{"type": "integer"}, "length": map[string]any{"type": "integer"}}, "finding_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
 				FindingID      json.RawMessage `json:"finding_id"`

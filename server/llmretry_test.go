@@ -8,8 +8,8 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// When there is no configuration, the resolution must be zero. —— Which means... SDK With task_llm Inline Defaults,
-// With[Try again to match]This feature is consistent bytes before it goes online..
+// With no stored policy the resolved config must be all zeros — the SDK and task_llm
+// built-in defaults — byte-for-byte the same as before retry settings existed.
 func TestResolveRetryUnconfigured(t *testing.T) {
 	got := resolveRetry(db.RetryOverride{}, db.LLMRetryPolicy{})
 	if got != (agent.RetryConfig{}) {

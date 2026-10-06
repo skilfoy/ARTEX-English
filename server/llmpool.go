@@ -10,11 +10,11 @@ import (
 	"github.com/skilfoy/ARTEX-English/llmpool"
 )
 
-// LLM Polling(Failover). See you at the design. docs/LLMInquiries Design.md:
-//   - Global activation of the configuration path(agent No binding, no task pin)I'm just talking.;
-//   - Binding/pin Path by default monopolizes the configuration,Failure is failure.(May be llm_pool_bind_fallback Open the back.);
-//   - Chain = Activate Configuration → The rest press priority DESC,Exclude pool_exclude of;
-//   - Melting State Process Level Sharing(s.llmHealth),Reconstruction pool Not clear..
+// Server wiring for LLM polling (failover). See the LLM polling design notes:
+//   - only the globally active profile (agent not bound, task not pinned) is polled;
+//   - a bound or pinned path stays on that profile and fails if it fails (llm_pool_bind_fallback can enable a fallback);
+//   - chain order is the active profile, then the rest by priority DESC, skipping pool_exclude;
+//   - circuit-breaker state is shared for the process (s.llmHealth) and is not cleared when the pool is rebuilt.
 
 // newLLMHealthRegistry builds the process-wide circuit-breaker registry, mirroring
 // state into PG so a cooling-off window survives a restart. Writes are async and
@@ -31,7 +31,7 @@ func newLLMHealthRegistry(pg *db.DB) *llmpool.Registry {
 		}
 		go func() {
 			if err := pg.SaveLLMHealth(h); err != nil {
-				log.Printf("[llmpool] Melting status library failed: %v", err)
+				log.Printf("[llmpool] failed to persist circuit-breaker state: %v", err)
 			}
 		}()
 	}
@@ -48,7 +48,7 @@ func newLLMHealthRegistry(pg *db.DB) *llmpool.Registry {
 				st.OpenUntil = *h.OpenUntil
 			}
 			reg.Restore(h.ProfileID, st)
-			log.Printf("[llmpool] restored cooling state for profile #%d until %s", h.ProfileID, st.OpenUntil.Format(time.RFC3339))
+			log.Printf("[llmpool] restored circuit-breaker state: profile #%d cooling until %s", h.ProfileID, st.OpenUntil.Format(time.RFC3339))
 		}
 	}
 	return reg
@@ -83,7 +83,7 @@ func (s *Server) poolChain(headID int64, headProv llm.Provider, headCfg agent.Co
 	}
 	profs, err := s.m.pg.PoolProfiles()
 	if err != nil {
-		log.Printf("[llmpool] Failed to read round query chain: %v", err)
+		log.Printf("[llmpool] failed to read the polling chain: %v", err)
 		return nil
 	}
 	var head *db.LLMProfile
@@ -136,7 +136,7 @@ func (s *Server) poolForActive(activeID int64, prov llm.Provider, cfg agent.Conf
 	for _, m := range pool.Members() {
 		names = append(names, m.Name+"/"+m.Model)
 	}
-	log.Printf("[llmpool] LLM Query has been activated.(%d): %v", len(names), names)
+	log.Printf("[llmpool] LLM polling enabled, chain (%d): %v", len(names), names)
 	return pool
 }
 
