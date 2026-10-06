@@ -98,7 +98,7 @@ export function companyScopeRuleError(rule: CompanyScopeRule): string {
   const value = rule.value.trim();
   if (!value) return "Please fill in the range value";
   if (Array.from(value).length > MAX_COMPANY_SCOPE_VALUE_LENGTH) {
-    return `most${MAX_COMPANY_SCOPE_VALUE_LENGTH}characters`;
+    return `At most ${MAX_COMPANY_SCOPE_VALUE_LENGTH} characters`;
   }
   if (rule.kind === "domain") {
     if (/\s/.test(value)) return "Please enter a valid domain name or URL without spaces";
@@ -138,7 +138,7 @@ export function classifyCompanyScopeLine(
 ): CompanyScopeTextIssue {
   const value = raw.trim();
   if (Array.from(value).length > MAX_COMPANY_SCOPE_VALUE_LENGTH) {
-    return { line, error: `most${MAX_COMPANY_SCOPE_VALUE_LENGTH}characters` };
+    return { line, error: `At most ${MAX_COMPANY_SCOPE_VALUE_LENGTH} characters` };
   }
   if (preservedRule) {
     const rule = { kind: preservedRule.kind, value };

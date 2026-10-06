@@ -156,7 +156,7 @@ function appendUploads(desc: string, atts: ChatAttachment[]): string {
     return `${desc.replace(/\s*$/, "")}\n${bullets}\n`;
   }
   const head = desc.trim() ? `${desc.replace(/\s*$/, "")}\n\n` : "";
-  return `${head}${UPLOAD_MARKER}The worker can be opened by Read/Bash by path:${bullets}\n`;
+  return `${head}${UPLOAD_MARKER}\nThe worker can open these with Read or Bash by path:\n${bullets}\n`;
 }
 
 // POLL_MS is the task-list refresh interval. Task state moves on the server (planner /
@@ -2404,7 +2404,7 @@ function SourceTaskPicker({
         </ComboboxValue>
         <ComboboxChipsInput
           id="source-tasks"
-          placeholder={atLimit ? `Most associations${MAX_SOURCE_TASKS}tasks` : "Search for task ID, description or goal"}
+          placeholder={atLimit ? `At most ${MAX_SOURCE_TASKS} linked tasks` : "Search by task ID, description, or goal"}
           disabled={atLimit}
         />
       </ComboboxChips>
@@ -3135,7 +3135,7 @@ function CreateTaskSheet({
       return;
     }
     if (sourceTaskIDs.length > MAX_SOURCE_TASKS) {
-      toast.error(`Most associations${MAX_SOURCE_TASKS}source tasks`);
+      toast.error(`Link at most ${MAX_SOURCE_TASKS} source tasks`);
       return;
     }
     setCreating(true);
@@ -3294,12 +3294,12 @@ function CreateTaskSheet({
                 portalContainer={sheetContentRef}
               />
               <FieldDescription>
-                Most associations {MAX_SOURCE_TASKS}{" "}
-                tasks. Real-time read-only inheritance of the persistent blackboard, asset range and related traffic of the selected task; new tasks are written to the independent blackboard.
+                Link at most {MAX_SOURCE_TASKS} tasks. The new task inherits, read-only and live, the selected
+                tasks' persisted blackboard, asset scope, and related traffic, and writes its own blackboard.
               </FieldDescription>
             </Field>
             <Field>
-              <FieldLabel htmlFor="task-companies">Scope of assets of affiliated enterprises</FieldLabel>
+              <FieldLabel htmlFor="task-companies">Linked company asset scope</FieldLabel>
               <CompanyPicker
                 companies={companies}
                 value={companyIDs}

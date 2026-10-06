@@ -192,7 +192,7 @@ export function RetryRuleFields({
         </p>
         {!compact && meta.skips && (
           <p className="text-muted-foreground text-xs">
-            <span className="font-medium text-foreground">Don't take this floor</span>:{meta.skips}
+            <span className="font-medium text-foreground">Not retried here</span>: {meta.skips}
           </p>
         )}
         {!compact && <p className="text-muted-foreground text-xs">{meta.desc}</p>}
@@ -206,7 +206,7 @@ export function RetryRuleFields({
             id={`${idPrefix}-${layer}-n`}
             min={-1}
             value={value.attempts}
-            placeholder={`Default${meta.defAttempts}`}
+            placeholder={`Default ${meta.defAttempts}`}
             onChange={(n) => onChange({ ...value, attempts: n })}
           />
         </div>
@@ -218,13 +218,13 @@ export function RetryRuleFields({
             id={`${idPrefix}-${layer}-ms`}
             min={0}
             value={value.interval_ms}
-            placeholder="Default retreat"
+            placeholder="Default backoff"
             onChange={(n) => onChange({ ...value, interval_ms: n })}
           />
-          <span className="text-muted-foreground text-xs">{human ? `Fixed${human}` : meta.defInterval}</span>
+          <span className="text-muted-foreground text-xs">{human ? `Fixed ${human}` : meta.defInterval}</span>
         </div>
       </div>
-      {!compact && <p className="text-muted-foreground text-xs">Leave blank = use default;{meta.offHint}.</p>}
+      {!compact && <p className="text-muted-foreground text-xs">Leave blank to use the default. {meta.offHint}.</p>}
     </div>
   );
 }

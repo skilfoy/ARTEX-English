@@ -138,7 +138,7 @@ export function useSideQuestions(parent: string | null) {
         restoreFailedDraft([item]);
         if (item.status !== "running") stream.close();
       } catch {
-        setError("Bypass data parsing failed, please reopen the panel");
+        setError("Could not read the side-question update. Reopen the panel.");
       }
     });
     stream.addEventListener("cleared", () => {

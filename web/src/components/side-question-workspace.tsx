@@ -31,8 +31,8 @@ type ComposerLayout = "inline" | "stacked";
 
 const preparationLabels = {
   preparing: "Preparing context…",
-  summarizing_history: "Compiling early bypass questions and answers...",
-  compressing_snapshot: "Compacting bypass context copy...",
+  summarizing_history: "Summarizing earlier side questions…",
+  compressing_snapshot: "Compacting the side-question context…",
   retrying: "Model context exceeded, trying again after reducing...",
   answering: "Answering…",
 };
@@ -40,9 +40,9 @@ const preparationLabels = {
 export function SideQuestionButton({ side }: { side: SideQuestions }) {
   if (!side.enabled) return null;
   return (
-    <Button variant="outline" size="sm" onClick={() => side.setOpen(true)} title="/btw bypass question">
+    <Button variant="outline" size="sm" onClick={() => side.setOpen(true)} title="/btw side question">
       <MessageCircleQuestionIcon data-icon="inline-start" />
-      Bypass question
+      Side question
     </Button>
   );
 }
@@ -67,11 +67,11 @@ function SidePanel({
   }, [tail?.answer, tail?.id]);
   const status = { running: "Answering", completed: "Completed", failed: "Failed", cancelled: "Stopped", interrupted: "Interrupted" };
   return (
-    <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Bypass question panel">
+    <section className="flex h-full min-h-0 flex-col bg-background" aria-label="Side question panel">
       <div className="flex items-center gap-2 border-b p-3">
         <div className="min-w-0 flex-1">
           <p className="font-medium">
-            Bypass question <span className="text-muted-foreground">/btw</span>
+            Side question <span className="text-muted-foreground">/btw</span>
           </p>
           <p className="truncate text-muted-foreground text-xs">{label}</p>
         </div>
@@ -80,11 +80,11 @@ function SidePanel({
           size="icon-sm"
           onClick={() => setConfirm(true)}
           disabled={!side.items.length || side.busy}
-          aria-label="Clear bypass history"
+          aria-label="Clear side-question history"
         >
           <Trash2Icon />
         </Button>
-        <Button variant="ghost" size="icon-sm" onClick={() => side.setOpen(false)} aria-label="Close the bypass panel">
+        <Button variant="ghost" size="icon-sm" onClick={() => side.setOpen(false)} aria-label="Close the side-question panel">
           <XIcon />
         </Button>
       </div>
@@ -95,7 +95,7 @@ function SidePanel({
             <p>Context updated on {new Date(side.snapshot.captured_at).toLocaleString()}</p>
           </>
         ) : (
-          "You can ask questions after the main Agent is run for the first time."
+          "You can ask after the main agent has run once."
         )}
       </div>
       <div
@@ -108,7 +108,7 @@ function SidePanel({
       >
         {side.nextCursor > 0 && (
           <Button variant="ghost" size="sm" onClick={() => void side.load(side.nextCursor)}>
-            Load earlier bypass questions and answers
+            Load earlier side questions
           </Button>
         )}
         {side.loading && <Skeleton className="h-16 w-full" />}
@@ -116,7 +116,7 @@ function SidePanel({
           <Empty>
             <EmptyHeader>
               <EmptyTitle>Ask a question anytime</EmptyTitle>
-              <EmptyDescription>According to the current Agent's context answer, the main task continues to run.</EmptyDescription>
+              <EmptyDescription>Answers use this agent's current context. The main task keeps running.</EmptyDescription>
             </EmptyHeader>
           </Empty>
         )}
@@ -133,9 +133,9 @@ function SidePanel({
               </div>
               {item.context?.estimated_input_tokens != null && (
                 <p className="text-muted-foreground text-xs">
-                  Recent {item.context.recent_exchanges} Group Q&A original text
-                  {item.context.history_summarized && "· Includes early Q&A summaries"}
-                  {item.context.snapshot_summarized && "· Use the main context summary"}
+                  Recent {item.context.recent_exchanges} questions kept in full
+                  {item.context.history_summarized && " · earlier questions summarized"}
+                  {item.context.snapshot_summarized && " · using the main-context summary"}
                 </p>
               )}
               {item.answer && <Markdown text={item.answer} />}
@@ -163,7 +163,7 @@ function SidePanel({
           <InputGroupTextarea
             rows={1}
             className={cn("overflow-y-auto", inlineComposer ? "max-h-40 min-h-0" : "max-h-36 min-h-9")}
-            aria-label="Bypass problem"
+            aria-label="Side question"
             placeholder="Ask for the current context…"
             value={side.draft}
             maxLength={4000}
@@ -177,14 +177,14 @@ function SidePanel({
             }}
           />
           <InputGroupAddon align={inlineComposer ? "inline-end" : "block-end"}>
-            {!inlineComposer && <span className="text-muted-foreground text-xs">Independent Q&A·No tool execution</span>}
+            {!inlineComposer && <span className="text-muted-foreground text-xs">Separate Q&A · no tool execution</span>}
             {side.running ? (
               <InputGroupButton
                 className="ml-auto"
                 variant="destructive"
                 size="icon-xs"
                 onClick={() => void side.stop()}
-                aria-label="Stop bypass reply"
+                aria-label="Stop side-question reply"
               >
                 <SquareIcon />
               </InputGroupButton>
@@ -195,7 +195,7 @@ function SidePanel({
                 size="icon-xs"
                 onClick={() => void side.ask(side.draft)}
                 disabled={side.busy || !side.draft.trim() || !side.snapshot?.available}
-                aria-label="Send bypass problem"
+                aria-label="Send side question"
               >
                 <ArrowUpIcon />
               </InputGroupButton>
@@ -204,14 +204,14 @@ function SidePanel({
         </InputGroup>
       </div>
       {inlineComposer && (
-        <div className="shrink-0 truncate px-3 pt-0.5 pb-1 text-muted-foreground text-xs">Independent Q&A·No tool execution</div>
+        <div className="shrink-0 truncate px-3 pt-0.5 pb-1 text-muted-foreground text-xs">Separate Q&A · no tool execution</div>
       )}
       <AlertDialog open={confirm} onOpenChange={setConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Clear bypass history?</AlertDialogTitle>
+            <AlertDialogTitle>Clear side-question history?</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete the current Agent's bypass questions and answers and stop generating bypass answers. Main session and context snapshots are preserved.
+              Delete this agent's side questions and stop the reply in progress. The main session and context snapshot are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -254,8 +254,8 @@ export function SideQuestionWorkspace({
       <Drawer open={mobile && side.open && side.enabled} onOpenChange={side.setOpen}>
         <DrawerContent className="h-[85svh]">
           <DrawerHeader className="sr-only">
-            <DrawerTitle>Bypass question</DrawerTitle>
-            <DrawerDescription>{label} independent Q&A</DrawerDescription>
+            <DrawerTitle>Side question</DrawerTitle>
+            <DrawerDescription>Separate Q&A for {label}</DrawerDescription>
           </DrawerHeader>
           <SidePanel side={side} label={label} composerLayout={composerLayout} />
         </DrawerContent>

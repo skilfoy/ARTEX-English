@@ -1524,7 +1524,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     if (side.handleCommand(message, () => setWorkerMessage(""))) return;
     if (!intentId || active.inherited || active.status !== "paused" || workerMessageSending || !message) return;
     if (workerMessageCharCount(message) > MAX_WORKER_MESSAGE_CHARS) {
-      toast.error(`The message cannot exceed${MAX_WORKER_MESSAGE_CHARS}characters`);
+      toast.error(`The message cannot exceed ${MAX_WORKER_MESSAGE_CHARS} characters`);
       return;
     }
     const requestId = workerMessageRequestId || newWorkerMessageRequestID();
@@ -1970,7 +1970,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                       {uploading ? <Loader2Icon className="animate-spin" /> : <PaperclipIcon />}
                     </InputGroupButton>
                     {mainBusy && isBtwCommand(input) && (
-                      <InputGroupButton size="icon-xs" onClick={send} aria-label="Send bypass problem">
+                      <InputGroupButton size="icon-xs" onClick={send} aria-label="Send side question">
                         <ArrowUpIcon />
                       </InputGroupButton>
                     )}
@@ -2036,7 +2036,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                       {workerMessageCharCount(workerMessage)}/{MAX_WORKER_MESSAGE_CHARS}
                     </span>
                     {active.status === "running" && isBtwCommand(workerMessage) && (
-                      <InputGroupButton size="icon-xs" onClick={sendWorkerChat} aria-label="Send bypass problem">
+                      <InputGroupButton size="icon-xs" onClick={sendWorkerChat} aria-label="Send side question">
                         <ArrowUpIcon />
                       </InputGroupButton>
                     )}
