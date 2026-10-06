@@ -15,7 +15,7 @@ func retestDB(t *testing.T) (*DB, int64) {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	fid, err := d.AddFinding(0, 0, "retest-test", "Test loopholes", "high", "original summary", "original evidence", "worker", nil)
+	fid, err := d.AddFinding(0, 0, "retest-test", "test finding", "high", "original summary", "original evidence", "worker", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

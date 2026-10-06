@@ -24,29 +24,29 @@ type DBFinding struct {
 	TaskID          *int64
 	NodeID          *int64
 	VulnClass       string
-	Name            string // Vulnerability name(Readable Titles);Show back display for empty frontend VulnClass
+	Name            string // finding title; the frontend falls back to VulnClass when this is empty
 	Severity        string
 	Summary         string
 	Evidence        string
 	Worker          string
 	AssetIDs        []int64
 	Status          string
-	Report          string // Detailed report(Markdown);Only GetFinding Fill,List Query Without
+	Report          string // detailed report (Markdown); filled only by GetFinding, omitted from list queries
 	CreatedAt       time.Time
 	TaskDescription string // populated via LEFT JOIN on tasks
 }
 
 // Finding triage states (findings.status).
 const (
-	FindingPending       = "pending"        // Pending
-	FindingInProgress    = "in_progress"    // Processing
-	FindingConfirmed     = "confirmed"      // Confirmed(Real loopholes,Not repaired)
-	FindingResolved      = "resolved"       // Processed
-	FindingFixed         = "fixed"          // Fixed
-	FindingFalsePositive = "false_positive" // False positive
-	FindingIgnored       = "ignored"        // Ignore
-	FindingDuplicate     = "duplicate"      // Repeat
-	FindingRiskAccepted  = "risk_accepted"  // Risk Acceptance
+	FindingPending       = "pending"        // awaiting triage
+	FindingInProgress    = "in_progress"    // in progress
+	FindingConfirmed     = "confirmed"      // confirmed (real finding, not yet fixed)
+	FindingResolved      = "resolved"       // handled
+	FindingFixed         = "fixed"          // fixed
+	FindingFalsePositive = "false_positive" // false positive
+	FindingIgnored       = "ignored"        // ignored
+	FindingDuplicate     = "duplicate"      // duplicate
+	FindingRiskAccepted  = "risk_accepted"  // risk accepted
 )
 
 // ValidFindingStatus reports whether s is a known triage state.
@@ -61,10 +61,10 @@ func ValidFindingStatus(s string) bool {
 
 // Finding severity levels (findings.severity).
 const (
-	SeverityCritical = "critical" // Serious
-	SeverityHigh     = "high"     // High
-	SeverityMedium   = "medium"   // Medium
-	SeverityLow      = "low"      // Low
+	SeverityCritical = "critical" // critical
+	SeverityHigh     = "high"     // high
+	SeverityMedium   = "medium"   // medium
+	SeverityLow      = "low"      // low
 )
 
 // ValidSeverity reports whether s is a known severity level.
@@ -153,17 +153,17 @@ type FindingFilter struct {
 	Severity  string // high | medium | low
 	Status    string // pending | false_positive | ignored | resolved
 	VulnClass string
-	TaskID    string // Task id(String Form;Empty/Illegal = Do not filter by task)
-	Query     string // Name/Type/Abstract/Evidence/Fuzzy search keywords in the body of the report
+	TaskID    string // task id as a string; empty or invalid means do not filter by task
+	Query     string // fuzzy keyword matched against name, class, summary, evidence, and report body
 	Sort      string // "severity" | "time"
-	// AssetScope It's an asset tree node. key(a:<id> / c:<id> / r:<domain> / __none__),
-	// Select a node equals the entire sub-tree. Empty = Do not filter by assets.
+	// AssetScope is an asset-tree node key (a:<id> / c:<id> / r:<domain> / __none__).
+	// Selecting a node selects its whole subtree. Empty means do not filter by asset.
 	AssetScope string
 
-	// The next three by applyAssetScope from AssetScope It's sorted out.,No settings for callers.
-	assetIDs  []int64 // All the assets in the subtree. id
-	assetNone bool    // Just...[Unassociated assets]The Discovery
-	assetMiss bool    // The selected node does not exist under the current filter → The result is empty
+	// The next three are filled by applyAssetScope from AssetScope. Callers do not set them.
+	assetIDs  []int64 // every asset id in the subtree
+	assetNone bool    // only findings with no linked asset
+	assetMiss bool    // the selected node does not exist under the current filter, so the result is always empty
 }
 
 // FindingUnassignedTask is the task filter sentinel for findings whose task is
@@ -187,21 +187,22 @@ func (f FindingFilter) where() (string, []any) {
 	add("severity", f.Severity)
 	add("status", f.Status)
 	add("vulnclass", f.VulnClass)
-	// task_id Yes bigint Column,By integer(Can't use the text above. add);Empty/Invalid Value Ignored.
+	// task_id is a bigint column and is compared as an integer (the text add helper above cannot be used). Empty or invalid values are ignored.
 	if f.TaskID == FindingUnassignedTask {
 		conds = append(conds, "(f.task_id IS NULL OR t.id IS NULL)")
 	} else if tid, err := strconv.ParseInt(f.TaskID, 10, 64); err == nil && tid > 0 {
 		args = append(args, tid)
 		conds = append(conds, fmt.Sprintf("f.task_id = $%d", len(args)))
 	}
-	// Asset screening:asset_ids Yes jsonb array,@> ANY(...) Yes. idx_findings_asset_ids.
+	// Asset filter: asset_ids is a jsonb array, and @> ANY(...) can use idx_findings_asset_ids.
 	switch {
 	case f.assetMiss:
 		conds = append(conds, "FALSE")
 	case f.assetNone:
-		// [Unassociated assets]= asset_ids Empty,Or inside. id None of them. assets The watch.
-		// (Assets deleted).Two unconnected barrels in the asset tree.,It has to be here too.,Or the bucket.
-		// The number of numbers will be larger than the number of bars that can be found when the point opens..
+		// "No linked asset" means asset_ids is empty, or none of its ids exist in
+		// assets (the asset was deleted). Both belong in the asset tree's unassigned
+		// bucket, and this filter must accept both. Otherwise the bucket count would
+		// be larger than the number of rows you see after opening it.
 		conds = append(conds, `(
 			jsonb_array_length(COALESCE(f.asset_ids, '[]'::jsonb)) = 0
 			OR NOT EXISTS (
@@ -465,10 +466,11 @@ RETURNING id, created_at`, s.expID, audit.NodeID, utf8Clean(audit.Worker), utf8C
 	return intentID, audit, nil
 }
 
-// ListFindingsForExport returns findings for the Discover page Export function, carry complete
-// report Fields, No Pages.ids Press this when you're not busy. finding id Exact Export(Check Export),Ignore
-// filter;ids Press as free filter Export(Export Current Filter/All).Result downgraded by severity,
-// And in time.,With[Export Summary Report]Group order is consistent.
+// ListFindingsForExport returns findings for the Discover page export, including the
+// full report and without pagination. A non-empty ids list exports exactly those
+// finding ids (a checkbox export) and ignores filter. An empty ids list exports by
+// filter (the current filter, or everything). Results are ordered by severity
+// descending, then by time descending, matching the summary-report grouping.
 func (d *DB) ListFindingsForExport(f FindingFilter, ids []int64) ([]*DBFinding, error) {
 	const order = `ORDER BY CASE f.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC, f.created_at DESC`
 	cols := findingSelectCols + `, COALESCE(f.report, '')`
@@ -531,7 +533,7 @@ type FindingStats struct {
 	Medium      int                 `json:"medium"`
 	Low         int                 `json:"low"`
 	VulnClasses []string            `json:"vulnclasses"`
-	Tasks       []FindingTaskOption `json:"tasks"` // Vulnerable tasks(Supply[By task]drop down)
+	Tasks       []FindingTaskOption `json:"tasks"` // tasks that have findings (the "by task" dropdown)
 }
 
 // FindingTaskOption is one entry in the Discover page's Task filter: a task that has at
@@ -540,7 +542,7 @@ type FindingStats struct {
 // the id.
 type FindingTaskOption struct {
 	ID          int64  `json:"id"`
-	Name        string `json:"name"` // Optional task name;Empty=Unnamed
+	Name        string `json:"name"` // optional task name; empty means unnamed
 	Description string `json:"description"`
 	Count       int    `json:"count"`
 }
@@ -576,7 +578,7 @@ func (d *DB) FindingStats() (*FindingStats, error) {
 		return nil, err
 	}
 
-	// Mission pull.:Vulnerable tasks,Strip Description(Other Organiser,Front Back id)Number of articles,The most recent, flawed front line..
+	// Task dropdown: tasks that have findings, with description (empty after the task is deleted; the frontend falls back to the id) and count. The task with the newest finding comes first.
 	trows, err := d.Query(`SELECT f.task_id, COALESCE(t.name, ''), COALESCE(t.description, ''), COUNT(*)
 		FROM findings f
 		LEFT JOIN tasks t ON f.task_id = t.id
@@ -691,9 +693,11 @@ func (d *DB) DeleteFindingsByTask(taskID int64) (int64, error) {
 
 // SetFindingStatus updates one finding's triage state. Returns rows affected.
 //
-// Bottom setter:Only change of status, not registration of the event. Change the production code, please.
-// SetFindingStatusWithNotify —— Directly transposing this function will make[Status Change Delivery]Silence lapses..
-// It is retained to allow an example of an unconcerned notification (parameter verification, recheck process) to be driven separately.
+// This is the low-level setter: it only changes status and does not record a
+// push event. Production code that changes status must use
+// SetFindingStatusWithNotify. Calling this function directly makes status-change
+// pushes fail silently. It remains so callers that do not care about
+// notifications (parameter checks, the retest flow) can drive status on their own.
 func (d *DB) SetFindingStatus(id int64, status string) (int64, error) {
 	res, err := d.Exec(`UPDATE findings SET status=$1 WHERE id=$2`, status, id)
 	if err != nil {

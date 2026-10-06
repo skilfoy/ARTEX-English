@@ -9,24 +9,29 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Finding asset tree — the[By assets]view of the global findings list.
+// Finding asset tree — the "by asset" view of the global findings list.
 //
-// Level and BuildCoverageGraph Source(company → root_domain/ip/app → subdomain →
-// service → endpoint),But that's...[Assets within a given mandate]A Power Guide Map,This is...
-// [There's found assets in the vault.]Trees:Only found assets and their ancestral chain.,Total Node Tape Trees.
-// The father and son priority rules must be consistent.,Let's change one. task_scope.go Change to another place..
+// The levels match BuildCoverageGraph (company → root_domain/ip/app → subdomain →
+// service → endpoint), but that graph is a force-directed view of assets in one
+// task's scope. This tree is "assets in the whole database that have findings":
+// only assets with findings and their ancestor chain, and each node carries
+// subtree aggregate counts. Parent/child priority rules must stay consistent
+// between the two. If you change one, change the other in task_scope.go to match.
 // ---------------------------------------------------------------------------
 
-// FindingUnassignedAsset Yes[Unassociated assets]Node key,It's also a screening sentry for the list interface.:
-// hit asset_ids Discoveries of assets that are empty or mentioned.
+// FindingUnassignedAsset is the node key for "unlinked assets" and the list API's filter sentinel.
+// It matches findings whose asset_ids are empty, or whose referenced assets have been deleted.
 const FindingUnassignedAsset = "__none__"
 
-// findingAssetTreeMaxNodes is the maximum number of nodes returned to the front end. Discard the entire layer from the bottom when it's out
-// (endpoint Priority,Secondly service):Their numbers have been added to the parent node.,Nodes without numbers..
+// findingAssetTreeMaxNodes is the maximum number of nodes returned to the frontend.
+// When the tree is larger, whole layers are dropped from the bottom (endpoints first,
+// then services). Their counts have already been rolled into the parent, so dropping
+// a node does not drop the numbers.
 const findingAssetTreeMaxNodes = 3000
 
-// FindingAssetNode is a node of the asset tree.Key Same as the cover map:Asset line "a:<id>",
-// Business is "c:<id>",No asset line root domain is synthetic. "r:<domain>",The unconnected barrel is "__none__".
+// FindingAssetNode is one node of the asset tree. Keys match the coverage graph:
+// an asset row is "a:<id>", a company is "c:<id>", a root domain with no asset
+// row is a synthetic "r:<domain>", and the unlinked bucket is "__none__".
 type FindingAssetNode struct {
 	Key       string `json:"key"`
 	Parent    string `json:"parent,omitempty"`
@@ -34,8 +39,9 @@ type FindingAssetNode struct {
 	Label     string `json:"label"`
 	AssetID   int64  `json:"asset_id,omitempty"`
 	CompanyID int64  `json:"company_id,omitempty"`
-	// Self It's the number of findings directly on the asset.;Total Including all children and press finding Heavy.
-	// (When a multiple asset is found,Only once on our common ancestors.).
+	// Self is the number of findings attached directly to this asset. Total includes
+	// every descendant and is deduplicated by finding (a finding on several assets
+	// is counted once on their common ancestor).
 	Self        int       `json:"self"`
 	Total       int       `json:"total"`
 	Critical    int       `json:"critical"`
@@ -45,17 +51,18 @@ type FindingAssetNode struct {
 	LastFoundAt time.Time `json:"last_found_at"`
 }
 
-// FindingAssetTree It's a one-time snapshot of the whole tree..Nodes Scheduled:Number of discoveries at the same parent node
-// Descending, Tab Upgrading,[Unassociated assets]Always at the end.
+// FindingAssetTree is a one-shot snapshot of the whole tree. Nodes are ordered:
+// under the same parent, by finding count descending, then label ascending.
+// "Unlinked assets" is always last.
 type FindingAssetTree struct {
 	Nodes        []FindingAssetNode `json:"nodes"`
 	FindingTotal int                `json:"finding_total"`
-	// Truncated=true It means it's out of control. DroppedKinds Level in.
+	// Truncated is true when layers in DroppedKinds were dropped to keep the payload small.
 	Truncated    bool     `json:"truncated"`
 	DroppedKinds []string `json:"dropped_kinds,omitempty"`
 }
 
-// assetRow It's an asset field for a tree. Set.
+// assetRow is the subset of asset fields needed to build the tree.
 type assetRow struct {
 	id          int64
 	kind        string
@@ -76,9 +83,10 @@ func (a *assetRow) coverageNode() CoverageGraphNode {
 	}
 }
 
-// label Reuse the tab rules for the overlay(URL > domain > ip > app_name > root_domain),But no.
-// URL Services(SMB,Not HTTP Port etc.)To complement port:Otherwise its label will be with the host. IP/Domain name.
-// Exactly the same.,The two lines of the tree seem to repeat themselves completely..
+// label reuses the coverage-graph label rules (URL > domain > ip > app_name > root_domain).
+// A service with no URL (SMB, a non-HTTP port, and so on) also gets its port.
+// Otherwise its label is identical to the host IP or domain row, and the parent
+// and child look like duplicates.
 func (a *assetRow) label() string {
 	if a.kind == "service" && a.url == "" {
 		if host, port := a.hostPort(); host != "" && port > 0 {
@@ -90,7 +98,7 @@ func (a *assetRow) label() string {
 	return coverageNodeLabel(&n)
 }
 
-// hostPort Consistent with the coverage map:Priority domain,Secondly URL inside host,Finally ip.
+// hostPort matches the coverage graph: domain first, then the host inside the URL, then ip.
 func (a *assetRow) hostPort() (string, int) {
 	n := a.coverageNode()
 	return hostPortOf(&n)
@@ -120,21 +128,22 @@ func scanAssetRows(rows interface {
 	return out, rows.Err()
 }
 
-// findingAssetHit It's the smallest information we need to find in the construction phase..
+// findingAssetHit is the minimum finding information needed while the tree is built.
 type findingAssetHit struct {
 	severity string
 	ts       time.Time
 	assetIDs []int64
 }
 
-// BuildFindingAssetTree Build Asset Tree Based on Current Filter.AssetScope I'm not involved.(Or the trees will follow.
-// Selected nodes collapse into a chain).
+// BuildFindingAssetTree builds the asset tree for the current filter. AssetScope
+// itself is not applied, or the tree would collapse to the chain under the selected node.
 func (d *DB) BuildFindingAssetTree(f FindingFilter) (*FindingAssetTree, error) {
 	return d.buildFindingAssetTree(f, findingAssetTreeMaxNodes)
 }
 
-// buildFindingAssetTree It's internal implementation with nodes ceiling..maxNodes<=0 Insisting——Analysis
-// AssetScope We have to use this pattern.,Or they'll lose it. endpoint I'll let the trees. id I don't know..
+// buildFindingAssetTree is the internal implementation with a node cap.
+// maxNodes <= 0 means do not truncate. Resolving AssetScope must use that mode,
+// or a dropped endpoint would leave the subtree id set incomplete.
 func (d *DB) buildFindingAssetTree(f FindingFilter, maxNodes int) (*FindingAssetTree, error) {
 	f.AssetScope = ""
 	f.assetIDs, f.assetNone, f.assetMiss = nil, false, false
@@ -180,9 +189,10 @@ FROM findings f LEFT JOIN tasks t ON f.task_id = t.id`+where, args...)
 		return nil, err
 	}
 
-	// count:A discovery goes up the ancestor chain of each of its assets,Collect after deduplication key Gather together and then one by one +1,
-	// So the parent nodes don't double count because of a discovery of multiple subassemies..
-	unassigned := &FindingAssetNode{Key: FindingUnassignedAsset, Kind: "none", Label: "Unassociated assets"}
+	// Counting: a finding walks up the ancestor chain of each of its assets.
+	// The deduplicated keys are collected and each is incremented once, so a
+	// parent is not counted twice when one finding hangs on several child assets.
+	unassigned := &FindingAssetNode{Key: FindingUnassignedAsset, Kind: "none", Label: "Unlinked assets"}
 	touched := map[string]bool{}
 	for _, h := range hits {
 		clear(touched)
@@ -223,7 +233,7 @@ FROM findings f LEFT JOIN tasks t ON f.task_id = t.id`+where, args...)
 	return tree, nil
 }
 
-// countFinding Add one to the node.(Total / Severity Drums / Last Found Time).
+// countFinding adds one finding onto a node (total, severity buckets, and last-found time).
 func countFinding(n *FindingAssetNode, h findingAssetHit) {
 	if n == nil {
 		return
@@ -244,8 +254,9 @@ func countFinding(n *FindingAssetNode, h findingAssetHit) {
 	}
 }
 
-// loadFindingAssetRows Read hit asset rows,And then we'll make up our ancestors.(service Host domain name/IP,
-// Root domain name for sub-domain name).Our ancestors may have found nothing.,But trees need them to form..
+// loadFindingAssetRows reads the hit asset rows, then fills in ancestors round by
+// round (a service's host domain or IP, a subdomain's root domain). An ancestor
+// may have no findings of its own, but the tree needs it in order to take shape.
 func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, error) {
 	byID := map[int64]*assetRow{}
 	if len(ids) == 0 {
@@ -267,8 +278,9 @@ func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, erro
 		byID[a.id] = a
 	}
 
-	// The host identification of the parent node is missing per round,Batch one.;Number of layers fixed(endpoint→service→
-	// subdomain/ip→root_domain),4 The wheel is strong enough..
+	// Each round finds host identifiers whose parent is still missing and loads one
+	// more layer. The depth is fixed (endpoint → service → subdomain/ip → root_domain),
+	// so 4 rounds are enough to converge.
 	for range 4 {
 		want := missingParents(byID)
 		if want.empty() {
@@ -285,20 +297,21 @@ func (d *DB) loadFindingAssetRows(ids map[int64]bool) (map[int64]*assetRow, erro
 	return byID, nil
 }
 
-// missingHosts It's a round of host identifications to go to Curly.,Separated by target asset type.
+// missingHosts is the set of host identifiers one fill-in round must look up, split by target asset type.
 type missingHosts struct {
-	services []string // endpoint The host.(Find service row)
-	domains  []string // service/endpoint Host domain name(Find subdomain row)
-	ips      []string // service/endpoint The host. IP(Find ip row)
-	roots    []string // Root domain name for sub-domain name(Find root_domain row)
+	services []string // endpoint hosts (look up service rows)
+	domains  []string // service/endpoint host domains (look up subdomain rows)
+	ips      []string // service/endpoint host IPs (look up ip rows)
+	roots    []string // subdomain root domains (look up root_domain rows)
 }
 
 func (m missingHosts) empty() bool {
 	return len(m.services) == 0 && len(m.domains) == 0 && len(m.ips) == 0 && len(m.roots) == 0
 }
 
-// missingParents Summarize the hosts that have not been loaded.:service(Supply endpoint Hang on.),Subdomain name/IP(Supply
-// service With endpoint Hang on.)With root domain name(Supply sub-domain names).
+// missingParents collects hosts that have not been loaded yet: services (for
+// endpoints to hang from), subdomains and IPs (for services and endpoints),
+// and root domains (for subdomains).
 func missingParents(byID map[int64]*assetRow) missingHosts {
 	haveService := map[string]bool{}
 	haveDomain := map[string]bool{}
@@ -326,8 +339,8 @@ func missingParents(byID map[int64]*assetRow) missingHosts {
 		switch a.kind {
 		case "service", "endpoint":
 			host, _ := a.hostPort()
-			// endpoint I'm looking for the same host. service;The port won't match. service Yes. Total=0
-			// It was finally filtered out.,It won't contaminate the tree..
+			// An endpoint first looks for a service on the same host. A service whose
+			// port does not match ends at Total=0 and is filtered out, so it does not pollute the tree.
 			if a.kind == "endpoint" && host != "" && !haveService[host] {
 				wantService[host] = true
 			}
@@ -366,7 +379,7 @@ func keysOf(m map[string]bool) []string {
 	return out
 }
 
-// isIPLiteral A rough one. host Right? IP Volume(To decide to go. ip Still? subdomain Look for the host.).
+// isIPLiteral roughly reports whether host is an IP literal, which decides whether to look up the ip or subdomain table.
 func isIPLiteral(host string) bool {
 	if strings.Contains(host, ":") {
 		return true // IPv6
@@ -385,7 +398,7 @@ func isIPLiteral(host string) bool {
 	return strings.Count(host, ".") == 3
 }
 
-// loadAssetsByHost Complete the asset by host identification batch Okay.,Returns the new lines of the current round.
+// loadAssetsByHost loads asset rows in bulk by host identifier and returns how many rows this round added.
 func (d *DB) loadAssetsByHost(want missingHosts, byID map[int64]*assetRow) (int, error) {
 	added := 0
 	load := func(q string, arg []string) error {
@@ -428,8 +441,9 @@ WHERE a.type='root_domain' AND a.domain = ANY($1::text[])`, want.roots); err != 
 	return added, nil
 }
 
-// assembleFindingAssetNodes Turning asset lines into nodes and linking to paternity. When Father is missing(Curly.
-// There's no such thing as an asset.)Synth "r:<domain>" Bitpoint,Consistency with processing of coverage maps.
+// assembleFindingAssetNodes turns asset rows into nodes and links parents to children.
+// When the parent is missing (the database has no asset row for that root domain),
+// it synthesizes an "r:<domain>" placeholder, matching the coverage graph.
 func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*FindingAssetNode, map[string]string) {
 	nodes := map[string]*FindingAssetNode{}
 	parentOf := map[string]string{}
@@ -466,7 +480,7 @@ func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*Fi
 		}
 	}
 
-	// When the root domain name of the sub-domain has no asset line in the library,Synthesizing a placeholder,Keep sub-domains from spreading to the top..
+	// If a subdomain's root domain has no asset row, synthesize a placeholder so the subdomain does not float to the top.
 	for _, a := range byID {
 		if a.kind != "subdomain" || a.rootDomain == "" {
 			continue
@@ -513,8 +527,9 @@ func (d *DB) assembleFindingAssetNodes(byID map[int64]*assetRow) (map[string]*Fi
 	return nodes, parentOf
 }
 
-// attachCompanyNodes To top assets.(Root domain name / IP / Application)Supplementary parent node——Only assets are real.
-// It's only when you belong to an enterprise that you're in business.,The assets that don't belong are still the top floor..
+// attachCompanyNodes adds a company parent above top-level assets (root domain, IP, or app).
+// A company layer appears only when the asset really belongs to a company.
+// Assets with no company stay at the top themselves.
 func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map[string]string) error {
 	want := map[int64]bool{}
 	for _, n := range nodes {
@@ -556,7 +571,7 @@ func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map
 			continue
 		}
 		if name == "" {
-			name = "Enterprise #" + strconv.FormatInt(id, 10)
+			name = "Company #" + strconv.FormatInt(id, 10)
 		}
 		nodes[key] = &FindingAssetNode{Key: key, Kind: "company", Label: name, CompanyID: id}
 	}
@@ -577,8 +592,9 @@ func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map
 	return nil
 }
 
-// sortFindingAssetNodes Sort:I found more than one.,Same number by label;[Unassociated assets]Always at the end.
-// Backend in array order pasted with subnodes,So as long as the relative order is correct under the same parent node..
+// sortFindingAssetNodes orders nodes: more findings first, then by label.
+// "Unlinked assets" is always last. The frontend attaches children in array
+// order, so only the relative order under the same parent has to be correct.
 func sortFindingAssetNodes(nodes []FindingAssetNode) {
 	sort.SliceStable(nodes, func(i, j int) bool {
 		a, b := nodes[i], nodes[j]
@@ -592,8 +608,9 @@ func sortFindingAssetNodes(nodes []FindingAssetNode) {
 	})
 }
 
-// truncateFindingAssetTree Discard the entire layer when there are too many nodes(First endpoint Again. service).Counted
-// Add to Parent,It's just a level of detail that can be expanded..
+// truncateFindingAssetTree drops whole layers when there are too many nodes
+// (endpoints first, then services). Counts have already been rolled into the
+// parent, so only an expandable detail layer is lost.
 func truncateFindingAssetTree(tree *FindingAssetTree, maxNodes int) {
 	if maxNodes <= 0 || len(tree.Nodes) <= maxNodes {
 		return
@@ -615,8 +632,8 @@ func truncateFindingAssetTree(tree *FindingAssetTree, maxNodes int) {
 	}
 }
 
-// applyAssetScope handle AssetScope(node key)Parsing as Available SQL Assets id Gather. Select
-// One node equals the entire tree.,That's why we need to build the tree and collect the children..
+// applyAssetScope turns AssetScope (a node key) into the set of asset ids usable in SQL.
+// Selecting a node selects its whole subtree, so the tree is built first and then the descendants are collected.
 func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 	scope := strings.TrimSpace(f.AssetScope)
 	f.assetIDs, f.assetNone, f.assetMiss = nil, false, false
@@ -627,7 +644,7 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 		f.assetNone = true
 		return f, nil
 	}
-	// Do Not Break:It was lost. endpoint We're gonna get involved. id Collection,Otherwise the list will be less data.
+	// Do not truncate: a dropped endpoint must still be included in the id set, or the list would be missing rows.
 	tree, err := d.buildFindingAssetTree(f, 0)
 	if err != nil {
 		return f, err
@@ -639,7 +656,7 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 		children[n.Parent] = append(children[n.Parent], n)
 	}
 	if _, ok := byKey[scope]; !ok {
-		// The selected node no longer exists under the current filter,The result should be empty, not de-filter..
+		// The selected node no longer exists under the current filter. The result must be empty, not silently unfiltered.
 		f.assetMiss = true
 		return f, nil
 	}
@@ -665,8 +682,8 @@ func (d *DB) applyAssetScope(f FindingFilter) (FindingFilter, error) {
 	return f, nil
 }
 
-// assetIDContainments Put assets id become jsonb Set of right operations with judgement,Cooperation
-// idx_findings_asset_ids(GIN jsonb_path_ops)Use.
+// assetIDContainments turns asset ids into the right-hand jsonb containment values,
+// for use with idx_findings_asset_ids (GIN jsonb_path_ops).
 func assetIDContainments(ids []int64) []string {
 	out := make([]string, 0, len(ids))
 	for _, id := range ids {

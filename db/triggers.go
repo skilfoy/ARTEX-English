@@ -159,7 +159,7 @@ type TaskEvent struct {
 	Tool       string `json:"tool"`        // tool-call only: tool name
 	ToolInput  string `json:"tool_input"`  // tool-call only: Participation(JSON Text)
 	ToolOutput string `json:"tool_output"` // tool-call only: Return Contents
-	ToolIsErr  bool   `json:"tool_is_err"` // tool-call only: Other Organiser
+	ToolIsErr  bool   `json:"tool_is_err"` // tool-call only: whether the tool result is an error
 }
 
 // NewFindingsSince returns findings with node id > lastID across all live tasks,
