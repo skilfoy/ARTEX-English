@@ -184,7 +184,7 @@ func (f *fakeWebhook) body(t *testing.T, i int) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i >= len(f.bodies) {
-		t.Fatalf("Fake receiver only received %d Request not available %d strip", len(f.bodies), i)
+		t.Fatalf("fake receiver only has %d requests; cannot read request %d", len(f.bodies), i)
 	}
 	return f.bodies[i]
 }
@@ -192,7 +192,7 @@ func (f *fakeWebhook) body(t *testing.T, i int) map[string]any {
 func (f *fakeWebhook) last(t *testing.T) map[string]any {
 	t.Helper()
 	if f.count() == 0 {
-		t.Fatal("No requests received from the false receiver")
+		t.Fatal("fake receiver received no requests")
 	}
 	return f.body(t, f.count()-1)
 }
@@ -237,7 +237,7 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 	f.deliver(t, chID, "")
 
 	if hook.count() != 1 {
-		t.Fatalf("Should be sent 1 Message, Actual %d", hook.count())
+		t.Fatalf("expected 1 message, got %d", hook.count())
 	}
 	text := markdownText(t, hook.last(t))
 	for _, want := range []string{"SQLInjection", "High", "Abstract"} {
@@ -252,7 +252,7 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pending != 0 {
-		t.Fatalf("There's still after delivery. %d bar unmarked sent", pending)
+		t.Fatalf("after delivery, %d entries are still not marked sent", pending)
 	}
 }
 
@@ -266,10 +266,10 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 
 	r := f.request("GET", "/api/notify/channels", "")
 	if r.Code != 200 {
-		t.Fatalf("Column Channel Failed %d: %s", r.Code, r.Body)
+		t.Fatalf("listing channels failed %d: %s", r.Code, r.Body)
 	}
 	if strings.Contains(r.Body.String(), "abc123456") || strings.Contains(r.Body.String(), "SECabcdef123456") {
-		t.Fatalf("The interface leaked evidence.: %s", r.Body)
+		t.Fatalf("the API leaked a secret: %s", r.Body)
 	}
 	var listed struct {
 		Channels []struct {
@@ -295,7 +295,7 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 		t.Fatal("New Channel does not appear in list")
 	}
 	if !notify.IsMasked(fmt.Sprint(mine.Config["webhook"])) || !notify.IsMasked(fmt.Sprint(mine.Config["secret"])) {
-		t.Fatalf("Based field should be a mask value: %v", mine.Config)
+		t.Fatalf("credential fields should be masked: %v", mine.Config)
 	}
 	if len(mine.SecretKeys) == 0 {
 		t.Fatal("The interface should inform the front end which fields are supported")
@@ -311,10 +311,10 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 	}
 	cfg := f.channelConfig(t, chID)
 	if cfg["webhook"] != "https://oapi.dingtalk.com/robot/send?access_token=abc123456" {
-		t.Fatalf("We've got cover.: %v", cfg["webhook"])
+		t.Fatalf("sending the masked value back overwrote the real webhook: %v", cfg["webhook"])
 	}
 	if cfg["secret"] != "SECabcdef123456" {
-		t.Fatalf("Cover it up. secret It's covered.: %v", cfg["secret"])
+		t.Fatalf("sending the masked value back overwrote secret: %v", cfg["secret"])
 	}
 	if f.channel(t, chID).Name != "After the change of name" {
 		t.Fatal("Name not updated")
@@ -346,18 +346,18 @@ func TestNotifyChannelAPICreateValidation(t *testing.T) {
 		payload map[string]any
 		wantSub string
 	}{
-		{"Type illegal", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Invalid channel type"},
-		{"Missing Name", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "Missing channel name"},
-		{"Missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "Webhook"},
-		{"webhook It's illegal.", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "Webhook Address invalid"},
-		{"Pattern Illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "Invalid delivery mode"},
+		{"invalid type", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Invalid channel type"},
+		{"missing name", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "Missing channel name"},
+		{"missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "Webhook"},
+		{"illegal webhook scheme", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "invalid Webhook address"},
+		{"invalid mode", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "Invalid delivery mode"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, _ := json.Marshal(tc.payload)
 			r := f.request("POST", "/api/notify/channels", string(raw))
 			if r.Code != 400 {
-				t.Fatalf("Should return 400,get %d: %s", r.Code, r.Body)
+				t.Fatalf("expected 400, got %d: %s", r.Code, r.Body)
 			}
 			if !strings.Contains(r.Body.String(), tc.wantSub) {
 				t.Fatalf("Error message should be mentioned %q,get %s", tc.wantSub, r.Body)
@@ -365,7 +365,7 @@ func TestNotifyChannelAPICreateValidation(t *testing.T) {
 		})
 	}
 	if r := f.request("DELETE", "/api/notify/channels/99999999", ""); r.Code != 404 {
-		t.Fatalf("Delete non-existent channels should 404,get %d", r.Code)
+		t.Fatalf("deleting a missing channel should be 404, got %d", r.Code)
 	}
 }
 
@@ -387,7 +387,7 @@ func TestNotifyFilterBlocksBelowThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("A leak below the threshold should not create a delivery. %d strip", n)
+		t.Fatalf("a finding below the threshold must not create a delivery, got %d", n)
 	}
 	f.n.stepRealtime(context.Background(), f.channel(t, chID), 50, "")
 	if hook.count() != 0 {
@@ -423,15 +423,15 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 	f.agePendingBatch(t, chID)
 	f.n.stepDigest(ctx, ch, 50, "")
 	if got := hook.count(); got != 1 {
-		t.Fatalf("The three should be consolidated in a single message. %d strip", got)
+		t.Fatalf("three findings should be one message, sent %d", got)
 	}
 	text := markdownText(t, hook.last(t))
 	if !strings.Contains(text, "past 30 minutes") || !strings.Contains(text, "3 findings") {
-		t.Fatalf("The sum message is missing the number of bars/Time Window:\n%s", text)
+		t.Fatalf("summary is missing the count or the time window:\n%s", text)
 	}
 	for i := 1; i <= 3; i++ {
 		if !strings.Contains(text, fmt.Sprintf("digest-finding-%d", i)) {
-			t.Fatalf("The summary message is missing %d strip:\n%s", i, text)
+			t.Fatalf("summary is missing item %d:\n%s", i, text)
 		}
 	}
 	// The same number should be shared batch_id.
@@ -440,7 +440,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if total != 3 || distinct != 1 {
-		t.Fatalf("Three deliveries should be shared. batch_id,get distinct=%d total=%d", distinct, total)
+		t.Fatalf("three deliveries should share one batch_id, got distinct=%d total=%d", distinct, total)
 	}
 }
 
@@ -462,7 +462,7 @@ func TestNotifyDisabledChannelDoesNotSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("Discontinuation channels should not produce delivery. %d strip", n)
+		t.Fatalf("a disabled channel must not create a delivery, got %d", n)
 	}
 }
 
@@ -492,7 +492,7 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("Not received[Status change → Fixed](total) %d strip)", hook.count())
+		t.Fatalf("did not receive a message containing Status change → Fixed (%d messages)", hook.count())
 	}
 }
 
@@ -518,7 +518,7 @@ WHERE d.channel_id=$1 AND e.kind=$2`, chID, notify.EventFindingStatusChanged).Sc
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("Unsubscribed change of status channel should not receive status change delivery, received %d strip", n)
+		t.Fatalf("a channel that does not subscribe to status changes must not receive one, got %d", n)
 	}
 }
 
@@ -534,7 +534,7 @@ func TestNotifyTestMessageEndpoint(t *testing.T) {
 		t.Fatalf("Test Sender Failed %d: %s", r.Code, r.Body)
 	}
 	if hook.count() != 1 {
-		t.Fatalf("The false receiver should be received. 1 A test message. Got it. %d", hook.count())
+		t.Fatalf("the fake receiver should get 1 test message, got %d", hook.count())
 	}
 	// The test message must be able to tell at first sight that it's a test. Hole.
 	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "Test") {
@@ -639,7 +639,7 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(meta.Kinds) != len(notify.Kinds()) {
-		t.Fatalf("meta All should be listed %d A channel. Got it. %d", len(notify.Kinds()), len(meta.Kinds))
+		t.Fatalf("meta should list all %d channel types, got %d", len(notify.Kinds()), len(meta.Kinds))
 	}
 	for _, k := range meta.Kinds {
 		if len(k.SecretKeys) == 0 {
@@ -669,7 +669,7 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 		`{"notify_digest_interval_min":99999}`,
 	} {
 		if r := f.request("PUT", "/api/settings", body); r.Code != 400 {
-			t.Errorf("%s Should return 400,get %d", body, r.Code)
+			t.Errorf("%s should return 400, got %d", body, r.Code)
 		}
 	}
 }
@@ -713,7 +713,7 @@ func TestNotifyNoDeepLinkWithoutBaseURL(t *testing.T) {
 
 	body := hook.last(t)
 	if body["msgtype"] != "markdown" {
-		t.Fatalf("Should be sent without an external address markdown,get %v", body["msgtype"])
+		t.Fatalf("without an external base URL the message should be markdown, got %v", body["msgtype"])
 	}
 	if text := markdownText(t, body); strings.Contains(text, "View details") {
 		t.Fatalf("with no external base URL the message must not contain a detail link:\n%s", text)
@@ -769,14 +769,14 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 		t.Fatal("expected some entries to be marked sent")
 	}
 	if pending == 0 {
-		t.Fatalf("Groups %d It's impossible to load all the bars. 4096 Byte, left to be issued;sent=%d", total, sent)
+		t.Fatalf("a batch of %d cannot fit in 4096 bytes; some must stay pending; sent=%d", total, sent)
 	}
 	if sent+pending != total {
-		t.Fatalf("Inconsistent number of entries:sent=%d pending=%d total=%d(It's neither delivered nor prepared.=Lost)", sent, pending, total)
+		t.Fatalf("delivery counts do not add up: sent=%d pending=%d total=%d (neither sent nor pending means lost)", sent, pending, total)
 	}
 	// How many more are not included in this article?.
 	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "remain") {
-		t.Fatalf("The message should indicate that there are other entries not included in this article.:\n%.400s", text)
+		t.Fatalf("the message should say some entries were left out:\n%.400s", text)
 	}
 
 	// Postponed entries may not consume the retest budget: when received attempts Optimistic. +1,We need to reduce it when we delay it..
@@ -786,7 +786,7 @@ WHERE channel_id=$1 AND state=$2`, chID, db.NotifyStatePending).Scan(&maxAttempt
 		t.Fatal(err)
 	}
 	if maxAttempts > 0 {
-		t.Fatalf("Postponed entries should not consume the number of re-tests (other than a few that will fail), received attempts=%d", maxAttempts)
+		t.Fatalf("postponed entries must not consume retries (otherwise a few delays mark them failed), got attempts=%d", maxAttempts)
 	}
 
 	// Keep going until everything is delivered, and assert that it really took more than one round.
@@ -838,72 +838,74 @@ func TestNotifyBackoffTableMatchesAttemptBudget(t *testing.T) {
 		t.Fatalf("backoff slots (%d) and max attempts (%d) disagree — changing one requires changing the other",
 			len(notifyBackoff), db.MaxNotifyAttempts)
 	}
-	// The distance between retreats must be kept intact, otherwise the re-test will increase the speed of the trials and the flow limits..
+	// Backoff intervals must be non-decreasing. If they shrink, retries get more
+	// aggressive and make rate limiting worse.
 	for i := 1; i < len(notifyBackoff); i++ {
 		if notifyBackoff[i] < notifyBackoff[i-1] {
-			t.Fatalf("The distance between retreats must be kept in order: %d Trail %v < No. %d Trail %v",
+			t.Fatalf("backoff intervals must be non-decreasing: slot %d %v < slot %d %v",
 				i, notifyBackoff[i], i-1, notifyBackoff[i-1])
 		}
 	}
 }
 
-// TestNotifyRateLimitDoesNotConsumeRetryBudget Lock it.[Take the token and get it.]Order.
-// If it's the other way around, it's already been counted once. attempts,
-// The budget will be drained by pure waiting, and finally it will enter. failed.
+// TestNotifyRateLimitDoesNotConsumeRetryBudget locks the order: take a token, then claim the delivery.
+// If that were reversed, a delivery blocked by the rate limit would already have counted one attempt.
+// Pure waiting would drain the retry budget and the delivery would end in failed.
 func TestNotifyRateLimitDoesNotConsumeRetryBudget(t *testing.T) {
-	// Only the barrel itself, no need. Server(I shouldn't have built one for it.).
+	// Exercise the token bucket only. Do not build a Server for it.
 	n := &Notifier{buckets: map[int64]*notifyBucket{}}
 	now := time.Now()
-	// Every minute 1 Article: Most when full 1 strip.
+	// One per minute: a full bucket yields at most one.
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now); got != 1 {
-		t.Fatalf("Every minute when the bucket is full 1 Articles to be drawn 1 A token. Got it. %d", got)
+		t.Fatalf("a full bucket at 1/min should yield 1 token, got %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Millisecond)); got != 0 {
-		t.Fatalf("Return as soon as the token is exhausted 0,get %d", got)
+		t.Fatalf("an empty bucket should return 0 immediately, got %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(30*time.Second)); got != 0 {
-		t.Fatalf("Halfway should not be filled with a token. %d", got)
+		t.Fatalf("half a period must not refill a whole token, got %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Minute)); got != 1 {
-		t.Fatalf("Recoverable after one cycle 1 A token. Got it. %d", got)
+		t.Fatalf("one full period should refill 1 token, got %d", got)
 	}
-	// Limited ceilings for open channels to avoid an unlimited backlog of single rounds Hold on..
+	// An unlimited channel still has a per-round cap so one tick cannot be stuck on an infinite backlog.
 	if got := n.takeTokens(2, 0, notifyUnlimitedBurstPerTick+10, now); got != notifyUnlimitedBurstPerTick {
-		t.Fatalf("Unlimited flow should return the maximum per round %d,get %d", notifyUnlimitedBurstPerTick, got)
+		t.Fatalf("unlimited rate should return the per-round cap %d, got %d", notifyUnlimitedBurstPerTick, got)
 	}
-	// The barrel between channels is independent of each other..
+	// Token buckets are independent per channel.
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Millisecond)); got != 0 {
-		t.Fatalf("Channel 1 The buckets should still be empty, get %d", got)
+		t.Fatalf("channel 1's bucket should still be empty, got %d", got)
 	}
 }
 
-// TestNotifyTakeTokensKeepsUnusedTokens Lock it.[Only want pieces]Semantic.
+// TestNotifyTakeTokensKeepsUnusedTokens locks the "take only want" behavior.
 //
-// Once achieved, the barrel was empty before it was cut off by the caller. rate=100/min The channels are full of buckets.,
-// One round only. 5 Bar, left 95 A token is dropped; the channel is not subject to the same button as the delivery.
-// The result is what the note says.[It'll be one-off when there's a backlog. rate_per_min strip]Not under any circumstances..
+// An older implementation drained the whole bucket and let the caller truncate.
+// A channel at rate=100/min with a full bucket that only needed 5 this round
+// discarded the other 95 tokens. A round with nothing waiting was charged the same way.
+// The comment's promise, "a backlog can flush rate_per_min items at once", was then impossible.
 func TestNotifyTakeTokensKeepsUnusedTokens(t *testing.T) {
 	n := &Notifier{buckets: map[int64]*notifyBucket{}}
 	now := time.Now()
-	// The barrel is initially full.(100),It's only for this round. 5 pieces.
+	// The bucket starts full (100). This round wants 5.
 	if got := n.takeTokens(1, 100, 5, now); got != 5 {
-		t.Fatalf("want=5 It should be right there. 5 A token. Got it. %d", got)
+		t.Fatalf("want=5 should take exactly 5 tokens, got %d", got)
 	}
-	// Critical assertion: the rest 95 The one must still be in the bucket, not be left empty..
-	// Without advance time, ensure that only stocks, not supplements, are available.
+	// The remaining 95 must still be in the bucket, not discarded.
+	// Do not advance time, so a later take can only come from stock, not a refill.
 	if got := n.takeTokens(1, 100, 95, now); got != 95 {
-		t.Fatalf("The remaining tokens should remain valid (expected) 95),get %d——The barrel is empty.", got)
+		t.Fatalf("the remaining tokens should still be available (want 95), got %d — the bucket was drained", got)
 	}
 	if got := n.takeTokens(1, 100, 1, now); got != 0 {
-		t.Fatalf("The buckets are out. We should go back. 0,get %d", got)
+		t.Fatalf("the bucket is empty and should return 0, got %d", got)
 	}
-	// want<=0 No token should be deducted.).
+	// want<=0 must not spend any tokens (an empty round is free).
 	n2 := &Notifier{buckets: map[int64]*notifyBucket{}}
 	if got := n2.takeTokens(1, 20, 0, now); got != 0 {
-		t.Fatalf("want=0 Should return 0,get %d", got)
+		t.Fatalf("want=0 should return 0, got %d", got)
 	}
 	if got := n2.takeTokens(1, 20, 20, now); got != 20 {
-		t.Fatalf("want=0 It's not supposed to take away the cards. It should still be full. 20,get %d", got)
+		t.Fatalf("the want=0 call must not have spent tokens; a full 20 should still be available, got %d", got)
 	}
 }
 
@@ -911,7 +913,7 @@ func TestNotifyTakeTokensKeepsUnusedTokens(t *testing.T) {
 //
 // If the digest batch size were tied to the per-tick request budget, a channel with rate_per_min=20
 // would earn one token per 3-second tick and each digest would hold one finding. That is not a digest,
-// and the header would still say "1 finding in the last 30 minutes". The bug does not error.
+// and the header would still say "1 finding in the past 30 minutes". The bug does not error.
 // Existing end-to-end tests pass stepDigest a large limit and skip the budget math inside step,
 // so this test asserts the decision itself.
 func TestDigestTickPlanDecouplesBatchSizeFromSendBudget(t *testing.T) {
@@ -921,7 +923,7 @@ func TestDigestTickPlanDecouplesBatchSizeFromSendBudget(t *testing.T) {
 		t.Fatalf("one digest batch is one message and must cost exactly 1 token, got %d", tokens)
 	}
 	if claimLimit != db.MaxDigestBatchSize {
-		t.Fatalf("The sum batch size should be memory upper db.MaxDigestBatchSize=%d,get %d",
+		t.Fatalf("digest batch size should be the in-memory cap db.MaxDigestBatchSize=%d, got %d",
 			db.MaxDigestBatchSize, claimLimit)
 	}
 	// The batch size must be much larger than the per-tick request budget. If they are the same
