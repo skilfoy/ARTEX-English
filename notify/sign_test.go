@@ -6,8 +6,9 @@ import (
 	"time"
 )
 
-// Signing base value by OpenSSL Independently, it doesn't come out of this bag.——
-// Otherwise, it's just proof.[The code hasn't changed.],I can't prove it.[The algorithm is correct.].
+// The reference signatures were computed independently with OpenSSL, not by
+// this package's own implementation. Otherwise the test only proves the code
+// did not change, not that the algorithm is right.
 //
 //	TS=1700000000000, SECRET=SECtest123
 //	DingTalk: printf '%s\n%s' "$TS" "$SECRET" | openssl dgst -sha256 -hmac "$SECRET" -binary | openssl base64 -A
@@ -24,35 +25,37 @@ const (
 func TestDingTalkSignMatchesReference(t *testing.T) {
 	got, err := dingTalkSignedURL("https://oapi.dingtalk.com/robot/send?access_token=tok", signTestSecret, time.UnixMilli(signTestTSMillis))
 	if err != nil {
-		t.Fatalf("Signing failed: %v", err)
+		t.Fatalf("signing failed: %v", err)
 	}
 	u, err := url.Parse(got)
 	if err != nil {
-		t.Fatalf("Output address not parsed: %v", err)
+		t.Fatalf("produced URL is not parseable: %v", err)
 	}
 	q := u.Query()
 	if q.Get("sign") != dingTalkExpected {
-		t.Errorf("Signature does not match\nExpectations %s\nget %s", dingTalkExpected, q.Get("sign"))
+		t.Errorf("signature mismatch\nwant %s\ngot  %s", dingTalkExpected, q.Get("sign"))
 	}
 	if q.Get("timestamp") != "1700000000000" {
-		t.Errorf("Time stamp should be milliseconds and carried in the same way. %q", q.Get("timestamp"))
+		t.Errorf("timestamp should be milliseconds and passed through unchanged, got %q", q.Get("timestamp"))
 	}
-	// Original query Parameter(access_token)Can't be covered by a signature..
+	// The original query parameter (access_token) must not be overwritten by signing.
 	if q.Get("access_token") != "tok" {
-		t.Errorf("Original query Parameters lost, got %q", q.Get("access_token"))
+		t.Errorf("original query parameter was lost, got %q", q.Get("access_token"))
 	}
 }
 
 func TestFeishuSignMatchesReference(t *testing.T) {
 	got := feishuSign("1700000000000", signTestSecret)
 	if got != feishuExpected {
-		t.Errorf("Signature does not match\nExpectations %s\nget %s", feishuExpected, got)
+		t.Errorf("signature mismatch\nwant %s\ngot  %s", feishuExpected, got)
 	}
 }
 
-// TestSignAlgorithmsDiffer The algorithms that lock the two families are different. They're just the order of the parameters of each other.
-// (DingTalk key=secret,Feishu key=To be signed),
-// This example ensures that in the future, the re-construction will not merge the two into the same function..
+// TestSignAlgorithmsDiffer locks the difference between the two algorithms.
+// Each is the other's argument order (DingTalk key=secret, Feishu
+// key=string-to-sign). Copying one platform's implementation fails the
+// other's check. This test keeps a later refactor from collapsing them into
+// one function.
 func TestSignAlgorithmsDiffer(t *testing.T) {
 	ts := "1700000000000"
 	dingURL, err := dingTalkSignedURL("https://example.com/hook", signTestSecret, time.UnixMilli(signTestTSMillis))
@@ -61,19 +64,20 @@ func TestSignAlgorithmsDiffer(t *testing.T) {
 	}
 	dq, _ := url.Parse(dingURL)
 	if dq.Query().Get("sign") == feishuSign(ts, signTestSecret) {
-		t.Fatal("The nails are the same as the Flying Book's signature.")
+		t.Fatal("DingTalk and Feishu signatures match, so one of the algorithms is wrong")
 	}
 }
 
 func TestDingTalkNoSecretLeavesURLUntouched(t *testing.T) {
-	// Unopened additional robots: cannot be added in blank timestamp/sign Parameter.
+	// A robot that does not use signing must not gain timestamp or sign
+	// parameters out of nowhere.
 	const hook = "https://oapi.dingtalk.com/robot/send?access_token=tok"
 	got, err := dingTalkSignedURL(hook, "", time.UnixMilli(signTestTSMillis))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != hook {
-		t.Fatalf("Not configured secret The address should not be changed. %q", got)
+		t.Fatalf("URL should be unchanged when secret is not set, got %q", got)
 	}
 }
 
@@ -81,14 +85,15 @@ func TestValidateHTTPURL(t *testing.T) {
 	ok := []string{"https://example.com/hook", "http://10.0.0.1:8080/x?y=1"}
 	for _, s := range ok {
 		if err := validateHTTPURL(s); err != nil {
-			t.Errorf("%q Should be accepted: %v", s, err)
+			t.Errorf("%q should be accepted: %v", s, err)
 		}
 	}
-	// file:// It's not allowed.——http.Client They were treated beyond expectations..
+	// file:// and similar must not be allowed. http.Client's handling of
+	// them is outside what this feature expects.
 	bad := []string{"", "file:///etc/passwd", "ftp://example.com", "https://", "gopher://x"}
 	for _, s := range bad {
 		if err := validateHTTPURL(s); err == nil {
-			t.Errorf("%q It should be rejected.", s)
+			t.Errorf("%q should be rejected", s)
 		}
 	}
 }

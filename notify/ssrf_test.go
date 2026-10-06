@@ -12,22 +12,27 @@ import (
 	"testing"
 )
 
-// This document covers two related enhancements:
-//   ① The delivery address must not be used as a springboard. Network / Cloud metadata(SSRF)
-//   ② The error information from the address verification should not be taken out of the address.
+// This file covers two related hardenings:
+//   - a delivery address must not use the server as a pivot into the internal
+//     network or cloud metadata (SSRF)
+//   - an address-validation error must not carry credentials that were in
+//     the address
 //
-// For the test environment: this package is used extensively 127.0.0.1 Top httptest Fake receiver. Guard will stop by default.
-// They are. So... TestMain Unique Open AllowLocalTargetsEnv,And each below SSRF Example
-// It's obvious.**Default Rejection**Conduct.
+// Test environment: many cases in this package use an httptest receiver on
+// 127.0.0.1, and the guard would reject them by default. TestMain turns
+// AllowLocalTargetsEnv on for the package, and each SSRF case below clears
+// it so the assertion is the default-deny behavior.
 
 func TestMain(m *testing.M) {
-	// Lets regular routines match local fake receptions. End;SSRF I'll use the regular meeting to empty myself..
+	// Let ordinary cases reach a local fake receiver. SSRF cases clear the
+	// variable themselves for the duration of the test.
 	_ = os.Setenv(AllowLocalTargetsEnv, "1")
 	os.Exit(m.Run())
 }
 
-// TestDialGuardRejectsLoopbackByDefault Yes SSRF The core of the defense.:
-// Default configuration, drop to ring return address must be**Connect Layer**Reject.
+// TestDialGuardRejectsLoopbackByDefault is the core SSRF assertion: with the
+// default config, delivery to a loopback address must be refused at connect
+// time.
 func TestDialGuardRejectsLoopbackByDefault(t *testing.T) {
 	var hit bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -36,23 +41,25 @@ func TestDialGuardRejectsLoopbackByDefault(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv(AllowLocalTargetsEnv, "") // Turn off the escape. = Default Behaviour
+	t.Setenv(AllowLocalTargetsEnv, "") // close the hatch = default behavior
 	_, err := (dingTalkChannel{}).Send(context.Background(),
 		map[string]any{"webhook": srv.URL + "/robot/send"}, Message{Items: []Item{{Severity: "high"}}})
 	if err == nil {
-		t.Fatal("Default should not allow delivery to ringback address")
+		t.Fatal("delivery to a loopback address should not be allowed by default")
 	}
 	if hit {
-		t.Fatal("The request has reached the service.——The guards aren't working.")
+		t.Fatal("the request reached a local service; the guard did not take effect")
 	}
-	// The error message should guide the user how to let it go. SMTP Relay is valid configuration).
+	// The error has to tell the user how to opt in. A local SMTP relay is a
+	// legitimate configuration.
 	if !strings.Contains(err.Error(), AllowLocalTargetsEnv) {
-		t.Errorf("The rejection message should show how to let it go.: %v", err)
+		t.Errorf("the refusal should say how to opt in explicitly: %v", err)
 	}
 }
 
-// TestDialGuardAllowsLoopbackWhenOptedIn Inverse use example: must be available after visible opening,
-// Otherwise, it's ours. postfix / This kind of legitimate deployment will be scrapped..
+// TestDialGuardAllowsLoopbackWhenOptedIn is the inverse: once the hatch is
+// opened explicitly, delivery must work. Otherwise a local postfix or an
+// internal relay is broken outright.
 func TestDialGuardAllowsLoopbackWhenOptedIn(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"errcode":0,"errmsg":"ok"}`)
@@ -62,38 +69,40 @@ func TestDialGuardAllowsLoopbackWhenOptedIn(t *testing.T) {
 	t.Setenv(AllowLocalTargetsEnv, "1")
 	if _, err := (dingTalkChannel{}).Send(context.Background(),
 		map[string]any{"webhook": srv.URL + "/robot/send"}, Message{Items: []Item{{Severity: "high"}}}); err != nil {
-		t.Fatalf("It's supposed to be ready for delivery when it's released.: %v", err)
+		t.Fatalf("delivery should succeed once explicitly allowed: %v", err)
 	}
 }
 
 func TestIsBlockedDialIP(t *testing.T) {
 	blocked := []string{
 		"127.0.0.1", "127.1.2.3", "::1",
-		"169.254.169.254", // Cloud metadata endpoint——Main reason why this function exists
+		"169.254.169.254", // cloud metadata endpoint; the main reason this function exists
 		"169.254.1.1", "fe80::1",
 		"0.0.0.0", "::",
 		"224.0.0.1", "ff02::1",
-		"::ffff:127.0.0.1", // IPv4-mapped The form has to be restored or it's bypassed.
+		"::ffff:127.0.0.1", // IPv4-mapped form must be unwrapped first, or it is a bypass
 		"",
 	}
 	for _, s := range blocked {
 		if !isBlockedDialIP(net.ParseIP(s)) {
-			t.Errorf("%s It should be rejected.", s)
+			t.Errorf("%s should be refused", s)
 		}
 	}
-	// RFC1918 Private Internet**I'll let you go.**:Network built-in Mattermost / SMTP Relay is a common legal usage..
-	// This claim fixes the deal.——If someone goes along with the Internet in the future, it will fail.,
-	// So we can make a conscious decision.).
+	// RFC1918 private space is deliberately allowed. An internal Mattermost
+	// or SMTP relay is a common legitimate target. This assertion pins that
+	// choice: if someone later adds a private-network check, the test fails
+	// and forces a conscious decision instead of silently breaking deploys.
 	allowed := []string{"10.0.0.5", "172.16.3.4", "192.168.1.10", "8.8.8.8", "2606:4700::1111"}
 	for _, s := range allowed {
 		if isBlockedDialIP(net.ParseIP(s)) {
-			t.Errorf("%s Should be let go.)", s)
+			t.Errorf("%s should be allowed (private networks are a common legitimate delivery target)", s)
 		}
 	}
 }
 
-// TestValidateHTTPURLRejectsLiteralPrivateTargets Overwrite pretip for configuration:
-// Literally IP It should be rejected while saving, not until the first delivery fails..
+// TestValidateHTTPURLRejectsLiteralPrivateTargets covers the hint at config
+// time: a literal IP should be rejected when the config is saved, not on the
+// first failed delivery.
 func TestValidateHTTPURLRejectsLiteralPrivateTargets(t *testing.T) {
 	t.Setenv(AllowLocalTargetsEnv, "")
 	for _, raw := range []string{
@@ -102,92 +111,105 @@ func TestValidateHTTPURLRejectsLiteralPrivateTargets(t *testing.T) {
 		"http://[::1]:8080/hook",
 	} {
 		if err := validateHTTPURL(raw); err == nil {
-			t.Errorf("%s Rejected at configuration stage", raw)
+			t.Errorf("%s should be rejected at config time", raw)
 		}
 	}
-	// Public and private Internet addresses passed as they were.).
+	// Public addresses pass, and private addresses pass here too (private
+	// space is left to dial time, which does not block it).
 	for _, raw := range []string{"https://oapi.dingtalk.com/robot/send", "http://10.0.0.9/hook"} {
 		if err := validateHTTPURL(raw); err != nil {
-			t.Errorf("%s It should be verified.: %v", raw, err)
+			t.Errorf("%s should pass validation: %v", raw, err)
 		}
 	}
 }
 
-// TestValidateHTTPURLErrorNeverLeaksCredentials It's the branch that the audit pointed out I missed in the last round..
+// TestValidateHTTPURLErrorNeverLeaksCredentials is the branch the audit said
+// was missed last round.
 //
-// url.Parse **Failed**Back in time. *url.Error,Other Error() Contains the full original address. Last round I just...
-// I'm allergic. http.Client.Do The return error left it here; it was filled.[Path to permanent failure]Example
-// (file://,gopher://,ftp://)It's possible. url.Parse It's a success. scheme Branch,
-// So all green can't prove this path is safe.——It's a false promise..
+// When url.Parse fails it returns *url.Error, and Error() contains the full
+// original address. The previous round only redacted the error returned by
+// http.Client.Do and missed this path. The "permanent failure" cases added
+// then (file://, gopher://, ftp://) all parse successfully and take the
+// scheme branch, so a green run did not prove this path was safe. It was a
+// false assurance.
 func TestValidateHTTPURLErrorNeverLeaksCredentials(t *testing.T) {
 	cases := []string{
-		"http://127.0.0.1/%zz?access_token=" + leakProbeToken,         // Illegal percentage conversion
-		"https://a.example.com:port/x?access_token=" + leakProbeToken, // Port Non-number
-		"http://[::1?access_token=" + leakProbeToken,                  // Brackets don't match
+		"http://127.0.0.1/%zz?access_token=" + leakProbeToken,         // illegal percent-escape
+		"https://a.example.com:port/x?access_token=" + leakProbeToken, // port is not a number
+		"http://[::1?access_token=" + leakProbeToken,                  // unmatched bracket
 	}
 	for _, raw := range cases {
-		// Check this input first.**Indeed.**Let url.Parse Failure. If we don't do this, we might use the example.
-		// I went to another branch without knowing.).
+		// First confirm this input really makes url.Parse fail. Without that
+		// check the case can wander onto another branch without anyone
+		// noticing, which is how the previous false assurance happened.
 		if _, err := url.Parse(raw); err == nil {
-			t.Errorf("%q Should have parsed failed, otherwise this example did not cover the target branch", raw)
+			t.Errorf("%q should fail to parse, or this case does not cover the target branch", raw)
 			continue
 		}
 		err := validateHTTPURL(raw)
 		if err == nil {
-			t.Errorf("%q Failed to verify", raw)
+			t.Errorf("%q should fail validation", raw)
 			continue
 		}
 		assertNoSecret(t, err.Error(), leakProbeToken)
 	}
-	// Make sure the package on the channel level doesn't get the address out..
+	// The channel-level wrapper must not carry the address out either.
 	t.Setenv(AllowLocalTargetsEnv, "")
 	err := (dingTalkChannel{}).Validate(map[string]any{"webhook": cases[0]})
 	if err == nil {
-		t.Fatal("Invalid address verified failed")
+		t.Fatal("an invalid address should fail validation")
 	}
 	assertNoSecret(t, err.Error(), leakProbeToken)
 }
 
-// TestEmailDialGuardRejectsLoopbackByDefault override SMTP The dial-up guards at the channel..
+// TestEmailDialGuardRejectsLoopbackByDefault covers the SMTP dial guard.
 //
-// The mail channels used to be naked. net.Dialer,It's full. SSRF The only gap in protection.:host Fill
-// 169.254.169.254 or 127.0.0.1 It connects directly, and... smtp.NewClient When a handshake fails...
-// The line returned from the opposite end was wrongly packaged, passed last_error From the delivery history interface——It's just another channel.
-// It's a half-blind reading.;[Connection denied vs Timeout]Time-consuming differences can also be used to detect the end. mouth.
+// The email channel used to dial with a bare net.Dialer, which was the one
+// gap in the SSRF protection: a host of 169.254.169.254 or 127.0.0.1
+// connected directly. When smtp.NewClient failed the handshake it wrapped
+// the peer's reply line into the error, and last_error echoed that through
+// the delivery-history API — the same semi-blind read the other channels
+// had already closed. The timing difference between "connection refused" and
+// "timeout" could also probe ports.
 //
-// This bag. TestMain It's open. AllowLocalTargetsEnv(Extensive use of standard 127.0.0.1 Top
-// So this example has to be cleaned up.——Otherwise, the guards will pass in or out.,
-// That's why the gap wasn't detected by any tests..
+// TestMain turns AllowLocalTargetsEnv on for the package (many cases use a
+// fake receiver on 127.0.0.1), so this case has to clear it itself.
+// Otherwise the test passes whether or not the guard is installed, which is
+// why the gap was not caught before.
 func TestEmailDialGuardRejectsLoopbackByDefault(t *testing.T) {
 	f := newFakeSMTP(t)
 	cfg := emailCfg(t, f, nil)
 
-	t.Setenv(AllowLocalTargetsEnv, "") // Turn off the escape. = Default Behaviour
+	t.Setenv(AllowLocalTargetsEnv, "") // close the hatch = default behavior
 	_, err := (emailChannel{}).Send(context.Background(), cfg, singleMsg())
 	if err == nil {
-		t.Fatal("Default should not allow mail delivery to ringback address")
+		t.Fatal("mail should not be delivered to a loopback address by default")
 	}
-	// The connection should never have been created: the guards are Control Stop in the hook.,EHLO It's never coming out..
+	// The connection should never be established. The guard stops it in the
+	// Control hook, so EHLO is never sent.
 	if f.sawCommand("EHLO") || f.sawCommand("HELO") {
-		t.Fatal("SMTP Session created——The guards aren't working.")
+		t.Fatal("an SMTP session was established; the guard did not take effect")
 	}
-	// The error message should guide the user how to let it go. postfix Relay is valid configuration).
+	// The error has to tell the user how to opt in. A local postfix relay is
+	// a legitimate configuration.
 	if !strings.Contains(err.Error(), AllowLocalTargetsEnv) {
-		t.Errorf("The rejection message should show how to let it go.: %v", err)
+		t.Errorf("the refusal should say how to opt in explicitly: %v", err)
 	}
 }
 
-// TestEmailDialGuardAllowsLoopbackWhenOptedIn It's a paired inverted example: after visible opening
-// We must be able to deliver normally. Network built-in SMTP / This relay is a very common deployment. The guards can't do anything..
+// TestEmailDialGuardAllowsLoopbackWhenOptedIn is the paired inverse: once
+// the hatch is opened, delivery must succeed. A self-hosted internal SMTP
+// server or a local relay is a very common deployment, and the guard must
+// not ban it outright.
 func TestEmailDialGuardAllowsLoopbackWhenOptedIn(t *testing.T) {
 	f := newFakeSMTP(t)
 	cfg := emailCfg(t, f, nil)
 
 	t.Setenv(AllowLocalTargetsEnv, "1")
 	if _, err := (emailChannel{}).Send(context.Background(), cfg, singleMsg()); err != nil {
-		t.Fatalf("Let go of the machine. SMTP Should be capable of delivery: %v", err)
+		t.Fatalf("local SMTP should be deliverable once explicitly allowed: %v", err)
 	}
 	if !f.sawCommand("EHLO") {
-		t.Fatal("Not seen EHLO——Session not really established")
+		t.Fatal("EHLO was not seen; the session was never established")
 	}
 }

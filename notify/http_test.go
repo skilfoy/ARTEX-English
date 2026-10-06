@@ -9,12 +9,14 @@ import (
 	"testing"
 )
 
-// Other Organiser doJSON of HTTP Layer error rating.
+// This file covers doJSON's HTTP-layer error classification.
 //
-// Why do you have to do it alone? errcode,
-// Feishu code,Telegram ok fields), and**HTTP Layer**The grade is... doJSON One thing.,
-// They are two separate lines of defence. One way back. 503 The transit gateway will be considered a permanent failure.,
-// Directly abandon retry; one 403 They'll try again and leave three rounds for nothing..
+// It is tested on its own because each channel adapter only handles that
+// platform's business error (DingTalk errcode, Feishu code, Telegram's ok
+// field), while the HTTP-layer classification is done once in doJSON. They
+// are two separate lines of defense. Without this one, a transit gateway
+// that returns 503 would be treated as permanent and retry would be given
+// up; a 403 would be treated as retryable and burn three backoff rounds.
 
 func replyServer(t *testing.T, status int, body string) *httptest.Server {
 	t.Helper()
@@ -33,16 +35,16 @@ func TestDoJSONClassifiesHTTPStatus(t *testing.T) {
 		status    int
 		permanent bool
 	}{
-		{"200 Success is not a mistake.", 200, false},
-		{"429 Limit to try again", 429, false},
-		{"408 Request timeout to try again", 408, false},
-		{"500 Service error retryable", 500, false},
-		{"502 Gateway error retryable", 502, false},
-		{"503 Service not available for retrying", 503, false},
-		{"400 Parameter error permanently failed", 400, true},
-		{"401 It's a permanent failure.", 401, true},
-		{"403 Deny access permanently failed", 403, true},
-		{"404 Chile", 404, true},
+		{"200 success is not an error", 200, false},
+		{"429 rate limit is retryable", 429, false},
+		{"408 request timeout is retryable", 408, false},
+		{"500 server error is retryable", 500, false},
+		{"502 gateway error is retryable", 502, false},
+		{"503 unavailable is retryable", 503, false},
+		{"400 bad parameters is permanent", 400, true},
+		{"401 auth failure is permanent", 401, true},
+		{"403 forbidden is permanent", 403, true},
+		{"404 not found is permanent", 404, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -50,70 +52,75 @@ func TestDoJSONClassifiesHTTPStatus(t *testing.T) {
 			_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 			if tc.status < 300 {
 				if err != nil {
-					t.Fatalf("2xx No mistakes.: %v", err)
+					t.Fatalf("2xx must not error: %v", err)
 				}
 				return
 			}
 			if err == nil {
-				t.Fatal("Not 2xx Wrong-doing.")
+				t.Fatal("non-2xx must error")
 			}
 			if got := IsPermanent(err); got != tc.permanent {
-				t.Fatalf("HTTP %d of permanent Error of determination: expectation %v get %v (%v)",
+				t.Fatalf("HTTP %d permanent classification: want %v, got %v (%v)",
 					tc.status, tc.permanent, got, err)
 			}
-			// The status code has to appear in the error, otherwise the user can't judge whether it's wrong or wrong..
-			// The numbers, not the numbers. Go English StatusText:This package is in Chinese.
-			// (In line with the rest of the project) figures are the non-linguistic, stable assertion..
+			// The status code has to appear in the error, or the user cannot
+			// tell a bad config from a dead peer. Assert the digits, not Go's
+			// English StatusText: the wording in this package is its own, and
+			// the number is the stable, language-independent part.
 			if !strings.Contains(err.Error(), strconv.Itoa(tc.status)) {
-				t.Errorf("The wrong message should be on. HTTP Status code %d,get %v", tc.status, err)
+				t.Errorf("error should include HTTP status %d, got %v", tc.status, err)
 			}
 		})
 	}
 }
 
-// TestDoJSONIncludesResponseSnippet override snippet:The error note for the back end is to be brought back.,
-// Otherwise the user only knows[It failed.],I don't know why they refused..
+// TestDoJSONIncludesResponseSnippet covers snippet: the peer's error text
+// has to come back. Otherwise the user only knows that it failed, not why
+// the peer refused.
 func TestDoJSONIncludesResponseSnippet(t *testing.T) {
 	srv := replyServer(t, 400, `{"error":"invalid webhook token"}`)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("Wrong-doing.")
+		t.Fatal("expected an error")
 	}
 	if !strings.Contains(err.Error(), "invalid webhook token") {
-		t.Errorf("The error message should be returned to the end of the line. %v", err)
+		t.Errorf("error should include the peer's explanation, got %v", err)
 	}
 }
 
-// TestDoJSONSnippetIsSingleLineAndBounded Constraints snippet Form:
-// It's going to respond to the end as it is. last_error Columns and front-end tables, multiple rows/It's too long to destroy the layout and load..
+// TestDoJSONSnippetIsSingleLineAndBounded constrains the shape of snippet.
+// The peer's response is stored as-is in last_error and shown in the UI
+// table. Multiple lines or a huge body break the layout and the payload.
 func TestDoJSONSnippetIsSingleLineAndBounded(t *testing.T) {
-	// Bring line breaks, tabs and 5000 Responsiveness to the excessive content of characters.
+	// A response with newlines, a tab, and 5000 characters of padding.
 	long := strings.Repeat("x", 5000)
 	srv := replyServer(t, 500, "line1\nline2\r\n\tline3 "+long)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("Wrong-doing.")
+		t.Fatal("expected an error")
 	}
 	msg := err.Error()
 	if strings.ContainsAny(msg, "\r\n\t") {
-		t.Errorf("The error message should be pressed in a single line. %q", msg)
+		t.Errorf("error should be a single line, got %q", msg)
 	}
-	// snippet upper limit 200 Characters + Fixed prefix. The total must be much smaller than the original sound. Response.
+	// snippet caps at 200 characters plus a fixed prefix. The total must be
+	// far smaller than the original response.
 	if len(msg) > 400 {
-		t.Errorf("Error message too long(%d bytes), should be snippet Cut: %q", len(msg), msg)
+		t.Errorf("error is too long (%d bytes); snippet should have cut it: %q", len(msg), msg)
 	}
 }
 
-// TestDoJSONRejectsOversizedResponse Confirm reading cap: End-to-end anomaly returns super-maximum Time
-// You can't read the entire response into the memory. last_error).
+// TestDoJSONRejectsOversizedResponse checks the read cap. When a peer returns
+// a huge body, the whole response must not be read into memory (every
+// delivery history row stores a copy of last_error).
 func TestDoJSONRejectsOversizedResponse(t *testing.T) {
 	huge := strings.Repeat("A", 1<<20) // 1 MiB
 	srv := replyServer(t, 400, huge)
 	_, err := doJSON(context.Background(), "GET", srv.URL, nil, nil)
 	if err == nil {
-		t.Fatal("Wrong-doing.")
+		t.Fatal("expected an error")
 	}
 	if len(err.Error()) > 400 {
-		t.Errorf("The super-heavy response should be read and cut long, and the error message length %d", len(err.Error()))
+		t.Errorf("oversized response should be length-limited; error length %d", len(err.Error()))
 	}
 }

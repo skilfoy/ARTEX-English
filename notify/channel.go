@@ -8,43 +8,56 @@ import (
 	"strings"
 )
 
-// Channel It's a adapter for a notification channel. Achieving the necessary**No status**:The same example will get multiple channels.
-// Configure and re-assign from all sources cfg Parameter In.
+// Channel is the adapter for one notification channel. Implementations must
+// be stateless: one value is reused concurrently across many channel configs,
+// and every credential arrives through the cfg argument.
 type Channel interface {
-	// Kind Return channel type identification, consistent with the key of the registration form.
+	// Kind returns the channel type identifier. It must match the registry key.
 	Kind() string
-	// Validate Call when saving the configuration, verify the field and format required. The returned error will be displayed directly to
-	// Configurer, so the file has to be specified.[Which field is missing]Not general.[Configuration Invalid].
+	// Validate checks required fields and formats when a config is saved.
+	// The error is shown directly to the person configuring the channel, so
+	// it must say which field is missing rather than a generic "invalid config".
 	Validate(cfg map[string]any) error
-	// Send Can not open message**Number of entries actually delivered**and error.
+	// Send delivers one message and returns the number of items actually
+	// delivered, plus an error.
 	//
-	// Why return bars: each platform has a maximum message length, and aggregate messages are stopped when the whole batch is not loaded.
-	// If the caller unconditionally marked the entire batch as delivered, those entries that were intercepted disappeared.——It's not in the news.,
-	// The delivery history has also shown success, and nowhere has a loophole ever been found. Back kept After,
-	// Caller only before mark kept Article, remaining to be submitted.
+	// The count matters because every platform caps message length, and a
+	// digest that does not fit is truncated. If the caller then marks the
+	// whole batch as delivered, the dropped items vanish: they are not in the
+	// message, and the delivery history still says success, so nothing shows
+	// that those findings were never sent. With kept, the caller marks only
+	// the first kept items and leaves the rest for the next batch.
 	//
-	// Returns error means delivery failed, where *PermanentError It means you shouldn't try again..
-	// When failed kept No sense. The caller should ignore it..
+	// A non-nil error means delivery failed. *PermanentError means it must
+	// not be retried. On failure kept is meaningless and the caller should
+	// ignore it.
 	Send(ctx context.Context, cfg map[string]any, m Message) (int, error)
-	// DefaultRatePerMin Return to the channel officially recommended per minute ceiling as an example of a new channel
-	// . The default limit value. Back 0 Means no known limit.
+	// DefaultRatePerMin returns the platform's recommended deliveries per
+	// minute, used as the default rate limit when a channel instance is
+	// created. Zero means no known limit.
 	DefaultRatePerMin() int
-	// SecretKeys Returns a documented keyname in the channel configuration.API The value of these keys will be masked when it turns around.,
-	// The mask value is kept in the library when the update is received. Only if you know what fields you're looking for.
-	// (The whole business. Webhook The address is the proof, and the nails are the only one. secret),
-	// So this knowledge has to come from a source, not from the top..
+	// SecretKeys returns the config keys that hold credentials. The API masks
+	// those values on read, and a masked value on update means "keep the
+	// stored secret". Only the channel knows which fields are credentials
+	// (for WeCom the whole webhook URL is the secret; for DingTalk only the
+	// signing secret is), so this has to come from the channel rather than
+	// from a guess higher up.
 	SecretKeys() []string
-	// DestinationKeys Return to the channel configuration[Where's the message going?]Keyname.
+	// DestinationKeys returns the config keys that decide where the message
+	// is sent.
 	//
-	// With SecretKeys It's also about security: target address and proof are two separate fields.,
-	// If allowed[Only change of address, keep as it is.],Anyone who can change the configuration can get the real evidence in the library.
-	// Send them to servers under their control, and the code of channel configuration is completely meaningless..
-	// For more details. PrepareConfigUpdate.
+	// Like SecretKeys, this is a security boundary. The destination and the
+	// credentials are separate fields. If someone could change only the
+	// address and keep the stored credentials, anyone who can edit the
+	// channel could send the real secrets to a server they control, and
+	// masking the config would be pointless. See PrepareConfigUpdate.
 	DestinationKeys() []string
 }
 
-// registry is the channel registration form. It's meant to be visible, not init() Self-registered:[What channels?]
-// It can be seen in one place, and the new channels will expose the missing during the compilation, not by running side effects..
+// registry lists every channel. An explicit literal is used instead of init()
+// self-registration so the full set is visible in one place, and a new
+// channel that is forgotten shows up at compile time rather than as a
+// runtime side effect.
 var registry = map[string]Channel{
 	KindDingTalk: dingTalkChannel{},
 	KindFeishu:   feishuChannel{},
@@ -54,19 +67,19 @@ var registry = map[string]Channel{
 	KindEmail:    emailChannel{},
 }
 
-// Get By type of access.
+// Get returns the channel implementation for kind.
 func Get(kind string) (Channel, bool) {
 	c, ok := registry[kind]
 	return c, ok
 }
 
-// ValidKind Report kind Type of channel supported.
+// ValidKind reports whether kind is a supported channel type.
 func ValidKind(kind string) bool {
 	_, ok := registry[kind]
 	return ok
 }
 
-// Kinds Returns all supported channel types, in dictionaries order (for UI Pull steady.).
+// Kinds returns every supported channel type, sorted, so a UI dropdown stays stable.
 func Kinds() []string {
 	out := make([]string, 0, len(registry))
 	for k := range registry {
@@ -76,16 +89,18 @@ func Kinds() []string {
 	return out
 }
 
-// PermanentError Mark a delivery that should not be retried failed: error of proof, object rejection, request illegal, etc..
-// Retry only instantaneous failure (network shaking, limit flow, opposite end) 5xx)Meaningful; reticence of permanent failure
-// It's not going to work, it's not going to work. It's not going to work..
+// PermanentError marks a delivery failure that must not be retried: bad
+// credentials, a rejected target, an illegal request body, and the like.
+// Retry only helps transient faults (network blips, rate limits, remote
+// 5xx). Retrying a permanent failure never succeeds, and the real error
+// disappears under the retry log.
 type PermanentError struct{ Err error }
 
 func (e *PermanentError) Error() string { return e.Err.Error() }
 func (e *PermanentError) Unwrap() error { return e.Err }
 
-// Permanent handle err Mark as permanent failure.err for nil Back nil,
-// It's easy to write. `return Permanent(someCheck())`.
+// Permanent marks err as a permanent failure. A nil err returns nil, so
+// callers can write `return Permanent(someCheck())`.
 func Permanent(err error) error {
 	if err == nil {
 		return nil
@@ -93,19 +108,21 @@ func Permanent(err error) error {
 	return &PermanentError{Err: err}
 }
 
-// IsPermanent Report err Is there a permanent failure mark on the chain?.
+// IsPermanent reports whether the error chain carries a permanent-failure mark.
 func IsPermanent(err error) bool {
 	var pe *PermanentError
 	return errors.As(err, &pe)
 }
 
-// ---- Configure Readhelper ----
+// ---- config readers ----
 //
-// Channel configuration from database JSONB Column, through encoding/json After the inverse sequence, map[string]any,
-// The value is always... float64,The array is... []any.Here. helper Harmonize this layer and tolerate users
-// at UI Type deviation due to emptying (e.g. filling port into string)).
+// Channel config comes from a JSONB column. After encoding/json it is a
+// map[string]any: numbers are float64 and arrays are []any. These helpers
+// normalize that, and they tolerate the type mismatches that show up when a
+// form field is left blank (a port submitted as a string, for example).
 
-// cfgString Take string configurations and always cut them out.——Copying paste from web forms is easy to carry.
+// cfgString reads a string setting and trims surrounding space. Pasting from
+// a web form often brings some along.
 func cfgString(cfg map[string]any, key string) string {
 	v, ok := cfg[key]
 	if !ok {
@@ -118,7 +135,8 @@ func cfgString(cfg map[string]any, key string) string {
 	return strings.TrimSpace(s)
 }
 
-// cfgInt Take integer configuration, compatible float64(JSON Default) and string sources.
+// cfgInt reads an integer setting, accepting both float64 (the JSON default)
+// and a string.
 func cfgInt(cfg map[string]any, key string) int {
 	switch v := cfg[key].(type) {
 	case float64:
@@ -136,7 +154,7 @@ func cfgInt(cfg map[string]any, key string) int {
 	}
 }
 
-// cfgBool Take Boolean Configuration, Compatible String "true"/"1".
+// cfgBool reads a boolean setting, also accepting the strings "true" and "1".
 func cfgBool(cfg map[string]any, key string) bool {
 	switch v := cfg[key].(type) {
 	case bool:
@@ -149,11 +167,12 @@ func cfgBool(cfg map[string]any, key string) bool {
 	}
 }
 
-// cfgStrings Take string array configurations, customize blanks and discard empty strings.
+// cfgStrings reads a string-array setting, trimming space and dropping empty
+// entries.
 func cfgStrings(cfg map[string]any, key string) []string {
 	raw, ok := cfg[key].([]any)
 	if !ok {
-		// Accepts a single string to facilitate the submission of a form at a single value.
+		// A single string is also accepted, for a form that submits one value.
 		if s := cfgString(cfg, key); s != "" {
 			return []string{s}
 		}
@@ -172,7 +191,8 @@ func cfgStrings(cfg map[string]any, key string) []string {
 	return out
 }
 
-// cfgMap Take string map configuration (e.g. custom) HTTP Head) , keys are all spaced and empty.
+// cfgMap reads a string map (custom HTTP headers, for example). Keys and
+// values are trimmed, and empty keys are dropped.
 func cfgMap(cfg map[string]any, key string) map[string]string {
 	raw, ok := cfg[key].(map[string]any)
 	if !ok {
