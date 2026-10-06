@@ -90,8 +90,8 @@ type taskLLMSelection struct {
 	profileID int64
 	revision  int64
 	provider  llm.Provider
-	// retry is the retry parameter that this selected configuration resolves(profile override → Global strategy → Internal Default).
-	// Same provider Try to press the safe window again.,So I changed it. profile Let's try it again..
+	// retry is the retry config resolved for the selected profile (profile override → global policy → built-in default).
+	// Same-provider safe-window retries follow it, so a different profile means a different retry rhythm.
 	retry agent.RetryConfig
 }
 
@@ -102,11 +102,11 @@ type taskLLMStreamHooks struct {
 }
 
 // current resolves the provider this role runs on, by precedence:
-// Agent Binding → Task LLM Configuration chain → Global/Environment configuration.
-// Ties take precedence over task chains: a role is clearly assigned to a model and runs on that model; binds do not exist or
-// Decline to task chain when construction failed, task chain down to global configuration when empty.
-// Returned profile id It's not zero when you go through the mission chain. —— streamTaskLLM It's a way to judge whether the amount is wrong or not.
-// It should advance the mission's failure to shift./The global path does not change the task chain state, using the existing semantics).
+// agent binding → task LLM profile chain → global/environment profile.
+// A binding beats the task chain: a role explicitly assigned a model keeps running on that model.
+// Only a missing or failed binding falls back to the task chain, and an empty chain falls back to the global profile.
+// The returned profile id is non-zero only on the task-chain path. streamTaskLLM uses that to decide whether a
+// quota error should advance the task's failover state (binding and global paths do not change the chain).
 func (r *taskLLMRuntime) current() (taskLLMSelection, error) {
 	taskNum, err := parseTaskID(r.taskID)
 	if err != nil {
@@ -184,7 +184,7 @@ func (r *taskLLMRuntime) nonStreaming() bool {
 // maxTokens returns the currently-active source's per-reply output cap.
 // Unresolvable → 0, i.e. send no cap, matching the pre-setting behaviour.
 func (r *taskLLMRuntime) maxTokens() int {
-	cfg, _ := r.activeCfg() // Other Organiser 0
+	cfg, _ := r.activeCfg() // zero value 0 when no profile resolved
 	return cfg.MaxTokens
 }
 
@@ -246,8 +246,8 @@ func completeTaskLLM(ctx context.Context, taskID string, req llm.CompletionReque
 			usage   llm.Usage
 			callErr error
 		)
-		// Same provider Safe window retry:Non-flow call either works or fails.,No
-		// The problem of delivered output,So any instant failure can be repeated..
+		// Same-provider safe-window retry: a non-streaming call either fully succeeds or fully fails.
+		// Nothing is delivered halfway, so any transient failure can be retried as-is.
 		retries, backoffOf := sameProviderRetryPolicy(selection.retry)
 		for attempt := 0; ; attempt++ {
 			msg, sr, usage, callErr = selection.provider.Complete(ctx, req)
@@ -257,7 +257,7 @@ func completeTaskLLM(ctx context.Context, taskID string, req llm.CompletionReque
 				log.Printf("[task-llm] task %s model call failed; retrying in %v (%d/%d): %v",
 					taskID, backoff, attempt+1, retries, callErr)
 				if sleepCtx(ctx, backoff) {
-					break // During retreat ctx Cancel → Stop Retrying
+					break // ctx cancelled during backoff → stop retrying
 				}
 				continue
 			}
@@ -266,7 +266,7 @@ func completeTaskLLM(ctx context.Context, taskID string, req llm.CompletionReque
 		if callErr == nil {
 			return msg, sr, usage, nil
 		}
-		// profileID=0: The visible chain has been emptied;Non-scale error:Passage. Neither of them changes the mission. failover Status.
+		// profileID=0: the explicit chain is empty. Non-quota error: pass it through. Neither changes task failover state.
 		if selection.profileID == 0 || !isQuotaExhaustedError(callErr) {
 			return llm.Message{}, "", llm.Usage{}, callErr
 		}
@@ -280,7 +280,7 @@ func completeTaskLLM(ctx context.Context, taskID string, req llm.CompletionReque
 		if !transition.Stale && transition.NextProfileID == nil {
 			return llm.Message{}, "", llm.Usage{}, &taskLLMError{taskID: taskID, chainExhausted: transition.ChainExhausted, cause: callErr}
 		}
-		// No output delivered to caller,Next. profile Replaying the same logic is safe..
+		// Nothing was delivered to the caller, so replaying the same request on the next profile is safe.
 	}
 }
 
@@ -296,9 +296,10 @@ func streamTaskLLM(ctx context.Context, taskID string, req llm.CompletionRequest
 			var pending []llm.StreamEvent
 			var streamErr error
 			retries, backoffOf := sameProviderRetryPolicy(selection.retry)
-			// Same provider Safe window retry:committed Before(No output to caller yet.)
-			// An instant failure can be repeated.,Do not repeat model output or tool execution.committed After,
-			// ctx Cancelling, or certainty/Other Organiser,Give it to the original transmission below./Fault shift logic.
+			// Same-provider safe-window retry: before committed (nothing delivered to the caller yet)
+			// a transient failure can be replayed without repeating model output or tool execution.
+			// After committed, on ctx cancellation, or on a deterministic or quota error, break out
+			// to the pass-through / failover logic below.
 			for attempt := 0; ; attempt++ {
 				committed = false
 				pending = nil
@@ -331,7 +332,7 @@ func streamTaskLLM(ctx context.Context, taskID string, req llm.CompletionRequest
 					log.Printf("[task-llm] task %s model stream failed before output; retrying in %v (%d/%d): %v",
 						taskID, backoff, attempt+1, retries, streamErr)
 					if sleepCtx(ctx, backoff) {
-						break // During retreat ctx Cancel → Stop Retrying
+						break // ctx cancelled during backoff → stop retrying
 					}
 					continue
 				}
@@ -394,23 +395,27 @@ func streamEventCommitsOutput(event llm.StreamEvent) bool {
 	}
 }
 
-// In a secure window before submission, for the same provider of[Default]Number of retries.SDK of doStream Only try to build a chain
-// Stage(Get it 200 Before);Once the flow begins,Breaking out. / overloaded / Fluent 429 It'll go straight when it breaks.
-// Frozen model_error,Zero try. Just one. token Not yet handed over to the caller(!committed),Replay
-// The exact same request does not repeat model outputs or tool side effects,So here's the same. provider Avoid retrying,
-// Blocking such vibrations before attempting to rerun as a whole. May be LLM Configure Retry Overwrite/Retry Global Policy Rewrite.
+// Default same-provider retries inside the safe window before anything is committed.
+// The SDK's doStream only retries the connect phase (before HTTP 200). Once the stream
+// has started, a mid-stream drop, overloaded, or an in-stream 429 bubbles up as
+// model_error with zero retries. As long as not even one token has been handed to the
+// caller (!committed), replaying the identical request does not repeat model output or
+// tool side effects, so this layer adds same-provider backoff and absorbs that jitter
+// before the whole intent is rerun. An LLM profile's retry override or the global
+// retry policy can replace these defaults.
 const sameProviderStreamRetries = 2
 
-// sameProviderRetryBackoff No. No. attempt Before retrying.[Default]Stay away.(0.5s,1s…,upper limit 4s),
-// With SDK The index gradient is the same but smaller top,Avoid holding up. worker End/Cancel Response.
-// Exposure as Variable,Easy to test will avoid zero..
+// sameProviderRetryBackoff is the default delay before retry attempt (0.5s, 1s, …, capped at 4s).
+// Same exponential shape as the SDK, but a smaller cap so it does not stall worker shutdown or cancel.
+// A variable so tests can set the backoff to zero.
 var sameProviderRetryBackoff = func(attempt int) time.Duration {
 	return min(500*time.Millisecond*(1<<attempt), 4*time.Second)
 }
 
-// sameProviderRetryPolicy Parsing which homogeneity this call should use provider Retry parameters:It's a setup.
-// With Configure(Negative = Turn off this layer and try again),When you set a gap, you change the index to a fixed interval.,There's no time for either.
-// Align with byte before refitting.
+// sameProviderRetryPolicy picks the same-provider retry parameters for this call.
+// A configured attempt count is used (negative disables this layer). A configured interval
+// replaces exponential backoff with a fixed delay. When neither is set, behavior matches
+// the code from before retries were configurable, byte for byte.
 func sameProviderRetryPolicy(r agent.RetryConfig) (retries int, backoff func(int) time.Duration) {
 	retries, backoff = sameProviderStreamRetries, sameProviderRetryBackoff
 	if r.StreamAttempts != 0 {
@@ -423,11 +428,12 @@ func sameProviderRetryPolicy(r agent.RetryConfig) (retries int, backoff func(int
 	return retries, backoff
 }
 
-// isRetryableStreamError Decision[Stream Before Committing Failed]Is it worth the same thing? provider Replay Top.
-// The instantaneous transmission is interrupted. / Vendor overload / The limit will restore itself.,Safely retry;And the following three groups do not try again:
-//   - Quota exhausted:Give it to profile Fault transfer management,Don't try again in here.
-//   - The context is too long:The same request is useless.,Give it to harness of reactive Compress bottom
-//   - 4xx Affirmative rejection(400/401/403/404/422):Which one? provider They both fail.
+// isRetryableStreamError reports whether a pre-commit stream failure is worth replaying on the same provider.
+// A transient transport drop, provider overload, or rate limit recovers on its own and is safe to retry.
+// These three are not retried:
+//   - quota exhausted: leave it to profile failover; do not burn retries here
+//   - context too long: replaying the same request will not help; the harness reactive compaction handles it
+//   - deterministic 4xx (400/401/403/404/422): every provider would reject it the same way
 func isRetryableStreamError(err error) bool {
 	if err == nil {
 		return false
@@ -446,8 +452,8 @@ func isRetryableStreamError(err error) bool {
 			return false
 		}
 	}
-	// The rest(Transfer reset/EOF/timeout,408/429/5xx,Fluent error Events like anthropic
-	// overloaded_error etc.)It's always a moment.,Allow retrying.
+	// Everything else (transport reset/EOF/timeout, 408/429/5xx, in-stream error events such as
+	// anthropic overloaded_error) is treated as transient and may be retried.
 	return true
 }
 
@@ -564,37 +570,37 @@ func (s *Server) agentsForTask(t *Task) *taskAgentBundle {
 	wk := agent.NewWorker(workerRuntime, "task-router", s.m.dir, tx, window, s.agentMaxTurns("worker"))
 	wk.SetFindingRecorder(s.evidenceStore())
 	wk.SetCompactionWindowResolver(workerRuntime.CompactionWindow)
-	wk.SetNonStreaming(workerRuntime.nonStreaming) // Activate by Task Current profile Fluid Switches(Rounded)
-	wk.SetMaxTokens(workerRuntime.maxTokens)       // Ibid.,Output limit also follows current activation profile
-	wk.SetNoaEnabled(s.m.NoaCompactionEnabled)     // Experimental features:noa Context compression(Platform-level switches,each run Read)
+	wk.SetNonStreaming(workerRuntime.nonStreaming) // streaming switch of the task's currently active profile (read every round)
+	wk.SetMaxTokens(workerRuntime.maxTokens)       // same as above: the output cap follows the currently active profile
+	wk.SetNoaEnabled(s.m.NoaCompactionEnabled)     // experimental: noa context compaction (platform switch, read once per run)
 	wk.SetRunTimeout(time.Duration(s.agentRunSeconds("worker")) * time.Second)
 	wk.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	wk.SetWebSearch(s.webSearchFor("worker"))
-	wk.SetConstraintInject(s.constraintInjectWorker) // Operation constraint injection worker(Configureable,On by default)
+	wk.SetConstraintInject(s.constraintInjectWorker) // inject operation constraints into the worker (configurable, on by default)
 	pl := agent.NewPlanner(plannerRuntime, "task-router", s.m.dir, tx, plannerRuntime.CompactionWindow(), s.agentMaxTurns("planner"))
 	pl.SetFindingRecorder(s.evidenceStore())
 	pl.SetCompactionWindowResolver(plannerRuntime.CompactionWindow)
 	pl.SetNonStreaming(plannerRuntime.nonStreaming)
 	pl.SetMaxTokens(plannerRuntime.maxTokens)
-	pl.SetNoaEnabled(s.m.NoaCompactionEnabled) // Experimental features:noa Context compression(Platform-level switches,each run Read)
+	pl.SetNoaEnabled(s.m.NoaCompactionEnabled) // experimental: noa context compaction (platform switch, read once per run)
 	pl.SetKillWork(s.engine.KillWork)
 	pl.SetSteerWork(s.engine.SteerWork)
 	pl.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	pl.SetWebSearch(s.webSearchFor("planner"))
-	pl.SetConstraintInject(s.constraintInjectPlanner) // Operation constraint injection planner(Configureable,On by default)
-	// cold-digest §7: Cold node backstage compression. The engine is actually driven by an authoritative solver. per-task planner
-	// (agentsForTask),Compactor We have to catch up here. It's a mission route. planner provider(§4:With agent
-	// Same Model,Follow Task LLM Chain Resolution),Compression Complete One-time generation body.
+	pl.SetConstraintInject(s.constraintInjectPlanner) // inject operation constraints into the planner (configurable, on by default)
+	// cold-digest §7: background compaction of cold nodes. The engine drives this per-task planner
+	// (agentsForTask), so the compactor has to be attached here. It uses the task-routed planner
+	// provider (§4: same model as the agent, resolved on the task LLM chain) and Complete() once to write the body.
 	pl.SetCompactor(agent.NewCompactor(plannerRuntime, "task-router"))
 	main := agent.NewMainAgent(mainRuntime, "task-router", s.m.dir, tx, mainRuntime.CompactionWindow(), s.agentMaxTurns("mainagent"))
 	main.SetFindingRecorder(s.evidenceStore())
 	main.SetCompactionWindowResolver(mainRuntime.CompactionWindow)
 	main.SetNonStreaming(mainRuntime.nonStreaming)
 	main.SetMaxTokens(mainRuntime.maxTokens)
-	main.SetNoaEnabled(s.m.NoaCompactionEnabled) // Experimental features:noa Context compression(Platform-level switches,each run Read)
+	main.SetNoaEnabled(s.m.NoaCompactionEnabled) // experimental: noa context compaction (platform switch, read once per run)
 	main.SetProxy(s.m.ProxyAddr(), s.m.ProxyCACert())
 	main.SetWebSearch(s.webSearchFor("mainagent"))
-	main.SetSteerWork(s.engine.SteerWork) // steer_work:People against running work Real-time correction
+	main.SetSteerWork(s.engine.SteerWork) // steer_work: a person corrects running work in real time
 	bundle := &taskAgentBundle{
 		runtime: goalRuntime, plannerRuntime: plannerRuntime, workerRuntime: workerRuntime,
 		mainRuntime: mainRuntime, pl: pl, wk: wk, main: main,
@@ -626,13 +632,13 @@ func (s *Server) emitTaskLLMTransition(t *Task, transition db.TaskLLMTransition,
 	}
 	mode := "automatic"
 	kind := "llm_switch"
-	summary := fmt.Sprintf("%s Insufficient", llmAuditProfileLabel(previous))
+	summary := fmt.Sprintf("%s is out of quota", llmAuditProfileLabel(previous))
 	if transition.NextProfileID != nil {
-		summary += fmt.Sprintf(",Next Call Switch to %s", llmAuditProfileLabel(next))
+		summary += fmt.Sprintf("; later calls switch to %s", llmAuditProfileLabel(next))
 	} else {
 		mode = "exhausted"
 		kind = "llm_failover"
-		summary += ",Configuration chain exhausted"
+		summary += "; the profile chain is exhausted"
 	}
 	metadata, _ := json.Marshal(llmActivityMetadata{LLMTransition: llmTransitionAudit{
 		Mode: mode, Reason: cause.Error(), Previous: previous, Next: next,
@@ -689,9 +695,9 @@ func (s *Server) emitManualTaskLLMSwitch(t *Task, previousID, nextID *int64) db.
 	if nextID != nil {
 		next = s.llmAuditProfile(*nextID)
 	}
-	summary := fmt.Sprintf("Synchronising folder LLM from %s Switch to %s", llmAuditProfileLabel(previous), llmAuditProfileLabel(next))
+	summary := fmt.Sprintf("User manually switched the task LLM from %s to %s", llmAuditProfileLabel(previous), llmAuditProfileLabel(next))
 	metadata, _ := json.Marshal(llmActivityMetadata{LLMTransition: llmTransitionAudit{
-		Mode: "manual", Reason: "User Manual Switch Tasks LLM", Previous: previous, Next: next,
+		Mode: "manual", Reason: "user manually switched the task LLM", Previous: previous, Next: next,
 	}})
 	return s.engine.emitActivity(t, db.Activity{Worker: "system", Kind: "llm_switch", Summary: summary, Detail: summary, Metadata: metadata})
 }

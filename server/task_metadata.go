@@ -31,14 +31,14 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
 		return
 	}
 	if request.Name == nil && request.Pinned == nil {
-		writeErr(w, http.StatusBadRequest, "At least it needs to be provided name or pinned")
+		writeErr(w, http.StatusBadRequest, "Provide at least name or pinned")
 		return
 	}
 	if request.Name != nil {
@@ -48,7 +48,7 @@ func (s *Server) updateTaskMetadata(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if utf8.RuneCountInString(name) > maxTaskNameRunes {
-			writeErr(w, http.StatusBadRequest, fmt.Sprintf("Task Name Most %d characters", maxTaskNameRunes))
+			writeErr(w, http.StatusBadRequest, fmt.Sprintf("Task name must be at most %d characters", maxTaskNameRunes))
 			return
 		}
 		request.Name = &name

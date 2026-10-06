@@ -9,7 +9,7 @@ import (
 // fix: the task-context header (description + goal) is rendered ONCE per task, no
 // matter how many same-task fires are merged.
 
-const longGoal = "Get the title. f2-05 Protection flag and adopted submit_flag Submitted; the secret article has been heavily closed,flag Only from binary embedded data……" // It represents the fact of a thousand words.
+const longGoal = "Obtain the protected flag for challenge f2-05 and submit it with submit_flag; the ciphertext has converged and the flag can only be derived from data embedded in the binary..." // stands in for a multi-thousand-character inherited fact
 
 func sameTaskFires(n int) []triggeredRun {
 	items := make([]triggeredRun, n)
@@ -92,7 +92,7 @@ func TestTaskContextHeaderEmptyForIntervalFire(t *testing.T) {
 func TestTaskContextHeaderTruncatesLongGoal(t *testing.T) {
 	huge := strings.Repeat("Very.", 5000)
 	h := taskContextHeader(72, "d", huge)
-	if len([]rune(h)) > 800 { // 200 desc + 500 goal + Cut Mark/Decoration, much less than 5000
+	if len([]rune(h)) > 800 { // 200 desc + 500 goal + truncation marker and decoration, far under 5000
 		t.Fatalf("header should be bounded even for a huge goal, got %d runes", len([]rune(h)))
 	}
 }

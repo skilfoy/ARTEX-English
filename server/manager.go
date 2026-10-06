@@ -29,23 +29,23 @@ import (
 type Task struct {
 	ID           string `json:"id"`
 	ExpID        int64  `json:"exploration_id"`
-	Name         string `json:"name"` // Optional task name;Empty=Unnamed
+	Name         string `json:"name"` // optional task name; empty = untitled
 	CategoryID   *int64 `json:"category_id,omitempty"`
 	CategoryName string `json:"category_name,omitempty"`
 	PinnedAt     int64  `json:"pinned_at,omitempty"`
 	Description  string `json:"description"`
 	Goal         string `json:"goal"`
 	CreatedAt    int64  `json:"created_at"`
-	CompletedAt  int64  `json:"completed_at,omitempty"` // Into the final state. unix second;0=Not completed
+	CompletedAt  int64  `json:"completed_at,omitempty"` // unix seconds when the task became terminal; 0 = not finished
 	Paused       bool   `json:"paused"`
-	Queued       bool   `json:"queued"` // Suspended because of simultaneous caps, waiting for empty slots to start automatically;true=Not yet.
+	Queued       bool   `json:"queued"` // held for the concurrency cap and waiting for a free slot; true = not started yet
 	// QueuedAt is an internal Unix-nanosecond ordering key. It is deliberately
 	// finer than CreatedAt so several tasks enqueued in the same second retain
 	// their real FIFO order.
 	QueuedAt           int64   `json:"queued_at,omitempty"`
 	QueueMode          string  `json:"queue_mode,omitempty"`
-	ParentRef          string  `json:"parent_ref,omitempty"`     // Father Job id(Organization spawn Record)
-	LLMProfileID       *int64  `json:"llm_profile_id,omitempty"` // Specifies to run this task planner/worker of LLM Configuration;nil=Activate Configuration with Global
+	ParentRef          string  `json:"parent_ref,omitempty"`     // parent task id (recorded when orchestration spawns the task)
+	LLMProfileID       *int64  `json:"llm_profile_id,omitempty"` // LLM profile for this task's planner and workers; nil = the globally active profile
 	LLMProfileIDs      []int64 `json:"llm_profile_ids,omitempty"`
 	ActiveLLMProfileID *int64  `json:"active_llm_profile_id,omitempty"`
 	LLMChainRevision   int64   `json:"-"`
@@ -53,11 +53,11 @@ type Task struct {
 	LLMFailoverReason  string  `json:"llm_failover_reason,omitempty"`
 	SourceTaskIDs      []int64 `json:"source_task_ids,omitempty"`
 	CompanyIDs         []int64 `json:"company_ids,omitempty"`
-	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout is final; empty/The rest is driven by the operating state)
-	// Task level timeout(See docs/Task-level overtime and end-of-service design.md).DeadlineAt/FirstRunAt for unix second,0=Not set/Not running.
+	Status             string  `json:"status"` // persisted lifecycle status (done/failed/timeout are terminal; empty or anything else is derived from the live run)
+	// Task-level timeout (see the task-timeout and shutdown design notes). DeadlineAt/FirstRunAt are unix seconds; 0 = unset / never run.
 	TimeoutSeconds       int                    `json:"timeout_seconds"`
-	PlanHeartbeatSeconds int                    `json:"plan_heartbeat_seconds"` // planner Heart beat trigger interval(second)
-	CoverageEnabled      bool                   `json:"coverage_enabled"`       // Asset coverage function switch(Creation timing,On by default)
+	PlanHeartbeatSeconds int                    `json:"plan_heartbeat_seconds"` // planner heartbeat interval in seconds
+	CoverageEnabled      bool                   `json:"coverage_enabled"`       // asset-coverage switch, fixed at creation, on by default
 	FirstRunAt           int64                  `json:"first_run_at,omitempty"`
 	DeadlineAt           int64                  `json:"deadline_at,omitempty"`
 	Store                *pgdb.ExplorationStore `json:"-"`
@@ -231,10 +231,10 @@ type Manager struct {
 	mu          sync.RWMutex
 	tasks       map[string]*Task
 	active      string
-	trafficOn   bool // Flow capture switch (default level);settings.traffic_capture)
-	llmRecOn    bool // LLM Record switches (default level);settings.llm_record)
-	// Networking search switches and sources (default level);settings.web_search_*).brave-free Need braveKey;tavily Need tavilyKey.
-	// webSearchProxy It's an independent export agent.(http/https/socks5),With the traffic recorded MITM Agent is irrelevant..
+	trafficOn   bool // traffic capture switch (off by default; settings.traffic_capture)
+	llmRecOn    bool // LLM recording switch (off by default; settings.llm_record)
+	// Web-search switch and backend (off by default; settings.web_search_*). brave-free needs braveKey; tavily needs tavilyKey.
+	// webSearchProxy is a separate egress proxy (http/https/socks5), unrelated to the MITM proxy that records traffic.
 	webSearchOn      bool
 	webSearchBackend string
 	braveKey         string
@@ -262,18 +262,21 @@ const (
 	settingGlobalProxy = "global_proxy"
 	settingWorkers     = "workers"
 	settingLLMRecord   = "llm_record"
-	// LLM Polling(Failover).Close by default——Open and go.[Global activation configuration]of agent Current Configuration
-	// Not Available(Insufficient balance/key Invalid/Current limiting/Service anomaly)Autocut to Next Configuration.
-	// settingLLMPoolBindFallback It only makes sense when the round starts.:Close by default,i.e. agent/Mission Visibility
-	// To bind a configuration is to use it, fail or fail.;The configuration that opens the binding will fall back to the query chain..
+	// LLM failover (polling). Off by default. When on, an agent using the global active
+	// profile switches to the next profile if the current one is unavailable (no balance,
+	// invalid key, rate limit, or a service error).
+	// settingLLMPoolBindFallback matters only while polling is on. Off by default: an agent
+	// or task explicitly bound to a profile uses only that profile, and failure is failure.
+	// When on, a failed bound profile also falls back onto the polling chain.
 	settingLLMPoolOn           = "llm_pool_enabled"
 	settingLLMPoolBindFallback = "llm_pool_bind_fallback"
-	// Task concurrency upper limit:Switch + Upper limit. Default Close;Default limit after open 5(See defaultConcurrencyLimit).
+	// Task concurrency cap: a switch plus a limit. Off by default; when on, the default limit is 5 (see defaultConcurrencyLimit).
 	settingConcurrencyOn    = "task_concurrency_enabled"
 	settingConcurrencyLimit = "task_concurrency_limit"
-	// Experimental features:noa Model driven context compression(norma v0.4.0).Close by default——Four types of platform access after opening
-	// agent(planner/worker/Lord agent/Dialogue)By noa Take over context compression,Replace built-in compaction.
-	// each run Read once,Toggle only those activated after run.
+	// Experimental: noa model-driven context compaction (norma v0.4.0). Off by default.
+	// When on, the four platform agents (planner, worker, main agent, and chat) let noa
+	// compact context instead of the built-in compactor.
+	// Read once per run; toggling it only affects runs started afterwards.
 	settingNoaCompaction = "noa_compaction"
 	// defaultWebSearchBackend is used when web search is on but no backend was picked.
 	defaultWebSearchBackend = "ddgs"
@@ -331,7 +334,7 @@ func (m *Manager) Workers() int {
 // SetWorkers persists the concurrent work-agent count. Values <=0 are rejected.
 func (m *Manager) SetWorkers(n int) error {
 	if n <= 0 {
-		return fmt.Errorf("workers Yes. >0")
+		return fmt.Errorf("workers must be > 0")
 	}
 	return m.pg.SetSetting(settingWorkers, strconv.Itoa(n))
 }
@@ -381,7 +384,7 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 		} else {
 			err = tr.RecoverHostDeleteStages(func(_ int64, taskID int64) (bool, error) {
 				if taskID <= 0 {
-					return false, errors.New("Synchronising folder failed: %s: %s ID")
+					return false, errors.New("archive traffic staging log is missing a task id")
 				}
 				task, taskErr := pg.GetTask(taskID)
 				if taskErr != nil {
@@ -410,7 +413,7 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	// Asset auto-completion engine (§5): HTTP probes routed through the recording
 	// proxy (via m.ProxyAddr, which honors the traffic-capture toggle).
 	m.trafficOn = pg.GetBool(settingTrafficCapture, false)
-	// LLM Record switches (defaults). This mark is read every time the recorder calls..
+	// LLM recording switch (off by default). The recorder reads this flag on every call.
 	m.llmRecOn = pg.GetBool(settingLLMRecord, false)
 	// Load persisted web-search config (default: off, ddgs).
 	m.webSearchOn = pg.GetBool(settingWebSearchOn, false)
@@ -436,7 +439,7 @@ func NewManager(dir, proxyAddr string) (*Manager, error) {
 	}
 	if m.traffic != nil {
 		if err := m.traffic.SetUpstreamProxy(m.globalProxy); err != nil {
-			log.Printf("[proxy] Global agent %q Invalid, Ignored: %v", m.globalProxy, err)
+			log.Printf("[proxy] global proxy %q is invalid and was ignored: %v", m.globalProxy, err)
 		}
 	}
 	m.enrich = enrich.New(m.assets, m.ProxyAddr, 4)
@@ -505,7 +508,7 @@ func (m *Manager) SetNoaCompaction(on bool) error {
 	return m.pg.SetBool(settingNoaCompaction, on)
 }
 
-// LLMPoolEnabled reports whether LLM failover ("Polling") is on (Default off;
+// LLMPoolEnabled reports whether LLM failover (polling) is on (off by default;
 // settings.llm_pool_enabled). Read when the provider chain is built (applyLLM),
 // so a change requires a rebuild — putSettings does that.
 func (m *Manager) LLMPoolEnabled() bool {
@@ -520,8 +523,8 @@ func (m *Manager) LLMPoolEnabled() bool {
 func (m *Manager) SetLLMPoolEnabled(on bool) error { return m.pg.SetBool(settingLLMPoolOn, on) }
 
 // LLMPoolBindFallback reports whether an agent/task that is BOUND to a specific
-// profile still falls back to the chain when that profile fails (Default level: binding is
-// Monarchy. Failure is failure.). Only meaningful while LLMPoolEnabled.
+// profile still falls back to the chain when that profile fails (off by default: a binding is
+// exclusive, and failure is failure). Only meaningful while LLMPoolEnabled.
 func (m *Manager) LLMPoolBindFallback() bool {
 	if m.pg == nil {
 		return false
@@ -640,7 +643,7 @@ const browserMCPName = "browser"
 func (m *Manager) syncBrowserMCPProxy() {
 	servers, err := m.pg.ListMCP()
 	if err != nil {
-		log.Printf("[mcp] browser ProxySync: Read MCP List failed: %v", err)
+		log.Printf("[mcp] browser proxy sync: failed to read the MCP list: %v", err)
 		return
 	}
 	var srv *pgdb.MCPServer
@@ -673,7 +676,7 @@ func (m *Manager) syncBrowserMCPProxy() {
 		return
 	}
 	if proxy != "" {
-		log.Printf("[mcp] browser MCP Hanged Capture Agent %s (CA %s)", proxy, cert)
+		log.Printf("[mcp] browser MCP capture proxy attached %s (CA %s)", proxy, cert)
 	} else {
 		log.Printf("[mcp] Browser MCP capture configuration removed")
 	}
@@ -877,7 +880,7 @@ func (m *Manager) UpdateTaskMetadata(taskID string, patch pgdb.TaskPatch) (*Task
 }
 
 // CreateTask creates a task + its exploration and makes it active.
-// timeoutSeconds is the task-level wall-clock budget (0 = No time limit).
+// timeoutSeconds is the task-level wall-clock budget (0 = no time limit).
 func (m *Manager) CreateTask(description, goal string, llmProfileID *int64, timeoutSeconds, planHeartbeatSeconds int) (*Task, error) {
 	var ids []int64
 	if llmProfileID != nil {
@@ -1046,7 +1049,7 @@ func (m *Manager) DeleteCompanyWithAssets(id int64, deleteAssets bool) (int64, e
 
 // ReplaceTaskLLMProfiles resets a task's ordered provider chain and mirrors the
 // committed state onto the live task handle. Terminal tasks are editable too —
-// their Lord Agent Dialogue keeps running on the chain after the task finishes.
+// their main-agent chat keeps running on the chain after the task finishes.
 func (m *Manager) ReplaceTaskLLMProfiles(id string, profileIDs []int64, activeProfileID int64) (int64, error) {
 	n, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
@@ -1064,10 +1067,10 @@ func (m *Manager) ReplaceTaskLLMProfiles(id string, profileIDs []int64, activePr
 		task.setLLMState(pt.LLMProfileID, pt.ActiveLLMProfileID, pt.LLMProfileIDs, pt.LLMChainRevision, pt.LLMFailoverState, pt.LLMFailoverReason)
 	}
 	m.mu.Unlock()
-	// The final mission does not reopen the blockage.:The mission's gone. worker He's running.,Reopening will only take them from
-	// blocked Move To open——There's no one there.,And no more.[I want to run again.]Rerunable Conditions,
-	// It's a state of death. The final mission wants to keep running.,I'm trying to run again./Add Target,That way will reset the mission.
-	// admit Rerun State.
+	// A finished task does not reopen quota-blocked intents: no worker is running, so
+	// moving them from blocked to open leaves nobody to execute them, and they no longer
+	// match the rerunnable states. That is a dead state. To continue a finished task,
+	// rerun an intent or add a goal; that path admits the task back to running.
 	if pgdb.IsTerminal(pt.Status) {
 		return 0, nil
 	}
@@ -1341,7 +1344,7 @@ func (m *Manager) TaskStatus(id string) string {
 }
 
 // StampTaskFirstRun stamps first_run_at + deadline_at on the first real run (idempotent
-// in DB) and mirrors deadline_at on the live handle. Returns the deadline unix (0 = No limit).
+// in DB) and mirrors deadline_at on the live handle. Returns the deadline unix (0 = unlimited).
 func (m *Manager) StampTaskFirstRun(id string) (int64, error) {
 	m.taskStateMu.Lock()
 	defer m.taskStateMu.Unlock()
@@ -1728,8 +1731,8 @@ func (m *Manager) List() []*Task {
 	for _, t := range m.tasks {
 		out = append(out, t)
 	}
-	// Give priority to the top task, in descending order; normal task by id Reverse order.m.tasks Yes map,
-	// Every round of questioning has to be rescheduled.,id Provides a stable and only background sequence for creating missions at the same time..
+	// Pinned tasks first, newest pin first within that group; other tasks by id descending.
+	// m.tasks is a map, so every poll must sort again. id is the stable unique tie-break for tasks created together.
 	sort.Slice(out, func(i, j int) bool {
 		iState := out[i].lifecycleSnapshot()
 		jState := out[j].lifecycleSnapshot()
@@ -1779,8 +1782,8 @@ func (t *Task) NotifyFinding(intentID int64, summary string) {
 
 // NotifyGoal records that one OR MORE goals were added in a single set_goals call —
 // by the human via the main agent — then wakes the planner, so the next round spells
-// out "People have added. N goals:…" instead of the planner having to spot new open goals in
-// the overview. One call → one trigger event (set_goals One batch at a time, not one bar at a time.).
+// out "a person added N goals: …" instead of the planner having to spot new open goals in
+// the overview. One call → one trigger event (one set_goals batch is one event, not one line per goal).
 // The event survives an early-returning terminal round (drain happens after the gate),
 // so a set_goals that revives a done task still surfaces it once the task is running.
 func (t *Task) NotifyGoal(texts []string) {
@@ -1795,7 +1798,7 @@ func (t *Task) NotifyGoal(texts []string) {
 
 // NotifyHint records that one OR MORE hints were added in a single add_hint call —
 // by the human via the main agent, or by cross-task orchestration — then wakes the
-// planner, so the next round is told "People have added. N A strategic reminder:…" and looks at them
+// planner, so the next round is told "a person added N strategic hints: …" and looks at them
 // directly instead of having to spot the new hint folded into the graph overview.
 // One call → one trigger event (a batched add_hint counts as one, not one per hint).
 func (t *Task) NotifyHint(texts []string) {
@@ -1808,7 +1811,7 @@ func (t *Task) NotifyHint(texts []string) {
 	t.Notify()
 }
 
-// NotifyGoalDeleted records that the human deleted a goal (via Objective management of the overview), then
+// NotifyGoalDeleted records that the human deleted a goal (via goal management on the overview), then
 // wakes the planner so the next round spells out which goal was removed. The event
 // survives an early-returning terminal round (drain happens after the gate).
 func (t *Task) NotifyGoalDeleted(text string) {
@@ -1822,7 +1825,7 @@ func (t *Task) NotifyGoalDeleted(text string) {
 	t.Notify()
 }
 
-// NotifyGoalEdited records that the human edited a goal (via Objective management of the overview), then wakes
+// NotifyGoalEdited records that the human edited a goal (via goal management on the overview), then wakes
 // the planner so the next round spells out the old→new change. The event survives an
 // early-returning terminal round (drain happens after the gate).
 func (t *Task) NotifyGoalEdited(oldText, newText string) {
@@ -1836,7 +1839,7 @@ func (t *Task) NotifyGoalEdited(oldText, newText string) {
 	t.Notify()
 }
 
-// NotifyCancelled records that the human deleted intentID (reason = Reason for deletion), then
+// NotifyCancelled records that the human deleted intentID (reason = the deletion reason), then
 // wakes the planner so the next round spells out which intent was removed and why.
 // summary is the intent's text captured before deletion — needed for hard delete,
 // where the node is gone by the time the planner reads the trigger. Applies to both

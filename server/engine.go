@@ -33,7 +33,7 @@ func dropReason(err error) string {
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23503":
-			return "fk_violation(23503,Fatherexplorationdoes not exist)"
+			return "fk_violation(23503, parent exploration does not exist)"
 		case "23505":
 			return "unique_violation(23505)"
 		default:
@@ -64,13 +64,13 @@ func preview(s string, n int) string {
 	return string(r)
 }
 
-// model_error(provider/API Fault:LLM The layer is running out at once, or the stream has begun to run out.)
-// It's over. work No[I tried not to finish.]It's not a real failure, it's an external shaking. Default considers it permanent
-// blocked There's no intention, so here's a few extra runs for the end.
-// provider Time of recovery;if retry is suspended/Termination/Cancel and immediately give way to the corresponding branch..
+// model_error (provider/API failure: the LLM layer's transient retries are exhausted, or the stream
+// dies after it has started) is not "tried but unfinished" and not a real failure. It is external
+// jitter. Treating it as permanently blocked would throw away an intent, so this terminal state is
+// retried a few extra times, with a backoff between tries so the provider can recover. Pause, stop, or cancel during a retry yields immediately to that branch.
 const (
-	modelErrorRetries      = 2               // model_error Number of additional re-tests after closing
-	modelErrorRetryBackoff = 3 * time.Second // The Avoidance Before Every Again
+	modelErrorRetries      = 2               // extra retries after a model_error ending
+	modelErrorRetryBackoff = 3 * time.Second // backoff before each retry
 	workControlWaitTimeout = 30 * time.Second
 )
 
@@ -136,12 +136,12 @@ type Engine struct {
 
 	plannerRound sync.Map // taskID -> int, planner round counter (for UI round separators)
 
-	// Task level timeout(See docs/Task-level overtime and end-of-service design.md):
-	settling     sync.Map // taskID -> bool, Task is in finish order(Stop pie./New intent.)
-	deadline     sync.Map // taskID -> int64 unix, Absolute deadline(First run-time stamp;0/Default=No limit)
-	stamped      sync.Map // taskID -> bool, first_run_at Is it stamped?(Only once in this process)
-	inflight     sync.Map // taskID -> *int64, He's running. planner.Plan + worker.Execute count(for drain)
-	coordStarted sync.Map // taskID -> bool, deadline Has the co-ordinates been activated?(Run/reload Heavy.)
+	// Task-level timeout (see the task-timeout and shutdown design notes):
+	settling     sync.Map // taskID -> bool, task has entered shutdown (stop dispatching and claiming new intents)
+	deadline     sync.Map // taskID -> int64 unix, absolute deadline (stamped on first real run; 0/missing = none)
+	stamped      sync.Map // taskID -> bool, whether first_run_at has been stamped (once per process)
+	inflight     sync.Map // taskID -> *int64, in-flight planner.Plan + worker.Execute count (used to drain)
+	coordStarted sync.Map // taskID -> bool, whether the deadline coordinator has started (deduped across Run/reload)
 
 	// resolve returns a task's dedicated planner/worker (wired by the server as the
 	// authoritative task-router). nil,nil means this task is deliberately unavailable
@@ -435,11 +435,11 @@ func (e *Engine) ControlWork(ctx context.Context, intentID int64, action string)
 	run := e.work[intentID]
 	if run == nil {
 		e.workMu.Unlock()
-		return fmt.Errorf("%w: Intention %d No running work(Probably closed or not received)", errWorkControlConflict, intentID)
+		return fmt.Errorf("%w: intent %d has no running work (it may have finished or never been claimed)", errWorkControlConflict, intentID)
 	}
 	if run.action != "" {
 		e.workMu.Unlock()
-		return fmt.Errorf("%w: Intention %d Under implementation %s Operation", errWorkControlConflict, intentID, run.action)
+		return fmt.Errorf("%w: intent %d is already running action %s", errWorkControlConflict, intentID, run.action)
 	}
 	run.action = action
 	done := run.done
@@ -457,10 +457,10 @@ func (e *Engine) ControlWork(ctx context.Context, intentID int64, action string)
 		return err
 	case <-ctx.Done():
 		e.releaseWorkControl(intentID, run, action)
-		return fmt.Errorf("Waiting for intent. %d %s End: %w", intentID, action, ctx.Err())
+		return fmt.Errorf("waiting for intent %d %s to finish: %w", intentID, action, ctx.Err())
 	case <-timer.C:
 		e.releaseWorkControl(intentID, run, action)
-		return fmt.Errorf("Waiting for intent. %d %s End: %w", intentID, action, context.DeadlineExceeded)
+		return fmt.Errorf("waiting for intent %d %s to finish: %w", intentID, action, context.DeadlineExceeded)
 	}
 }
 
@@ -482,7 +482,7 @@ func transitionIntentState(store *db.ExplorationStore, intentID int64, expected,
 		return err
 	}
 	if !changed {
-		return fmt.Errorf("%w: Intention %d Not anymore. %s Status", db.ErrIntentStateConflict, intentID, expected)
+		return fmt.Errorf("%w: intent %d is no longer in state %s", db.ErrIntentStateConflict, intentID, expected)
 	}
 	return nil
 }
@@ -492,13 +492,13 @@ func transitionIntentState(store *db.ExplorationStore, intentID int64, expected,
 // re-plans — no kill. Errors if no work is currently running that intent.
 func (e *Engine) SteerWork(intentID int64, msg string) error {
 	if strings.TrimSpace(msg) == "" {
-		return fmt.Errorf("Scattering messages cannot be empty.")
+		return fmt.Errorf("correction message cannot be empty")
 	}
 	e.workMu.Lock()
 	running := e.work[intentID] != nil
 	e.workMu.Unlock()
 	if !running {
-		return fmt.Errorf("Intention %d No running work(Probably closed or not received)", intentID)
+		return fmt.Errorf("intent %d has no running work (it may have finished or never been claimed)", intentID)
 	}
 	e.steerMu.Lock()
 	e.steerBox[intentID] = append(e.steerBox[intentID], msg)
@@ -527,40 +527,40 @@ func (e *Engine) drainSteer(intentID int64) (string, bool) {
 // before each tool call it drains a queued course-correction (if any) and blocks the
 // call, handing the message back to the model — which re-plans its next step instead
 // of running the tool. No queued message → the guard behaves exactly as before.
-// It's both responsible.[Empty turn]Keep running. See you. Stop.
+// It also continues an empty turn; see Stop.
 type steerHooks struct {
 	inner harness.HookRunner
 	drain func() (string, bool)
-	// nudges is the number of empty reruns intended to have been injected, maximum limit.Pointer:harness Hold it.
-	// steerHooks The value copies must be shared..
+	// nudges is how many empty-turn continuations this intent has already injected, capped by limit.
+	// A pointer: harness holds a copy of steerHooks by value, so the counter must be shared.
 	nudges *atomic.Int64
-	// limit is the maximum number of runovers, by Engine.emptyTurnNudgeLimit() from[Retry with empty response
-	// Number of times]It's sorted out..<=0 = No intervention.(The user showed off the floor.).
+	// limit is the empty-turn continuation cap, resolved by Engine.emptyTurnNudgeLimit from the
+	// empty-response retry count. <=0 means do not intervene (the user explicitly disabled this layer).
 	limit int
-	// label Shaped like "worker-1 · #42",Only for Logs.
+	// label looks like "worker-1 · #42" and is only for logs.
 	label string
 }
 
-// Empty turn(Only thinking, no text, no tools to call.)Default number of running runs, with SDK Empty Response Retry
-// Internal Default(norma/llm/openai.go of emptyResponseRetries)Consistency——Both floors share the same.
-// The button should also be aligned when not configured. I'll see. Engine.emptyTurnNudgeLimit.
+// Default number of empty-turn continuations (thinking only: no text and no tool call). It matches
+// the SDK empty-response retry default (emptyResponseRetries in norma/llm/openai.go) — the two layers
+// share one knob, so the unconfigured behavior should match too. See Engine.emptyTurnNudgeLimit.
 //
-// Watch this number.[Total amount of an intention],No[A couple of times.]:harness My own. stopHookActive
-// They're already dead.——If you push that round, it's empty.,Stop The hook won't be transferred again.,run Direct
-// Ending;Quotas are refreshed only when a tool round really happens.(norma/harness/query.go:534).So this...
-// It's the gate.[Tools → Empty → Push! → Tools → Empty]This pathological cycle, don't let it run out of purpose..
+// This number is a budget for the whole intent, not "N in a row". harness stopHookActive already
+// allows only one continuation for a streak of empty turns — if the round after the nudge is still
+// empty, Stop is not called again and the run ends. The quota refreshes only after a real tool round
+// (norma/harness/query.go:534). The gate stops the loop tool → empty → nudge → tool → empty from burning the intent budget.
 const defaultEmptyTurnNudges = 2
 
-// emptyTurnNudge It's an air-turned rerun..
+// emptyTurnNudge is the continuation instruction injected on an empty turn.
 //
-// This round is harness It's a natural end.(stop_reason=end_turn None tool_use),Five.
-// LLM I don't want to try it again.——It's not a mistake. It's a model.[I'm done, but I didn't do it.].SDK It's an empty response.
-// I can't reach it.:It's...[Did you? yield Events]Dismissed, and thinking about incremental is an event.(norma/llm/openai.go
-// of SEThinkingDelta),So thinking-only Not empty. Besides, it's the same floor. prompt,
-// Redeals of this kind, determined by the shape of the context, only allow the model to think again. Replace it with an additional directive.
-// Keep thinking about what's already done, and the input changes to justify different behavior..
-const emptyTurnNudge = "[Empty alarm]You've only given the thought in the last round. You haven't answered the text, you haven't called any tools.," +
-	"This round equals no output. Please implement the next step you've just thought about: call the tool or give the text of the conclusion. Don't think over.."
+// harness treats that turn as a natural end (stop_reason=end_turn and no tool_use). None of the five
+// LLM retry layers apply — it is not an error, the model "finished thinking but did not act". The SDK
+// empty-response retry cannot see it either: it treats "did any event get yielded" as non-empty, and a
+// thinking delta is itself an event (SEThinkingDelta in norma/llm/openai.go), so thinking-only is not
+// empty. That layer also resends the whole prompt unchanged, which only makes the model think again.
+// Here we append an instruction so it continues from thinking it already produced; the input changed, so a different action is possible.
+const emptyTurnNudge = "[Empty-turn reminder] Last round you only produced thinking: no reply text and no tool call, so the round produced nothing. " +
+	"Do the next step you already decided: either call a tool or write the conclusion. Do not repeat the thinking."
 
 // isThinkingOnlyTurn reports whether the latest assistant turn produced neither
 // text nor a tool call — i.e. the model spent the whole round thinking.
@@ -577,8 +577,8 @@ func isThinkingOnlyTurn(messages []llm.Message) bool {
 
 func (h steerHooks) PreToolUse(ctx context.Context, name string, input []byte) (bool, string, []byte) {
 	if msg, ok := h.drain(); ok {
-		return true, "[Planner corrects in real time]" + msg +
-			"\n(This is an immediate instruction from the planners for this intent; the call for this tool has not been implemented and please adjust the next step accordingly. If you're in conflict with your current intentions, that's the rule..)", nil
+		return true, "[Planner correction] " + msg +
+			"\n(This is an immediate instruction from the planner for this intent. This tool call was not executed; adjust your next step accordingly. If it conflicts with what you were about to do, follow this.)", nil
 	}
 	if h.inner != nil {
 		return h.inner.PreToolUse(ctx, name, input)
@@ -592,10 +592,10 @@ func (h steerHooks) PostToolUse(ctx context.Context, name string, input, result 
 	}
 }
 
-// Stop at guard Add to the original syntax[Empty turn]Keep running.:The model is only a reflection, not a text.
-// And when you don't have the tools,,harness It'll be a natural end and empty. summary Ending(query.go of
-// ReasonCompleted + asst.Text()),The intention that was not finished was simply cut off. Injection at this time.
-// It's a rerun. Let the model go with the thought..
+// On top of the guard's own Stop behavior, continue an empty turn: thinking only, no text and no
+// tool call. harness would treat that as a natural end and finish with an empty summary (query.go
+// ReasonCompleted + asst.Text()), cutting off an intent that is not actually done. Inject a
+// continuation so the model proceeds from the thinking it already produced.
 func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []string, string) {
 	var (
 		prevent  bool
@@ -605,17 +605,17 @@ func (h steerHooks) Stop(ctx context.Context, messages []llm.Message) (bool, []s
 	if h.inner != nil {
 		prevent, blocking, msg = h.inner.Stop(ctx, messages)
 	}
-	// inner We've decided to stop, or we've injected our own running news. → Respect it. No more folding..
-	// limit<=0 = Users put[Number of empty responses repeated]It's a match. -1,Turn the floor off in a visible fashion..
+	// inner already decided to hard-stop, or is already injecting its own continuation: respect it and do not stack another.
+	// limit<=0 means the user set empty-response retries to -1, which explicitly disables this layer.
 	if prevent || len(blocking) > 0 || h.nudges == nil || h.limit <= 0 || !isThinkingOnlyTurn(messages) {
 		return prevent, blocking, msg
 	}
 	n := h.nudges.Add(1)
 	if n > int64(h.limit) {
-		log.Printf("[work %s] Empty turn(Thinking, text, tools.)The limit for running has been reached. %d,Let it go.", h.label, h.limit)
+		log.Printf("[work %s] empty turn (thinking only, no text and no tools) hit the continuation limit %d; letting the run end", h.label, h.limit)
 		return prevent, blocking, msg
 	}
-	log.Printf("[work %s] Empty turn(Thinking, text, tools.),Injection of rerun. (%d/%d)", h.label, n, h.limit)
+	log.Printf("[work %s] empty turn (thinking only, no text and no tools); injecting a continuation (%d/%d)", h.label, n, h.limit)
 	return false, []string{emptyTurnNudge}, ""
 }
 
@@ -626,7 +626,7 @@ func (e *Engine) KillWork(intentID int64) error {
 	run := e.work[intentID]
 	e.workMu.Unlock()
 	if run == nil {
-		return fmt.Errorf("Intention %d No running work(Probably closed or not received)", intentID)
+		return fmt.Errorf("intent %d has no running work (it may have finished or never been claimed)", intentID)
 	}
 	run.cancel(agent.AbortKilledByPlanner)
 	return nil
@@ -643,7 +643,7 @@ func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 		// NO LONGER SILENT: dropping a record breaks command↔result pairing in the
 		// trace — a tool_use whose tool_result was lost shows as "Executing" forever, and
 		// a lost 'result'/'round' record leaves the session with no summary ("No summary").
-		// Everything needed toAnalysis of root causes goes into ONE error-level line: reason class,
+		// Everything needed to find the root cause goes into ONE error-level line: reason class,
 		// summary preview, running drop count for this task, and — on the FK case — a
 		// live probe of WHY the parent exploration is unreachable.
 		n := e.bumpDrop(t.ID)
@@ -653,13 +653,13 @@ func (e *Engine) emitActivity(t *Task, r db.Activity) db.Activity {
 		if isFKViolation(err) {
 			storeID := t.Store.ID()
 			if exists, refs, maxID, dErr := e.m.pg.ExplorationDiag(storeID); dErr != nil {
-				diag = fmt.Sprintf(" | FKDiagnostic query failed(store.expID=%d task.ExpID=%d): %v", storeID, t.ExpID, dErr)
+				diag = fmt.Sprintf(" | FK diagnostic query failed (store.expID=%d task.ExpID=%d): %v", storeID, t.ExpID, dErr)
 			} else {
-				diag = fmt.Sprintf(" | FKDiagnosis: store.expID=%d task.ExpID=%d explorationExistence=%v Quote it.taskNumber=%d MAX(exploration.id)=%d",
+				diag = fmt.Sprintf(" | FK diagnostic: store.expID=%d task.ExpID=%d exploration_exists=%v tasks_referencing_it=%d MAX(exploration.id)=%d",
 					storeID, t.ExpID, exists, refs, maxID)
 			}
 		}
-		log.Printf("[activity] task %s Discard Activity Record(The mandate cumulatively %d strip) worker=%s kind=%s tool=%s tuid=%s reason=%s summary=%q: %v%s",
+		log.Printf("[activity] task %s dropped an activity record (drop %d for this task) worker=%s kind=%s tool=%s tuid=%s reason=%s summary=%q: %v%s",
 			t.ID, n, r.Worker, r.Kind, r.Tool, r.ToolUseID, dropReason(err), preview(r.Summary, 80), err, diag)
 		e.touch(t.ID)
 		return r
@@ -765,28 +765,28 @@ func (e *Engine) Run(ctx context.Context, t *Task) {
 		name := fmt.Sprintf("work#%d", i+1)
 		runTaskRoutine(rt, func(loopCtx context.Context) { e.workerLoop(loopCtx, t, name) })
 	}
-	e.startDeadlineCoordinator(ctx, t) // Task level timer(Only timeout>0;Heavy.)
-	// Only[There's no motive.(open+running)]Time. kick First round of planning. A mission with seed intent:Seeds Already
-	// Yes open,Or it's just up there. worker First. claim Done. running——Both.[Work.],Skip All
-	// First Round planner,worker Straight to the seed.,Run by NotifyDone/Heart beats. planner.
-	// ⚠️ It's not working. Frontier(Only open):worker Receipts(open→running)There is a competition with this check,It's a mistake. kick.
-	// When you restart it, you'll probably just have to reset it. running Intention,You should skip the same thing..
+	e.startDeadlineCoordinator(ctx, t) // task-level timeout timer (only if timeout>0; deduped)
+	// Kick the first planner round only when there is no active intent at all (open or running). A task
+	// with a seed intent already has it open, or a worker that just started has claimed it as running —
+	// either way there is work, so skip the first planner round. The worker claims the seed, and NotifyDone or the heartbeat wakes the planner when it finishes.
+	// Do not use Frontier (open only): claiming (open→running) races this check and would kick by mistake.
+	// A restart may also leave only running intents; skip the first round then too.
 	if has, _ := t.Store.HasActiveIntent(); !has {
 		t.Notify() // kick the first planning round (acted on once LLM is ready)
 	}
 }
 
-// plannerHeartbeatInterval Parsing Tasks planner Heart beat interval.db.CreateTask Reunified
-// (Less than 600 All of them. 600);Let's go back to the bottom.,Anti-RAM anomaly.
+// plannerHeartbeatInterval resolves the task's planner heartbeat. db.CreateTask already normalizes
+// it (anything under 600 is raised to 600); this is a second floor against a bad in-memory value.
 func plannerHeartbeatInterval(t *Task) time.Duration {
 	sec := t.PlanHeartbeatSeconds
-	if sec < db.MinPlanHeartbeatSeconds { // Lower limit=Default=600(10min)
+	if sec < db.MinPlanHeartbeatSeconds { // floor = default = 600 (10 min)
 		sec = db.MinPlanHeartbeatSeconds
 	}
 	return time.Duration(sec) * time.Second
 }
 
-// resetPlannerTimer A security arm could have been triggered. Timer(Standard Stop→drain→Reset Mode).
+// resetPlannerTimer safely rearms a Timer that may already have fired (the standard Stop, drain, Reset).
 func resetPlannerTimer(timer *time.Timer, d time.Duration) {
 	if !timer.Stop() {
 		select {
@@ -799,13 +799,13 @@ func resetPlannerTimer(timer *time.Timer, d time.Duration) {
 
 func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 	interval := plannerHeartbeatInterval(t)
-	// The heartbeat timer is here. loop The entrance arm. = From Task start Time:Even skip the first round. planner of seed Task
-	// (Run inside frontier Not empty kick First Round),It's been blocking.,The heartbeat will be there.[Task start + interval]
-	// Trigger the first round of planning. Every time I wake up,(Edge/Heartbeat)Both arms. = The last time any plan triggers.
+	// The heartbeat is armed at loop entry, so it is measured from task start. Even a seed task that skips
+	// the first planner round (Run sees a non-empty frontier and does not kick) and blocks here still gets
+	// its first plan at start+interval. Every later wake (edge or heartbeat) rearms it, so the timer is time since the last plan trigger.
 	heartbeat := time.NewTimer(interval)
 	defer heartbeat.Stop()
 
-	// runRound Run a round of planning.(incl. debounce Merge + Each guard).src Only for the log to distinguish the trigger source.
+	// runRound runs one planning round (debounce merge plus the guards). src is only for the log.
 	runRound := func(src string) {
 		// debounce: coalesce a burst of changes into one planning round
 		timer := time.NewTimer(e.debounce)
@@ -833,45 +833,45 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		if isTerminalStatus(t.lifecycleSnapshot().Status) {
 			return
 		}
-		// Task level timed out.:Drop normal awakening——worker Put it back.,Resume of Notify Not anymore.
-		// Trigger the conventional planning wheel;The final round is coordinated.(settleTask)Direct driver,Not this way..
+		// During task-timeout shutdown, drop ordinary wakes. Worker wrap-up writes and Resume's Notify no
+		// longer start a normal planning round. The final round is driven directly by the coordinator (settleTask), not through here.
 		if e.isSettling(t.ID) {
 			return
 		}
-		// goalless(Branch: no more tasks open Target time planner Don't run.——If you run away, you'll get a heavy sentence.
-		// met→cancelExec Kill the user master. agent Intent to vote. Whether to end or change frontier Decision:
-		// Also open/running Intention → Hold running,Waiting silently; all intents are dry → Drop done.
-		// The whole paragraph is pure. Go,Do not trigger anything LLM Call it and don't play the planning wheel. marker.
+		// Goalless branch (manual direct intents): the planner does not run once no goal is open. Running it
+		// would re-judge met and cancelExec, killing intents the user posted through the main agent. Whether
+		// the task ends is decided by the frontier: open or running intents → stay running and wait quietly;
+		// every intent finished → store done. This block is plain Go: no LLM call and no planning-round marker.
 		if open, err := t.Store.HasOpenGoal(); err == nil && !open {
-			t.drainTriggers() // Discard accumulated done/finding Trigger, avoid. goalless A long talk of growth.
+			t.drainTriggers() // drop accumulated done/finding triggers so a long goalless session cannot grow without bound
 			if active, err := t.Store.HasActiveIntent(); err == nil && !active {
-				// frontier It's dry and has no intention of running. → End. Use Guarded Copy it. CAS,Avoid stepping on the side.
-				// pause/delete/Time-out status conversion.
+				// Frontier drained and nothing in flight → finish. The guarded update is a CAS so it does not clobber
+				// a concurrent pause, delete, or timeout shutdown.
 				if won, err := e.m.SetTaskStatusGuarded(t.ID, "done"); err != nil {
-					log.Printf("[goalless] task %s failed to mark completed: %v", t.ID, err)
+					log.Printf("[goalless] task %s failed to store done: %v", t.ID, err)
 				} else if won {
 					e.emitActivity(t, db.Activity{Worker: "system", Kind: "text",
-						Summary: "The goal has been achieved, the direct goal has been implemented and the mission is over."})
+						Summary: "All goals are met and the directly posted intents have finished; the task is done"})
 				}
 			}
-			return // goalless The branch never enters. planner.Plan
+			return // the goalless branch never enters planner.Plan
 		}
 		if !e.beginTaskOperation(t.ID) {
 			return
 		}
 		defer e.decInflight(t.ID)
-		e.stampFirstRun(t) // First real plan → Guy. first_run_at + Fine. deadline(Only with timeout Tasks)
+		e.stampFirstRun(t) // first real plan → stamp first_run_at and compute the deadline (timeout tasks only)
 		e.touch(t.ID)
 		emit := func(r db.Activity) { e.emitActivity(t, r) }
-		ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; Tasks deadline
+		ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; carries the task deadline
 		if ectx.Err() != nil || e.IsDeleting(t.ID) {
 			return
 		}
-		log.Printf("[planner] task %s Planning…(%s Trigger)", t.ID, src)
+		log.Printf("[planner] task %s planning… (triggered by %s)", t.ID, src)
 		// round marker: each Plan() is one planner round; emit a boundary so the
 		// UI can separate rounds in the transcript (kind='round').
 		e.emitActivity(t, db.Activity{Worker: "planner", Kind: "round",
-			Summary: fmt.Sprintf("No. %d Round planning", e.nextPlannerRound(t.ID))})
+			Summary: fmt.Sprintf("Planning round %d", e.nextPlannerRound(t.ID))})
 		// what fired this round (worker done / finding; may be several — debounce
 		// coalesces a burst; empty for time/heartbeat wakes).
 		triggers := t.drainTriggers()
@@ -881,19 +881,19 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		e.EndLLMCall(t.ID)
 		switch {
 		case err != nil && ectx.Err() == nil:
-			log.Printf("[planner] task %s Planning error: %v", t.ID, err)
+			log.Printf("[planner] task %s planning failed: %v", t.ID, err)
 		case met:
-			log.Printf("[planner] task %s Target is set.: %s", t.ID, reason)
-			// All goals achieved. → Enduring Task Status As done(Frontend DTO It'll give priority to the end.).
+			log.Printf("[planner] task %s decided the goals are met: %s", t.ID, reason)
+			// All goals met → persist task status done (the frontend DTO prefers that terminal status).
 			if err := e.m.SetTaskStatus(t.ID, "done"); err != nil {
-				log.Printf("[planner] task %s failed to persist completion: %v", t.ID, err)
+				log.Printf("[planner] task %s failed to store done: %v", t.ID, err)
 			}
-			// Mission complete. → Cancel the running immediately. worker:It doesn't make sense what they're trying to do..
-			// Next round. worker The end-of-life door of the cycle is no longer intended.;The one that was canceled goes down."Task completed"Branch
-			// Attribution stopped(instead of blocked).
+			// Task judged complete → cancel in-flight workers now; finishing their intents would not matter.
+			// The next worker loop hits the terminal-status gate and claims nothing new. Cancelled runs take the
+			// "task already complete" branch below and are stopped, not blocked.
 			e.cancelExec(t.ID, agent.AbortGoalMet)
 		default:
-			log.Printf("[planner] task %s Planning completed", t.ID)
+			log.Printf("[planner] task %s planning finished", t.ID)
 		}
 		e.touch(t.ID)
 	}
@@ -903,12 +903,12 @@ func (e *Engine) plannerLoop(ctx context.Context, t *Task) {
 		case <-ctx.Done():
 			return
 		case <-t.notify:
-			runRound("edge") // worker End / finding / kill / resume / seed First Round
+			runRound("edge") // worker finished / finding / kill / resume / seed first round
 		case <-heartbeat.C:
-			// End of cycle:I don't know. + Wake up and supervise the flight. worker(steer/kill) + Periodic review.
+			// Periodic fallback: deadlock backstop, supervise in-flight workers (steer/kill), and recheck.
 			runRound("heartbeat")
 		}
-		// Every time I wake up,(Side or heartbeat)The back-arm heartbeat.:Any plan triggers recalculate this static clock..
+		// After every wake (edge or heartbeat), rearm the heartbeat: any plan trigger restarts the idle timer.
 		resetPlannerTimer(heartbeat, interval)
 	}
 }
@@ -940,13 +940,13 @@ func (e *Engine) workerLoop(ctx context.Context, t *Task, name string) {
 			if sleepCtx(ctx, 1000*time.Millisecond) {
 				return
 			}
-			continue // Task timed out.:No more new intentions.(I'm winding up running.,Coordinaters and others drain)
+			continue // task-timeout shutdown: do not claim new intents (in-flight runs finish themselves; the coordinator waits for them to drain)
 		}
 		if isTerminalStatus(e.m.TaskStatus(t.ID)) {
 			if sleepCtx(ctx, 1000*time.Millisecond) {
 				return
 			}
-			continue // Task is final(done/failed/timeout):Stop receiving legacy intent,Don't run when you're done. frontier
+			continue // task is terminal (done/failed/timeout): stop claiming leftover intents; do not keep walking an empty frontier after completion
 		}
 		if !e.beginTaskOperation(t.ID) {
 			return
@@ -967,7 +967,7 @@ func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker
 	if intent == nil {
 		return false
 	}
-	log.Printf("[worker %s] task %s Intention #%d", name, t.ID, intent.ID)
+	log.Printf("[worker %s] task %s claimed intent #%d", name, t.ID, intent.ID)
 	return e.runIntent(ctx, t, name, worker, intent, "", "")
 }
 
@@ -981,13 +981,13 @@ func (e *Engine) runWorkerStep(ctx context.Context, t *Task, name string, worker
 // cannot observe quiescence between the LLM return and the final DB writes.
 func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *agent.Worker, intent *db.Node, requestID, message string) bool {
 	hasChatMessage := message != ""
-	e.stampFirstRun(t) // First real implementation → Guy. first_run_at + Fine. deadline(Only with timeout Tasks)
+	e.stampFirstRun(t) // first real execution → stamp first_run_at and compute the deadline (timeout tasks only)
 	e.touch(t.ID)
 	emit := func(r db.Activity) { e.emitActivity(t, r) }
-	ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; Tasks deadline
+	ectx := e.clockCtx(e.execContextFor(ctx, t.ID), t, false) // cancellable by Pause; carries the task deadline
 	if ectx.Err() != nil || e.IsDeleting(t.ID) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "open"); err != nil {
-			log.Printf("[worker %s] task %s Intention #%d failed to collect result: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s failed to roll back intent #%d after claim: %v", name, t.ID, intent.ID, err)
 		}
 		return true
 	}
@@ -1004,8 +1004,8 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	}
 	label := fmt.Sprintf("%s · #%d", name, iid)
 	workCtx = intercept.WithTaskContext(workCtx, t.ID, label, taskEmit)
-	// nudges Intently built model_error Outside the rerun cycle:The maximum limit for an empty run is[That's the intention.]Total,
-	// You can't just run again..
+	// nudges is deliberately outside the model_error retry loop: the empty-turn cap is a budget for this
+	// intent, and retrying the work must not reset it.
 	hooks := steerHooks{
 		inner:  t.Guard.Hooks(),
 		drain:  func() (string, bool) { return e.drainSteer(iid) },
@@ -1024,17 +1024,17 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		reason, wrote, err = worker.Execute(workCtx, name, wTaskID, e.m.assets, t.Store, intent, hooks, emit, e.m.enrich, t.NotifyFinding)
 	}
 	e.EndLLMCall(t.ID)
-	// model_error Ending → A few extra reruns (to try after retreat). It's just the intention. work,Task
-	// Not suspended/Not terminated/Not cancelled[And not finished.]retrying;or yielding to the corresponding branch(No, no, no.
-	// Try again.,Avoid shunning others. worker An elegant closing window).
+	// A model_error ending → retry a few more times (after backoff). Retry only while the intent still
+	// belongs to this work and the task is not paused, stopped, or cancelled, and has not entered shutdown.
+	// Otherwise yield to that branch. Do not retry during shutdown; the backoff would eat other workers' graceful-shutdown window.
 	maxRetries, retryBackoff := e.modelErrorRetryPolicy()
 	for attempt := 1; attempt <= maxRetries &&
 		retryableWorkerModelError(reason, err) &&
 		workCtx.Err() == nil && ectx.Err() == nil && !e.IsPaused(t.ID) && !e.isSettling(t.ID); attempt++ {
-		log.Printf("[worker %s] task %s Intention #%d model_error Ending,%v Try again after (%d/%d)",
+		log.Printf("[worker %s] task %s intent #%d ended with model_error; retrying in %v (%d/%d)",
 			name, t.ID, intent.ID, retryBackoff, attempt, maxRetries)
 		if sleepCtx(workCtx, retryBackoff) {
-			break // Cancelled during retreat (terminated)/Pause)→ Leave it to the bottom branch.
+			break // cancelled during backoff (stop or pause) → the branch below handles it
 		}
 		e.BeginLLMCall(t.ID)
 		if hasChatMessage {
@@ -1068,10 +1068,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	if action == "pause" {
 		controlErr = transitionIntentState(t.Store, intent.ID, "running", "paused")
 		if controlErr != nil {
-			log.Printf("[worker %s] task %s Intention #%d Pause library failed: %v", name, t.ID, intent.ID, controlErr)
+			log.Printf("[worker %s] task %s failed to store paused for intent #%d: %v", name, t.ID, intent.ID, controlErr)
 			return true
 		}
-		log.Printf("[worker %s] task %s Intention #%d Suspended", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s intent #%d paused", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
@@ -1081,10 +1081,10 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 		// a later cancel can finish cleanup instead of leaving a phantom running row.
 		controlErr = transitionIntentState(t.Store, intent.ID, "running", "paused")
 		if controlErr != nil {
-			log.Printf("[worker %s] task %s Intention #%d failed to remove execution fence: %v", name, t.ID, intent.ID, controlErr)
+			log.Printf("[worker %s] task %s failed to store the cancel barrier for intent #%d: %v", name, t.ID, intent.ID, controlErr)
 			return true
 		}
-		log.Printf("[worker %s] task %s Intention #%d Stopped pending cancellation", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s intent #%d stopped, waiting for cancel cleanup", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
@@ -1093,36 +1093,36 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	// conversation from its transcript instead of restarting from scratch.
 	if ectx.Err() != nil && taskExecutionPaused(context.Cause(ectx)) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "open"); err != nil {
-			log.Printf("[worker %s] task %s Intention #%d failed to save result: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s failed to roll back intent #%d on task pause: %v", name, t.ID, intent.ID, err)
 		}
 		return true
 	}
-	// The hard end of the mission. cancel(Not pause,Not kill)Canceled Ben. run → Attribution exhausted(Ended),
-	// Don't miss the mark. blocked.At this point, worker Usually already. settlement Phase back..
+	// A hard-stop cancel from task-timeout shutdown (not pause, not kill) cancelled this run → exhausted
+	// (already wrapped up), not blocked. The worker has usually already written the result during settlement.
 	if ectx.Err() != nil && e.isSettling(t.ID) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "exhausted"); err != nil {
-			log.Printf("[worker %s] task %s Intention #%d Overtime closedown library failed: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s failed to store timeout-shutdown status for intent #%d: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s Intention #%d Because the job is over and done with.(exhausted),Write back %s", name, t.ID, intent.ID, wrote)
+		log.Printf("[worker %s] task %s intent #%d ended exhausted because the task timed out; wrote %s", name, t.ID, intent.ID, wrote)
 		e.touch(t.ID)
 		return true
 	}
-	// Mission complete.(done via General Path)→ Up there. cancelExec Canceled Ben. run.The intention is meaningless.,
-	// Indicators stopped(No blocked),Don't contaminate the intended state of the mission..
+	// Task already judged complete (done via the normal path) → cancelExec above cancelled this run. The
+	// intent result no longer matters. Mark stopped, not blocked, so a completed task's intents stay clean.
 	if ectx.Err() != nil && isTerminalStatus(e.m.TaskStatus(t.ID)) {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "stopped"); err != nil {
-			log.Printf("[worker %s] task %s Intention #%d Final stop library failed: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s failed to store terminal stop for intent #%d: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s Intention #%d Canceled because the task was completed(stopped)", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s intent #%d cancelled because the task is complete (stopped)", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		return true
 	}
 	// killed by the planner: mark stopped (don't write back results, don't auto-reclaim).
 	if killed {
 		if err := transitionIntentState(t.Store, intent.ID, "running", "stopped"); err != nil {
-			log.Printf("[worker %s] task %s Intention #%d failed to persist planner stop: %v", name, t.ID, intent.ID, err)
+			log.Printf("[worker %s] task %s failed to store planner stop for intent #%d: %v", name, t.ID, intent.ID, err)
 		}
-		log.Printf("[worker %s] task %s Intention #%d Terminated(stopped)", name, t.ID, intent.ID)
+		log.Printf("[worker %s] task %s intent #%d was stopped", name, t.ID, intent.ID)
 		e.touch(t.ID)
 		t.Notify()
 		return true
@@ -1130,27 +1130,27 @@ func (e *Engine) runIntent(ctx context.Context, t *Task, name string, worker *ag
 	if err != nil {
 		log.Printf("[worker %s] intent %d: %v", name, intent.ID, err)
 	}
-	// terminalDiversion: maximum number of bumps ≠ Complete.max_turns→exhausted(That's how the planners know the direction.
-	// Tried but not really finished, needed to change angles, not as covered permanently; error→blocked;Normal→done.
+	// Terminal split: hitting the step cap is not completion. max_turns → exhausted (the planner then knows
+	// this direction was tried but not really finished, and should change angle, not be skipped forever as covered); an error → blocked; a normal end → done.
 	state := "done"
 	switch {
 	case err != nil:
 		state = "blocked"
 	case reason == harness.ReasonMaxTurns:
 		state = "exhausted"
-		log.Printf("[worker %s] intent %d Maximum number of crashes(exhausted),This time, write back. %s", name, intent.ID, wrote)
+		log.Printf("[worker %s] intent %d hit the step cap (exhausted); wrote %s", name, intent.ID, wrote)
 	case reason == harness.ReasonTimeout:
 		state = "exhausted"
-		log.Printf("[worker %s] intent %d Run timeout(exhausted),Write back after closing. %s", name, intent.ID, wrote)
+		log.Printf("[worker %s] intent %d timed out (exhausted); wrote %s after wrap-up", name, intent.ID, wrote)
 	}
 	if state == "blocked" && isTaskLLMChainExhausted(err) {
 		_ = t.Store.SetIntentBlockedReason(intent.ID, db.IntentBlockedLLMQuota)
 	} else {
 		if stateErr := transitionIntentState(t.Store, intent.ID, "running", state); stateErr != nil {
-			log.Printf("[worker %s] task %s Intention #%d Final state %s failed to persist state: %v", name, t.ID, intent.ID, state, stateErr)
+			log.Printf("[worker %s] task %s intent #%d failed to store terminal state %s: %v", name, t.ID, intent.ID, state, stateErr)
 		}
 	}
-	log.Printf("[worker %s] task %s Intention #%d End: %s (Write back %s)", name, t.ID, intent.ID, state, wrote)
+	log.Printf("[worker %s] task %s intent #%d finished: %s (wrote %s)", name, t.ID, intent.ID, state, wrote)
 	e.touch(t.ID)
 	t.NotifyDone(intent.ID) // results changed the graph -> wake the planner (with the just-finished intent id)
 	return true
@@ -1180,7 +1180,7 @@ func (e *Engine) runDetachedIntent(ctx context.Context, t *Task, intentID int64,
 	}()
 	_, worker := e.snapshotFor(t)
 	if worker == nil {
-		return fmt.Errorf("worker Not ready")
+		return fmt.Errorf("worker is not ready yet")
 	}
 	node, err := t.Store.GetNode(intentID)
 	if err != nil {
@@ -1194,7 +1194,7 @@ func (e *Engine) runDetachedIntent(ctx context.Context, t *Task, intentID int64,
 		return err
 	}
 	if !changed {
-		return fmt.Errorf("%w: The intention is no longer. paused Status", db.ErrIntentStateConflict)
+		return fmt.Errorf("%w: intent is no longer paused", db.ErrIntentStateConflict)
 	}
 	node.State, node.Owner = "running", "chat"
 	// Record the human turn as a visible activity BEFORE the run starts, so it is
