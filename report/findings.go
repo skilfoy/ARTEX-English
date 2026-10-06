@@ -13,66 +13,69 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Found Page[Export]Rendering with:Put in a batch. findings Table Line Rendering to Summary Markdown,Single Markdown,
-// or CSV.JSON By server Layer Direct DTO Sequenced,Not here..
+// Export rendering for the findings page: turn a batch of finding rows into a
+// summary Markdown document, one Markdown file per finding, or CSV. JSON is
+// serialized from DTOs in the server package and is not handled here.
 
-// sortFindingsForExport In descending order of severity, in descending order of time,Consistent with the clustering of summary reports.
+// sortFindingsForExport orders by severity (most severe first), then by time
+// descending, matching how the summary report is grouped.
 func sortFindingsForExport(fs []*db.DBFinding) {
 	sort.SliceStable(fs, func(i, j int) bool {
 		ri, rj := sevRank[fs[i].Severity], sevRank[fs[j].Severity]
 		if ri != rj {
-			return ri < rj // sevRank The smaller, the worse.
+			return ri < rj // lower sevRank is more severe
 		}
 		return fs[i].CreatedAt.After(fs[j].CreatedAt)
 	})
 }
 
-// findingTitle Take Hole Readable Titles:Name → Category → [Uncategorized].
+// findingTitle is the readable title: name, then category, then "Uncategorized".
 func findingTitle(f *db.DBFinding) string {
 	return nz(f.Name, nz(f.VulnClass, "Uncategorized"))
 }
 
-// FindingsMarkdown Put in a batch. findings Consolidated into a summary report(Abstract + Grouped by serious level,
-// Each article contains categories/Status/Assigned tasks/Evidence/Detailed report).
+// FindingsMarkdown renders a batch of findings as one summary report: a counts
+// section, then one entry per finding with category, status, assigned task,
+// evidence, and the detailed report.
 func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	items := append([]*db.DBFinding(nil), fs...)
 	sortFindingsForExport(items)
 
 	var b strings.Builder
-	b.WriteString("# Summary report on gaps identified\n\n")
-	fmt.Fprintf(&b, "- **Generate Time**:%s\n", generatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(&b, "- **Total number of discoveries**:%d pieces\n\n", len(items))
+	b.WriteString("# Findings summary\n\n")
+	fmt.Fprintf(&b, "- **Generated**: %s\n", generatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&b, "- **Findings**: %d\n\n", len(items))
 
-	// Abstract:Counting of levels of severity.
+	// Count findings at each severity.
 	counts := map[string]int{}
 	for _, f := range items {
 		counts[f.Severity]++
 	}
-	b.WriteString("## Abstract\n\n")
-	b.WriteString("| Severity level | Number |\n| --- | --- |\n")
+	b.WriteString("## Summary\n\n")
+	b.WriteString("| Severity | Count |\n| --- | --- |\n")
 	for _, s := range []struct{ key, label string }{
-		{"critical", "Serious"}, {"high", "High risk"}, {"medium", "medium risk"}, {"low", "Low risk"},
+		{"critical", "Critical"}, {"high", "High"}, {"medium", "Medium"}, {"low", "Low"},
 	} {
 		fmt.Fprintf(&b, "| %s | %d |\n", s.label, counts[s.key])
 	}
 	b.WriteString("\n")
 
 	if len(items) == 0 {
-		b.WriteString("_No matching loophole._\n")
+		b.WriteString("_No matching findings._\n")
 		return b.String()
 	}
 
-	b.WriteString("## Gaps\n\n")
+	b.WriteString("## Findings\n\n")
 	for i, f := range items {
 		fmt.Fprintf(&b, "### %d. [%s] %s\n\n", i+1, strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
 		if f.VulnClass != "" {
-			fmt.Fprintf(&b, "- **Category**:%s\n", f.VulnClass)
+			fmt.Fprintf(&b, "- **Category**: %s\n", f.VulnClass)
 		}
-		fmt.Fprintf(&b, "- **Status**:%s\n", nz(f.Status, "pending"))
+		fmt.Fprintf(&b, "- **Status**: %s\n", nz(f.Status, "pending"))
 		if desc := strings.TrimSpace(f.TaskDescription); desc != "" {
-			fmt.Fprintf(&b, "- **Assigned tasks**:%s\n", desc)
+			fmt.Fprintf(&b, "- **Task**: %s\n", desc)
 		}
-		fmt.Fprintf(&b, "- **Discovery time**:%s\n\n", f.CreatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(&b, "- **Found**: %s\n\n", f.CreatedAt.Format("2006-01-02 15:04:05"))
 		if s := strings.TrimSpace(f.Summary); s != "" {
 			fmt.Fprintf(&b, "%s\n\n", s)
 		}
@@ -90,20 +93,20 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	return b.String()
 }
 
-// SingleFindingMarkdown Render a single loophole as an independent Markdown(for[A gap. A file.]Packaging).
+// SingleFindingMarkdown renders one finding as its own Markdown file, for one-finding-per-file packaging.
 func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# [%s] %s\n\n", strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
 	if f.VulnClass != "" {
-		fmt.Fprintf(&b, "- **Category**:%s\n", f.VulnClass)
+		fmt.Fprintf(&b, "- **Category**: %s\n", f.VulnClass)
 	}
-	fmt.Fprintf(&b, "- **Severity level**:%s\n", nz(f.Severity, "info"))
-	fmt.Fprintf(&b, "- **Status**:%s\n", nz(f.Status, "pending"))
+	fmt.Fprintf(&b, "- **Severity**: %s\n", nz(f.Severity, "info"))
+	fmt.Fprintf(&b, "- **Status**: %s\n", nz(f.Status, "pending"))
 	if desc := strings.TrimSpace(f.TaskDescription); desc != "" {
-		fmt.Fprintf(&b, "- **Assigned tasks**:%s\n", desc)
+		fmt.Fprintf(&b, "- **Task**: %s\n", desc)
 	}
-	fmt.Fprintf(&b, "- **Discovery time**:%s\n", f.CreatedAt.Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(&b, "- **Generate Time**:%s\n\n", generatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&b, "- **Found**: %s\n", f.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&b, "- **Generated**: %s\n\n", generatedAt.Format("2006-01-02 15:04:05"))
 	if s := strings.TrimSpace(f.Summary); s != "" {
 		fmt.Fprintf(&b, "## Overview\n\n%s\n\n", s)
 	}
@@ -121,8 +124,9 @@ func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 
 var unsafeFilenameChars = regexp.MustCompile(`[^\p{Han}\p{L}\p{N}._-]+`)
 
-// FindingFilename for[A gap. A file.]Generate Safe .md Filename,Shaped like
-// `critical_SQLInjection_#123.md`.Remove path separator and control Arguments,Avoid zip Internal Illegal Path.
+// FindingFilename builds a safe .md name for one-finding-per-file packaging,
+// shaped like `critical_SQLInjection_#123.md`. Path separators and control
+// characters are removed so the name cannot be an illegal path inside a zip.
 func FindingFilename(f *db.DBFinding) string {
 	sev := nz(f.Severity, "info")
 	title := findingTitle(f)
@@ -132,7 +136,7 @@ func FindingFilename(f *db.DBFinding) string {
 	if name == "" {
 		name = fmt.Sprintf("finding_%d", f.ID)
 	}
-	// Defense:We're going to strip the path.,End zip slip.
+	// path.Base is a last defense against zip slip.
 	name = path.Base(name)
 	if len(name) > 120 {
 		name = name[:120]
@@ -140,8 +144,9 @@ func FindingFilename(f *db.DBFinding) string {
 	return name + ".md"
 }
 
-// FindingsCSV Put in a batch. findings Render CSV(With UTF-8 BOM,Easy. Excel Other Organiser).
-// Without big paragraphs report/evidence Full text,Summary category field only;Require full text Markdown/JSON Export.
+// FindingsCSV renders a batch of findings as CSV, with a UTF-8 BOM so Excel
+// opens it correctly. The long report and evidence bodies are omitted; only
+// summary fields are included. Use Markdown or JSON when the full text is needed.
 func FindingsCSV(fs []*db.DBFinding) []byte {
 	items := append([]*db.DBFinding(nil), fs...)
 	sortFindingsForExport(items)
@@ -149,7 +154,7 @@ func FindingsCSV(fs []*db.DBFinding) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("\xEF\xBB\xBF") // UTF-8 BOM
 	w := csv.NewWriter(&buf)
-	_ = w.Write([]string{"ID", "Name", "Category", "Severity level", "Status", "Assigned tasks", "Discovery time", "Overview", "Number of traffic evidence", "Traffic evidenceID"})
+	_ = w.Write([]string{"ID", "Name", "Category", "Severity", "Status", "Task", "Found", "Summary", "Traffic evidence count", "Traffic evidence IDs"})
 	for _, f := range items {
 		_ = w.Write([]string{
 			fmt.Sprintf("%d", f.ID),
@@ -182,17 +187,17 @@ func findingTrafficMarkdown(f *db.DBFinding, attachments bool) string {
 	}
 	var out strings.Builder
 	out.WriteString("\n## Associated traffic evidence\n\n")
-	fmt.Fprintf(&out, "Evidence version:%d;Binding quantity:%d.\n\n", f.EvidenceVersion, len(f.TrafficBindings))
+	fmt.Fprintf(&out, "Evidence version: %d; bindings: %d.\n\n", f.EvidenceVersion, len(f.TrafficBindings))
 	if stale {
-		out.WriteString("Evidence changed, detailed report to be updated.\n\n")
+		out.WriteString("Evidence changed; the detailed report needs updating.\n\n")
 	}
 	for i, b := range f.TrafficBindings {
-		fmt.Fprintf(&out, "%d. **Evidence #%d · %s** — `%s %s`,Status code %d\n", i+1, b.ID, b.Role, b.Snapshot.Method, strings.ReplaceAll(b.Snapshot.URL, "`", "%60"), b.Snapshot.Status)
+		fmt.Fprintf(&out, "%d. **Evidence #%d · %s** — `%s %s`, status %d\n", i+1, b.ID, b.Role, b.Snapshot.Method, strings.ReplaceAll(b.Snapshot.URL, "`", "%60"), b.Snapshot.Status)
 		if b.Note != "" {
 			fmt.Fprintf(&out, "   %s\n", strings.ReplaceAll(b.Note, "\n", "\n   "))
 		}
 		if attachments {
-			fmt.Fprintf(&out, "   [Request for information](evidence/%d/%d/request.http) · [Reply to the submission](evidence/%d/%d/response.http)\n", f.ID, b.ID, f.ID, b.ID)
+			fmt.Fprintf(&out, "   [Request](evidence/%d/%d/request.http) · [Response](evidence/%d/%d/response.http)\n", f.ID, b.ID, f.ID, b.ID)
 		}
 	}
 	out.WriteString("\n")
