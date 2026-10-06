@@ -30,18 +30,18 @@ die() { printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 usage() {
   cat <<'EOF'
 Usage:
-  ./build.sh                         Compile the current architecture of the current system
-  ./build.sh --target linux/amd64   Compile a specified target
-  ./build.sh --release               Compile and package all supported targets
+  ./build.sh                         Build the current OS and architecture
+  ./build.sh --target linux/amd64    Build one target
+  ./build.sh --release               Build and package every supported target
 
 Options:
-  --release              Build Linux,macOS,Windows of amd64/arm64 Target and Generate zip
+  --release              Build Linux, macOS, and Windows amd64/arm64 targets and produce zips
   --target OS/ARCH       Set a single target, for example windows/amd64
-  --upx                  Force Use UPX Compressed binary (perfect part) Linux Environmental compatibility)
-  --no-compress          Do Not Use UPX,Use only Go linker Crop and Compress zip
-  --help                 Show Help
+  --upx                  Force UPX compression (may break some Linux environments)
+  --no-compress          Do not use UPX; only Go linker stripping and zip compression
+  --help                 Show this help
 
-Multi-Target List ARTEX_TARGETS Overwrite, e.g.:
+Override the multi-target list with ARTEX_TARGETS, for example:
   ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 EOF
 }
@@ -59,7 +59,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --target)
-      [ "$#" -ge 2 ] || die "--target Need OS/ARCH Parameter"
+      [ "$#" -ge 2 ] || die "--target requires an OS/ARCH argument"
       target_arg="$2"
       case "$target_arg" in
         */*)
@@ -67,7 +67,7 @@ while [ "$#" -gt 0 ]; do
           ARTEX_TARGET_ARCH="${target_arg##*/}"
           ARTEX_TARGETS="$target_arg"
           ;;
-        *) die "The goal must be OS/ARCH,For example linux/amd64" ;;
+        *) die "target must be OS/ARCH, for example linux/amd64" ;;
       esac
       shift 2
       ;;
@@ -83,11 +83,11 @@ while [ "$#" -gt 0 ]; do
       usage
       exit 0
       ;;
-    *) die "Unknown parameter:$1(Use --help View Usage)" ;;
+    *) die "unknown argument: $1 (use --help)" ;;
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "Not detected Go(Project requirements Go 1.26 Or higher version)"
+command -v go >/dev/null 2>&1 || die "Go was not found (this project needs Go 1.26 or newer)"
 
 ARTEX_GOSUMDB="${ARTEX_GOSUMDB:-sum.golang.org}"
 if [ -z "${ARTEX_BUILD_VERSION:-}" ]; then
@@ -112,16 +112,16 @@ else
 fi
 
 if [ "${ARTEX_SKIP_FRONTEND:-0}" = "1" ]; then
-  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 But... server/webui/dist does not exist"
+  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 but server/webui/dist does not exist"
 else
-  command -v npm >/dev/null 2>&1 || die "Not detected npm(Front-end static construction needs Node.js/npm)"
-  command -v rsync >/dev/null 2>&1 || die "Not detected rsync"
-  info "Build frontend static resource"
+  command -v npm >/dev/null 2>&1 || die "npm was not found (the frontend static build needs Node.js/npm)"
+  command -v rsync >/dev/null 2>&1 || die "rsync was not found"
+  info "Building frontend static assets"
   if [ "${ARTEX_SKIP_NPM_CI:-0}" != "1" ]; then
     (cd web && npm ci)
   fi
   (cd web && npm run build:static)
-  info "Sync front-end resources to server/webui/dist"
+  info "Syncing frontend assets to server/webui/dist"
   mkdir -p server/webui/dist
   rsync -a --delete web/out/ server/webui/dist/
 fi
@@ -131,18 +131,18 @@ compress_binary() {
   goos="$2"
   case "$ARTEX_COMPRESS" in
     0|off|false|none)
-      info "Skip UPX:$binary"
+      info "Skipping UPX: $binary"
       return 0
       ;;
     auto|required|true|1) ;;
-    *) die "ARTEX_COMPRESS Must be. off,auto or required" ;;
+    *) die "ARTEX_COMPRESS must be off, auto, or required" ;;
   esac
 
   if ! command -v upx >/dev/null 2>&1; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "ARTEX_COMPRESS=required But not detected upx"
+      die "ARTEX_COMPRESS=required but upx was not found"
     fi
-    warn "Not detected upx,Reservations linker Compression result:$binary"
+    warn "upx was not found; keeping the linker-compressed binary: $binary"
     return 0
   fi
 
@@ -152,13 +152,13 @@ compress_binary() {
   # shellcheck disable=SC2086
   if ! upx $upx_args -- "$binary"; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "UPX Compression Failed:$binary"
+      die "UPX compression failed: $binary"
     fi
-    warn "UPX Do not support this target format, keep uncompressed binary:$binary"
+    warn "UPX does not support this target format; keeping the uncompressed binary: $binary"
     return 0
   fi
   after=$(wc -c < "$binary" | tr -d ' ')
-  ok "UPX Compression complete.:$binary (${before} -> ${after} bytes)"
+  ok "UPX compression finished: $binary (${before} -> ${after} bytes)"
 }
 
 package_binary() {
@@ -169,12 +169,13 @@ package_binary() {
   package_root="${ARTEX_PACKAGE_DIR}/${package_name}"
   archive="${ARTEX_PACKAGE_DIR}/${package_name}.zip"
 
-  command -v zip >/dev/null 2>&1 || die "Packing. zip"
+  command -v zip >/dev/null 2>&1 || die "zip is required to package the release"
   rm -rf "$package_root" "$archive"
   mkdir -p "$package_root"
   cp "$binary" "$package_root/"
-  # The Guardian Start Script is the official entrance: a key update on the page depends on it re-pushing after process exit Rise,
-  # Just run. artex It'll never get up again after it's been updated. Only the one with the target system..
+  # The supervisor start script is the supported entry point: the in-app one-click
+  # update depends on it relaunching the process after exit. Running artex directly
+  # means it never comes back after an update. Ship only the script for the target OS.
   if [ "$goos" = "windows" ]; then
     cp start.bat "$package_root/"
   else
@@ -186,20 +187,20 @@ package_binary() {
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
-  ok "Release Compressed package:$archive"
+  ok "Release archive: $archive"
 }
 
 build_target() {
   target="$1"
   case "$target" in
     */*) ;;
-    *) die "Invalid Target:$target(Must be. OS/ARCH)" ;;
+    *) die "invalid target: $target (must be OS/ARCH)" ;;
   esac
   goos="${target%%/*}"
   goarch="${target##*/}"
   case "$goos" in
     linux|darwin|windows) ;;
-    *) die "System not supported:$goos(Support linux,darwin,windows)" ;;
+    *) die "unsupported OS: $goos (supported: linux, darwin, windows)" ;;
   esac
 
   binary_name="artex"
@@ -211,7 +212,7 @@ build_target() {
   fi
   mkdir -p "$(dirname "$output")"
 
-  info "Compile ${goos}/${goarch},version ${ARTEX_BUILD_VERSION}"
+  info "Building ${goos}/${goarch}, version ${ARTEX_BUILD_VERSION}"
   GOSUMDB="$ARTEX_GOSUMDB" \
   CGO_ENABLED=0 \
   GOOS="$goos" \
@@ -226,7 +227,7 @@ build_target() {
   compress_binary "$output" "$goos"
   if command -v file >/dev/null 2>&1; then file "$output"; fi
   if [ "$ARTEX_PACKAGE" = "1" ]; then package_binary "$output" "$goos" "$goarch"; fi
-  ok "Compiled:$output"
+  ok "Built: $output"
 }
 
 write_checksums() {
@@ -237,10 +238,10 @@ write_checksums() {
   elif command -v shasum >/dev/null 2>&1; then
     (cd "$ARTEX_PACKAGE_DIR" && for archive in *.zip; do shasum -a 256 "$archive"; done > "$(basename "$checksum_file")")
   else
-    warn "Not detected sha256sum or shasum,Skip SHA256SUMS"
+    warn "sha256sum and shasum were not found; skipping SHA256SUMS"
     return 0
   fi
-  ok "Verify File:$checksum_file"
+  ok "Checksum file: $checksum_file"
 }
 
 mkdir -p "$ARTEX_OUTPUT_DIR"
@@ -250,7 +251,7 @@ old_ifs="$IFS"
 IFS=','
 read -r -a targets <<< "$ARTEX_TARGETS"
 IFS="$old_ifs"
-[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS Cannot be empty"
+[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS must not be empty"
 for target in "${targets[@]}"; do
   target="${target//[[:space:]]/}"
   [ -n "$target" ] || continue
@@ -259,5 +260,5 @@ done
 
 if [ "$ARTEX_PACKAGE" = "1" ]; then
   write_checksums
-  info "Release Package generated from:$ARTEX_PACKAGE_DIR"
+  info "Release archives written to: $ARTEX_PACKAGE_DIR"
 fi
