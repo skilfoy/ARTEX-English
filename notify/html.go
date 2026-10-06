@@ -5,11 +5,14 @@ import (
 	"strings"
 )
 
-// by Rendering Mail HTML Text. Use inline style deliberately + Simple Table Layout instead of Modern CSS:
-// Mail Client (especially) Outlook In addition to the domestic business mailbox, <style> Blocks and flex/grid support
-// It's very different. Intraconnection styles are the only writing that can be correctly displayed in every home..
+// This file renders the HTML body of an email. Inline styles and a simple
+// layout are used on purpose, instead of modern CSS. Mail clients (Outlook
+// in particular, and many corporate webmails) disagree wildly about <style>
+// blocks and about flex or grid. Inline styles are the only form that
+// displays correctly across them.
 
-// htmlSeverityColor Returns the colour of emphasis corresponding to the level, for left colour bars and titles.
+// htmlSeverityColor returns the accent color for a severity, used for the
+// left bar and the title.
 func htmlSeverityColor(severity string) string {
 	switch severity {
 	case "critical":
@@ -25,12 +28,12 @@ func htmlSeverityColor(severity string) string {
 	}
 }
 
-// htmlTitle Synchronising folder.
+// htmlTitle returns the email subject.
 func htmlTitle(m Message) string {
 	return markdownTitle(m)
 }
 
-// htmlBody Rendering Email Body HTML.maxRunes<=0 Insisting.
+// htmlBody renders the email body as HTML. maxRunes <= 0 means no truncation.
 func htmlBody(m Message, maxRunes int) string {
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;color:#262626;line-height:1.6;">`)
@@ -43,19 +46,20 @@ func htmlBody(m Message, maxRunes int) string {
 		b.WriteString(htmlItem(m.Items[0], true))
 	}
 	if m.HomeURL != "" {
-		fmt.Fprintf(&b, `<p style="margin:16px 0 0;"><a href="%s" style="color:#1677ff;">View All on Platform</a></p>`, htmlEscapeAttr(m.HomeURL))
+		fmt.Fprintf(&b, `<p style="margin:16px 0 0;"><a href="%s" style="color:#1677ff;">View all on platform</a></p>`, htmlEscapeAttr(m.HomeURL))
 	}
 	b.WriteString(`</div>`)
 	return TruncateHTML(b.String(), maxRunes)
 }
 
-// htmlBatchIntro Rendering Summary Mail Start: Number and Level Distribution.
+// htmlBatchIntro renders the start of a digest email: the count and the
+// severity breakdown.
 func htmlBatchIntro(m Message) string {
 	var b strings.Builder
 	if m.WindowMinutes > 0 {
-		fmt.Fprintf(&b, `<h2 style="font-size:16px;margin:0 0 4px;">%d findings in the past %d minutes.</h2>`, len(m.Items), m.WindowMinutes)
+		fmt.Fprintf(&b, `<h2 style="font-size:16px;margin:0 0 4px;">%d findings in the past %d minutes</h2>`, len(m.Items), m.WindowMinutes)
 	} else {
-		fmt.Fprintf(&b, `<h2 style="font-size:16px;margin:0 0 4px;">%d new findings.</h2>`, len(m.Items))
+		fmt.Fprintf(&b, `<h2 style="font-size:16px;margin:0 0 4px;">%d new findings</h2>`, len(m.Items))
 	}
 	counts := map[string]int{}
 	for _, it := range m.Items {
@@ -74,8 +78,9 @@ func htmlBatchIntro(m Message) string {
 	return b.String()
 }
 
-// htmlItem Rendering individual loopholes.full=true Other Organiser),
-// false Compresses into one row (summary list)).
+// htmlItem renders one finding. full includes the summary and the detail
+// link (a single push). Otherwise the item is compressed to one line for a
+// digest list.
 func htmlItem(it Item, full bool) string {
 	color := htmlSeverityColor(it.Severity)
 	var b strings.Builder
@@ -103,17 +108,17 @@ func htmlItem(it Item, full bool) string {
 	}
 
 	if it.IsStatusChange() {
-		fmt.Fprintf(&b, `<div><b>Status change</b>:%s → %s</div>`,
+		fmt.Fprintf(&b, `<div><b>Status change</b>: %s → %s</div>`,
 			htmlEscape(StatusLabel(it.FromStatus)), htmlEscape(StatusLabel(it.ToStatus)))
 	}
 	if it.VulnClass != "" && it.VulnClass != it.Title() {
-		fmt.Fprintf(&b, `<div><b>Type</b>:%s</div>`, htmlEscape(it.VulnClass))
+		fmt.Fprintf(&b, `<div><b>Type</b>: %s</div>`, htmlEscape(it.VulnClass))
 	}
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
-		fmt.Fprintf(&b, `<div><b>Assets</b>:%s</div>`, htmlEscape(a))
+		fmt.Fprintf(&b, `<div><b>Assets</b>: %s</div>`, htmlEscape(a))
 	}
 	if s := OneLine(it.Summary, maxSummaryRunes); s != "" {
-		fmt.Fprintf(&b, `<div><b>Abstract</b>:%s</div>`, htmlEscape(s))
+		fmt.Fprintf(&b, `<div><b>Summary</b>: %s</div>`, htmlEscape(s))
 	}
 	if it.DetailURL != "" {
 		fmt.Fprintf(&b, `<div style="margin-top:6px;"><a href="%s" style="color:#1677ff;">View details</a></div>`, htmlEscapeAttr(it.DetailURL))
@@ -122,8 +127,9 @@ func htmlItem(it Item, full bool) string {
 	return b.String()
 }
 
-// htmlEscape Conversion HTML text. Hole title and summary from detected target and model output,
-// It's not credible.——If you don't, you're allowed to do whatever you want. HTML(Into the mail..
+// htmlEscape escapes HTML text. Finding titles and summaries come from the
+// scanned target and from model output, so they are untrusted. Skipping the
+// escape would allow arbitrary HTML, including remote images, in the mail.
 func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -131,8 +137,9 @@ func htmlEscape(s string) string {
 	return s
 }
 
-// htmlEscapeAttr Conversion HTML Properties values (Additional processing of quotation marks in addition to text transposition),
-// Prevention URL Quoting marks in it closed early. href Properties).
+// htmlEscapeAttr escapes an HTML attribute value. Quotes are escaped in
+// addition to the text escapes, so a quote in a URL cannot close the href
+// early.
 func htmlEscapeAttr(s string) string {
 	s = htmlEscape(s)
 	s = strings.ReplaceAll(s, "\"", "&quot;")

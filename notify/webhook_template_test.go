@@ -8,21 +8,24 @@ import (
 	"testing"
 )
 
-// This document locks Universal Webhook Template**Capacity boundaries**.
+// This file locks the capability boundary of the generic webhook template.
 //
-// It's the only one.[The string provided by the user is used as a code for value]The place, so make it clear what it can do.,
-// We can't do anything, and we'll fix it with tests.——Otherwise, someone's going to add one to the template.
-// Method, or FuncMap Riga. readFile,The power level has expanded. diff Looks like...
-// It's just a harmless little function..
+// It is the only place in the package where a user-supplied string is
+// evaluated as code, so what it can and cannot do has to be explicit and
+// pinned by tests. Otherwise someone later adds a method to the template
+// context, or a readFile helper to FuncMap, and the capability surface grows
+// silently while the diff looks like a harmless little function.
 
-// TestTemplateContextHasNoMethods It's the most important one..
+// TestTemplateContextHasNoMethods is the important one.
 //
-// text/template You can call the export method.({{.Foo}} You can both take fields and adjust methods. So the template context
-// As long as you can reach it.**Any**The type that takes out the methods is the same as exposing them to the author of the template..
-// The context of this function is deliberately pure data (export fields only, zero methods)).
+// text/template calls exported methods ({{.Foo}} reads a field or calls a
+// method). If the template context can reach any type with exported methods,
+// those methods are exposed to the template author. This feature's context
+// is deliberately pure data: exported fields only, zero methods.
 //
-// If this fails: webhookTemplateData / webhookItem I added the method..
-// Before you decide to let it go, figure out if that method can be used to read things you don't want to expose..
+// If this fails, someone added a method to webhookTemplateData or
+// webhookItem. Before allowing that, decide whether the template can use
+// the method to read something that should not be exposed.
 func TestTemplateContextHasNoMethods(t *testing.T) {
 	for _, v := range []any{webhookTemplateData{}, webhookItem{}} {
 		typ := reflect.TypeOf(v)
@@ -31,16 +34,17 @@ func TestTemplateContextHasNoMethods(t *testing.T) {
 			for i := 0; i < n; i++ {
 				names = append(names, typ.Method(i).Name)
 			}
-			t.Fatalf("%s It's exposed. %d Method(%s):text/template We can call them.,"+
-				"It's like opening up these methods to the author.", typ.Name(), n, strings.Join(names, ", "))
+			t.Fatalf("%s exposes %d method(s) (%s): text/template can call them, "+
+				"which hands those capabilities to the template author", typ.Name(), n, strings.Join(names, ", "))
 		}
 	}
 }
 
-// TestTemplateFuncsAreMinimal Lock a set of functions exposed to templates.
+// TestTemplateFuncsAreMinimal locks the set of functions exposed to templates.
 //
-// FuncMap Each of these functions has an additional ability. Currently only json / jsons,The effect is to sequence values.
-// Done. JSON fragment——No documents, no requests, no orders..
+// Every extra FuncMap entry is an extra capability. Today there are only
+// json and jsons, and all they do is serialize a value into a JSON fragment.
+// They cannot read files, send requests, or run commands.
 func TestTemplateFuncsAreMinimal(t *testing.T) {
 	var got []string
 	for name := range webhookTemplateFuncs {
@@ -49,58 +53,64 @@ func TestTemplateFuncsAreMinimal(t *testing.T) {
 	sort.Strings(got)
 	want := []string{"json", "jsons"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Template functions have changed: Got %v,Expectations %v.Make sure it doesn't expand before adding a function Noodles."+
-			"(Unable to read and write files, not to launch network requests, not to execute orders)", got, want)
+		t.Fatalf("template functions changed: got %v, want %v. Before adding a function, "+
+			"confirm it does not widen the capability surface "+
+			"(no file access, no network requests, no command execution)", got, want)
 	}
 }
 
-// TestTemplateCannotReachUnknownData Overwrite cross-border access in the template:
-// Access to what does not exist must fail, not highlight something; and failure information must not take out internal data.
+// TestTemplateCannotReachUnknownData covers out-of-bounds access in a template:
+// reaching something that does not exist must fail, not echo a value, and the
+// failure must not include internal data.
 func TestTemplateCannotReachUnknownData(t *testing.T) {
 	_, err := renderWebhookBody(`{"x": {{.Environment}}, "y": {{.Env}}}`, singleMsg())
 	if err == nil {
-		t.Fatal("Error should be reported when accessing non-existent fields")
+		t.Fatal("accessing a missing field should fail")
 	}
-	// Could not close temporary folder: %s/Abstract).
+	// The error must not contain real content from the template context
+	// (finding title or summary).
 	for _, leak := range []string{"SQLInjection", "Parameter id"} {
 		if strings.Contains(err.Error(), leak) {
-			t.Errorf("Template error leaked message %q: %v", leak, err)
+			t.Errorf("template error leaked message content %q: %v", leak, err)
 		}
 	}
 }
 
-// TestTemplateRenderFailsPermanently Template error is a configuration error and retrying does not heal itself.
-// If you're convicted of retrying, a bad template will allow every delivery to run three times in vain..
+// TestTemplateRenderFailsPermanently: a bad template is a config error and
+// retrying will not fix it. If it were classified as retryable, one bad
+// template would burn three backoff rounds on every delivery.
 func TestTemplateRenderFailsPermanently(t *testing.T) {
 	cfg := map[string]any{
 		"url":           "https://example.com/hook",
 		"body_template": `{{.Items.`,
 	}
 	if err := (webhookChannel{}).Validate(cfg); err == nil {
-		t.Fatal("Template syntax error should be stopped while saving")
+		t.Fatal("a template syntax error should be rejected at save time")
 	}
-	// Even if you bypass the verification direct delivery, you have to judge permanent failure rather than repeated attempts..
+	// Even if validation is bypassed and Send is called directly, it must be
+	// a permanent failure rather than a retry.
 	_, err := (webhookChannel{}).Send(context.Background(), cfg, singleMsg())
 	if err == nil || !IsPermanent(err) {
-		t.Fatalf("Bad template should be permanently defeated. Got it. %v", err)
+		t.Fatalf("a bad template should be a permanent failure, got %v", err)
 	}
 }
 
-// TestTemplateCanOnlyProduceJSON override[Template rendering must be valid JSON]This is a constraint..
-// It's blocked.[Generate plain text with templates to trigger other protocols]Use of this kind.
+// TestTemplateCanOnlyProduceJSON covers the rule that a rendered template
+// must be valid JSON. It also blocks using the template to emit plain text
+// that triggers some other protocol.
 func TestTemplateCanOnlyProduceJSON(t *testing.T) {
-	// Legitimate templates pass.
+	// A valid template is accepted.
 	ok := map[string]any{"url": "https://example.com/hook", "body_template": `{"t":{{json .Title}}}`}
 	if err := (webhookChannel{}).Validate(ok); err != nil {
-		t.Fatalf("Legitimate templates should be verified: %v", err)
+		t.Fatalf("a valid template should pass validation: %v", err)
 	}
-	// Rendering Africa JSON It has to be rejected (not sent as it is).).
+	// A render that is not JSON must be rejected, not sent as-is.
 	bad := map[string]any{"url": "http://127.0.0.1:1/hook", "body_template": `not json {{.Count}}`}
 	_, err := (webhookChannel{}).Send(context.Background(), bad, singleMsg())
 	if err == nil || !IsPermanent(err) {
-		t.Fatalf("Rendering Africa JSON You're going to lose forever. %v", err)
+		t.Fatalf("rendering non-JSON should be a permanent failure, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "valid JSON") {
-		t.Errorf("The wrong message should say yes. JSON Problem. Got it. %v", err)
+		t.Errorf("the error should say this is a JSON problem, got %v", err)
 	}
 }

@@ -14,43 +14,48 @@ import (
 	"time"
 )
 
-// emailDialTimeout / emailSessionTimeout Separately bind the build-up and the whole SMTP session.
-// net/smtp There's no time-out mechanism on its own. If we don't set up these two lines, a stuck-in-the-end will let
-// Organisation goroutine Hang it there forever.——And dispatcher It's single. goroutine Serialized,
-// It's equivalent to the entire notification system..
+// emailDialTimeout and emailSessionTimeout bound the connect and the whole
+// SMTP session. net/smtp has no timeout of its own. Without these, a stuck
+// peer leaves the delivery goroutine hung forever. The dispatcher is a
+// single goroutine processing deliveries serially, so that stops the whole
+// notification system.
 const (
 	emailDialTimeout    = 10 * time.Second
 	emailSessionTimeout = 45 * time.Second
 )
 
-// emailChannel Achieved SMTP Mail delivery.
+// emailChannel delivers over SMTP.
 type emailChannel struct{}
 
 func (emailChannel) Kind() string { return KindEmail }
 
-// Mail does not have platform limit, but should not use it to screen; give a relaxed default.
+// Mail has no platform rate limit, but it should not be used to flood an
+// inbox. The default is deliberately loose.
 func (emailChannel) DefaultRatePerMin() int { return 60 }
 
-// Cover password only.SMTP Hosts, accounts, recipients are not secrets. Boring..
+// Only the password is masked. The SMTP host, account, and recipients are
+// not secrets, and masking them only makes editing harder.
 func (emailChannel) SecretKeys() []string { return []string{"password"} }
 
-// host/port I decided which server to give the password to.;tls Whether or not to encrypt the transfer. All three of them.
-// Requesting a new password——Please.[Turn it off. TLS]It's a step that must be clearly documented, not changed..
+// host and port decide which server receives the password. tls decides
+// whether the session is encrypted. Changing any of the three requires
+// stating the password again, which also means turning TLS off cannot be a
+// casual one-field edit.
 func (emailChannel) DestinationKeys() []string { return []string{"host", "port", "tls"} }
 
 func (emailChannel) Validate(cfg map[string]any) error {
 	if cfgString(cfg, "host") == "" {
-		return errors.New("Missing SMTP Chile")
+		return errors.New("missing SMTP server address")
 	}
 	port := cfgInt(cfg, "port")
 	if port <= 0 || port > 65535 {
-		return errors.New("SMTP Port is invalid (should read 1-65535)")
+		return errors.New("SMTP Port is invalid (must be 1-65535)")
 	}
 	if cfgString(cfg, "from") == "" {
-		return errors.New("Cannot initialise Evolution's mail component.")
+		return errors.New("missing sender address")
 	}
 	if len(cfgStrings(cfg, "to")) == 0 {
-		return errors.New("At least one recipient address is required.")
+		return errors.New("at least one recipient address is required")
 	}
 	return nil
 }
@@ -79,62 +84,73 @@ func (c emailChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 	}
 	defer client.Close()
 
-	// STARTTLS:Peer support is upgraded. There is no proof of this under the express statement (see below). auth Instructions).
+	// STARTTLS: upgrade when the peer offers it. Credentials must not be
+	// sent on a cleartext session (see the auth note below).
 	if !implicitTLS {
 		if ok, _ := client.Extension("STARTTLS"); ok {
 			if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
-				return 0, fmt.Errorf("STARTTLS Failed: %w", err)
+				return 0, fmt.Errorf("STARTTLS failed: %w", err)
 			}
 		}
 	}
 	if username != "" {
 		if err := client.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
-			// smtp.PlainAuth You will refuse to send a certificate on an unencrypted connection (unless the target is localhost).
-			// This is...**Correct.**Security behavior, not bypass, but need to be translated.——
-			// Otherwise the user will only see[unencrypted connection]I don't know what to do..
+			// smtp.PlainAuth refuses to send credentials on an unencrypted
+			// connection unless the target is localhost. That is the correct
+			// security behavior and must not be bypassed, but the reason has
+			// to be translated. Otherwise the user only sees "unencrypted
+			// connection" and does not know what to change.
 			if strings.Contains(err.Error(), "unencrypted connection") {
-				return 0, Permanent(fmt.Errorf("Refusal to issue documentation: the connection is not encrypted. Please enable TLS,Or change it. 465 Port(Implicit TLS),Or put[Enable TLS]Pick it up. (%w)", err))
+				return 0, Permanent(fmt.Errorf("refusing to send credentials: the connection is not encrypted. Enable TLS, use port 465 (implicit TLS), or check the Enable TLS box (%w)", err))
 			}
-			return 0, Permanent(fmt.Errorf("SMTP Authentication failed: %w", err))
+			return 0, Permanent(fmt.Errorf("SMTP authentication failed: %w", err))
 		}
 	}
 	if err := client.Mail(from); err != nil {
-		return 0, smtpStageError(fmt.Sprintf("Sender %s Rejected", from), err)
+		return 0, smtpStageError(fmt.Sprintf("sender %s was rejected", from), err)
 	}
 	for _, rcpt := range to {
 		if err := client.Rcpt(rcpt); err != nil {
-			return 0, smtpStageError(fmt.Sprintf("Recipient %s Rejected", rcpt), err)
+			return 0, smtpStageError(fmt.Sprintf("recipient %s was rejected", rcpt), err)
 		}
 	}
 	w, err := client.Data()
 	if err != nil {
-		return 0, fmt.Errorf("SMTP DATA Failed: %w", err)
+		return 0, fmt.Errorf("SMTP DATA failed: %w", err)
 	}
 	if _, err := w.Write([]byte(msg)); err != nil {
-		return 0, fmt.Errorf("could not write email body: %w", err)
+		return 0, fmt.Errorf("failed to write message body: %w", err)
 	}
 	if err := w.Close(); err != nil {
-		return 0, fmt.Errorf("Failed to submit mail: %w", err)
+		return 0, fmt.Errorf("failed to submit message: %w", err)
 	}
-	// Quit Failure does not affect[Mail received by server]It's a fact that ignores its mistakes..
+	// A failed Quit does not change the fact that the server already accepted
+	// the message, so the error is ignored.
 	_ = client.Quit()
-	// The mail is open.(HTML It's all in the text..
+	// Mail has no length truncation (the full HTML body is sent), so the
+	// whole batch counts as delivered.
 	return len(m.Items), nil
 }
 
-// emailDial Create SMTP Connection.
+// emailDial opens an SMTP connection.
 //
-// implicitTLS=true Go 465 This one.[It's connected. TLS]How;false Go 25/587 Once it's clearly established.
-// STARTTLS.The two cannot be mixed: yes. 465 Port invention greeting They'll be cut off..
+// implicitTLS uses the "TLS from the first byte" style of port 465. Otherwise
+// the connection starts in the clear on 25/587 and then uses STARTTLS. The
+// two must not be mixed: a cleartext greeting to port 465 is dropped.
 //
-// Session term is in**Company**Set it up (rather than after), because net/smtp of Client Take the bottom.
-// Connections are hidden in unexported fields and cannot be found outside; once the connection is handed over, it can only be preset deadline
-// Go to the bottom. It's also covering the handshake..
-// Control Hang up. blockInternalDial With HTTP It's a common source of security. If you don't hang up, SMTP
-// It's the whole package. SSRF Deficiencies in protection:host Fill 169.254.169.254 or 127.0.0.1 It connects directly.,
-// And smtp.NewClient When a handshake fails, the line to which the opposite side returns is wrong, wrong, wrong. last_error
-// It's a semi-blind reading of the original language.;[Connection denied vs Timeout]The time-consuming difference still works.
-// To detect ports. Dial-up phase is the final entry point and is also covered DNS Relock.
+// The session deadline is set when the connection is created, not patched on
+// later. net/smtp's Client hides the underlying connection in an unexported
+// field, so nothing outside can reach it. Once the connection is handed over,
+// only a deadline set in advance can bound it. That also covers a stall
+// during the handshake.
+// Control installs blockInternalDial, the same guard the HTTP channels use.
+// Without it, SMTP is the hole in this package's SSRF protection: a host of
+// 169.254.169.254 or 127.0.0.1 connects directly. When smtp.NewClient fails
+// the handshake it wraps the peer's reply line into the error, which
+// last_error then echoes through the delivery-history API — a semi-blind
+// read. The timing difference between "connection refused" and "timeout" can
+// also probe ports. Dial time is the check that actually takes effect, and
+// it covers DNS rebinding too.
 func emailDial(ctx context.Context, addr, host string, implicitTLS bool) (*smtp.Client, error) {
 	d := &net.Dialer{Timeout: emailDialTimeout, Control: blockInternalDial}
 	var conn net.Conn
@@ -145,28 +161,32 @@ func emailDial(ctx context.Context, addr, host string, implicitTLS bool) (*smtp.
 		conn, err = d.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("Connection SMTP Server failed: %w", err)
+		return nil, fmt.Errorf("failed to connect to SMTP server: %w", err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(emailSessionTimeout))
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("SMTP The handshake failed.: %w", err)
+		return nil, fmt.Errorf("SMTP handshake failed: %w", err)
 	}
 	return client, nil
 }
 
-// smtpStageError Press SMTP The response code divides some of the failures.[Retry]With[Permanent Failure].
+// smtpStageError splits a stage failure into retryable and permanent using
+// the SMTP reply code.
 //
-// Why must we distinguish?:SMTP of 4xx With 5xx The semantics are completely different.——
-//   - 4xx(450 Grey List,451 Local Error,452 Other Organiser**Temporary**Reject,
-//     The formal practice is to try again later; in particular, the grey list is encountered almost every time it is first delivered.
-//   - 5xx(550 User does not exist,553 It's a permanent refusal. It's pointless to try again..
+// The split is required because 4xx and 5xx mean different things:
+//   - 4xx (450 greylisting, 451 local error, 452 out of storage) is a
+//     temporary rejection. The correct response is to retry later.
+//     Greylisting in particular shows up on almost every first delivery.
+//   - 5xx (550 user does not exist, 553 illegal address) is a permanent
+//     rejection. Retrying it does nothing.
 //
-// If the sentence fails permanently, an ash list-enabled mail server will let**Every one.**It's been the first time.
-// Try and fall failed——And this kind of failure is exactly what's needed to do it again..
-// The first three numbers of the wrong text are taken from the response code; retry if not available (better try again),
-// And don't try to kill a possible instant malfunction because you can't figure it out.).
+// Treating every reply as permanent means a greylisting server fails every
+// push on the first try. That is exactly the case automatic retry is for.
+// The reply code is the first three digits of the error text. If there is
+// no code, the failure is treated as retryable: better to try once more than
+// to kill a possible transient fault because it could not be parsed.
 func smtpStageError(what string, err error) error {
 	code := smtpReplyCode(err.Error())
 	if code >= 500 && code < 600 {
@@ -175,8 +195,9 @@ func smtpStageError(what string, err error) error {
 	return fmt.Errorf("%s: %w", what, err)
 }
 
-// smtpReplyCode from SMTP Error text takes the leading three responses, no returns 0.
-// net/smtp Do not export error code fields, only from text; format is[450 4.7.1 ...].
+// smtpReplyCode reads the leading three-digit reply code from an SMTP error.
+// It returns 0 when there is none. net/smtp does not export the code, so it
+// has to be parsed from text of the form "450 4.7.1 ...".
 func smtpReplyCode(text string) int {
 	if len(text) < 3 {
 		return 0
@@ -188,24 +209,25 @@ func smtpReplyCode(text string) int {
 	return n
 }
 
-// buildEmailMessage Organise complete RFC 5322 Mail.
+// buildEmailMessage assembles a complete RFC 5322 message.
 //
-// Text base64 There are two reasons for coding: SMTP It's a single line. 1000 bytes, and HTML
-// The text (especially the consolidated mail) can easily appear in long lines; base64 It's not natural. "." Start
-// Save it. SMTP It's a question of changing points..
+// The body is base64 for two reasons. SMTP limits a single line to 1000
+// bytes, and HTML (especially a digest) easily produces longer lines. base64
+// also never produces a line that starts with ".", so SMTP dot-stuffing is
+// not an issue.
 func buildEmailMessage(from string, to []string, m Message) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "From: %s\r\n", from)
 	fmt.Fprintf(&b, "To: %s\r\n", strings.Join(to, ", "))
-	// Chinese subject has to be done. RFC 2047 Encoding, otherwise the client will be shown as a spam.
+	// Non-ASCII subjects must be RFC 2047 encoded or clients show garbage.
 	fmt.Fprintf(&b, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", htmlTitle(m)))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 	b.WriteString("Content-Transfer-Encoding: base64\r\n")
-	// The mail does not have a hard limit on length, so the text is not cut off.
+	// Mail has no hard length cap, so the body is not truncated.
 	b.WriteString("\r\n")
 	encoded := base64.StdEncoding.EncodeToString([]byte(htmlBody(m, 0)))
-	// base64 Press 76 character wrap line, matching RFC 2045.
+	// Fold base64 at 76 characters, per RFC 2045.
 	for len(encoded) > 76 {
 		b.WriteString(encoded[:76] + "\r\n")
 		encoded = encoded[76:]

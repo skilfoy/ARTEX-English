@@ -7,14 +7,18 @@ import (
 
 const ellipsis = "…"
 
-// TruncateBytes handle s No more than that. max Bytes, make sure it's legal. UTF-8 without cutting off characters.
+// TruncateBytes cuts s so it is at most max bytes, stays valid UTF-8, and
+// does not split a character.
 //
-// Why do you have to cut by character? markdown Yes 4096 **Bytes**Hard ceiling (no)
-// Number of characters) and one word in Chinese 3 bytes. Direct bytes cut a Han in half. It's illegal.
-// UTF-8——The side of the platform either refuses to receive the whole piece or displays a piece of muddle. Here's the way to start with the budget position.
-// Back to the nearest. rune Start bytes(utf8.RuneStart Deciding bytes 0b10xxxxxx).
+// The cut has to land on a character boundary. WeCom group-robot markdown
+// has a hard cap of 4096 bytes, not characters, and one Chinese character is
+// 3 bytes. Slicing on a raw byte splits a character in half and produces
+// invalid UTF-8. The platform then either rejects the whole message or shows
+// a replacement box. The cut walks back from the budget to the nearest rune
+// start (utf8.RuneStart rejects continuation bytes, 0b10xxxxxx).
 //
-// max<=0 Express unrestricted. Additional ellipses after break unless max Small enough to fit the ellipsis..
+// max <= 0 means no limit. An ellipsis is appended after a cut, unless max
+// is too small to hold the ellipsis.
 func TruncateBytes(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
@@ -22,7 +26,8 @@ func TruncateBytes(s string, max int) string {
 	budget := max - len(ellipsis)
 	suffix := ellipsis
 	if budget < 0 {
-		// max Shorter than the ellipsis: drop the ellipsis, cut it out, avoid the result being more than max.
+		// max is shorter than the ellipsis. Drop the ellipsis and cut
+		// cleanly, so the result does not exceed max because of it.
 		budget = max
 		suffix = ""
 	}
@@ -33,20 +38,23 @@ func TruncateBytes(s string, max int) string {
 	return s[:cut] + suffix
 }
 
-// OneLine Thrust multi-line text into one line: fold all blanks, then cut by character number.
-// for IM Message Title Line——There's always a change of line in the summary, and it's plugged into the form./The title will break the layout..
-// max<=0 Means unlimited length.
+// OneLine collapses multiline text to a single line: all whitespace is
+// folded, then the result is cut by character count. It is used for IM title
+// lines. Summaries often contain newlines, and dropping those into a table
+// or a title breaks the layout. max <= 0 means no length limit.
 func OneLine(s string, max int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	return TruncateRunes(s, max)
 }
 
-// TruncateRunes handle s No more than that. max Characters (rather than bytes), add ellipses when exceeded.
-// max<=0 Means unlimited.
+// TruncateRunes cuts s to at most max characters (not bytes) and appends an
+// ellipsis when it overflows. max <= 0 means no limit.
 //
-// With TruncateBytes The difference is the platform caliber: microbytes. Long,Telegram Long by character.
-// Use the wrong caliber is not a miscalculation. 1 Words = 3 Bytes,
-// Bytes 4096 There's only one thing left. 1365 word) so both functions must be preserved and selected by channel.
+// The difference from TruncateBytes is the platform's unit. WeCom limits
+// bytes; Telegram limits characters. Using the wrong unit does not error, it
+// just cuts a message far shorter than intended (one Chinese character is 3
+// bytes, so a 4096-byte cut leaves about 1365 characters). Both functions
+// have to stay, and each channel picks the one that matches its cap.
 func TruncateRunes(s string, max int) string {
 	if max <= 0 {
 		return s
@@ -61,46 +69,60 @@ func TruncateRunes(s string, max int) string {
 	return string(runes[:max-1]) + ellipsis
 }
 
-// TruncateHTML Interrupt by character number HTML Snippets and guarantees not to produce semi-labels.
+// TruncateHTML cuts an HTML fragment by character count without leaving a
+// half-open tag.
 //
-// Right. HTML The character cut will cut out `<a href="htt` This missing label, platform solver or...
-// Wrongly rejected the whole article or swallowed the subsequent text as an attribute. Here's the thing: cut it off by character.,
-// Check if there's any unclosed tail. `<`,If you have one, back it up..
+// Cutting HTML by characters can produce a fragment such as `<a href="htt`.
+// The platform parser either rejects the whole message or swallows the rest
+// of the body as an attribute value. The cut is by characters first, then if
+// the tail has an unclosed `<` it backs up to just before that `<`.
 //
-// No tag leveling (completion) </b> Or something.):Telegram of HTML The solver automatically closes unclosed labels,
-// And to achieve self-balancing is to deal with quotes, notes, self-conclusion labels in properties that are disproportionate to the benefits..
+// Tags are not rebalanced (no synthetic </b> and similar). Telegram's HTML
+// parser closes unclosed tags itself. Doing the balancing here means handling
+// quotes inside attributes, comments, and void tags, which costs more than
+// it saves.
 func TruncateHTML(s string, max int) string {
 	if max <= 0 || len([]rune(s)) <= max {
 		return s
 	}
 	cut := TruncateRunes(s, max)
-	// If the tail is... `<` The beginning debris. `<` Not since. `>`),Return `<` Before.
+	// If the tail is a fragment that starts with `<` and never reaches `>`,
+	// back up to before that `<`.
 	if lt := strings.LastIndex(cut, "<"); lt >= 0 && !strings.Contains(cut[lt:], ">") {
 		cut = cut[:lt]
 	}
-	// If the tail is cut, HTML Entities (e.g., `&amp;` Cut. `&amp`),I'm going back too..
-	// Physical debris may be in an entity-only solver**The whole message.**Rejected——One more.
-	// It's not worth losing the entire notice..
+	// A cut HTML entity (for example `&` cut down to `&amp`) is backed
+	// out the same way. A parser that only accepts entities may reject the
+	// whole message because of the fragment. Digests that exceed the length
+	// cap are common, and losing the entire notification over that is not
+	// worth it.
 	if amp := strings.LastIndex(cut, "&"); amp >= 0 && !strings.Contains(cut[amp:], ";") {
 		cut = cut[:amp]
 	}
 	return cut
 }
 
-// packItemCount Calculate within budget**Complete**How many of them are down for wrapping up the whole message?.
+// packItemCount counts how many items fit completely inside the budget, so a
+// digest is packed as whole items.
 //
-// Why cut the whole article instead of rendering the whole text: Cutting it off will make the second half disappear.,
-// And their delivery records will still be marked as delivered.——I can't tell from the news. I can't tell from the past.,
-// The loophole is gone. When the whole box is packed, the unfilled entry remains next in the library. Batch,
-// The caller got it. kept It's the number of articles that actually deliver this message..
+// Packing whole items, instead of rendering the full text and then cutting,
+// matters because a cut makes the leftover items disappear while their
+// delivery records are still marked delivered. They are not in the message
+// and they are not visible as failures in the history, so the findings are
+// simply gone. Whole-item packing leaves what did not fit for the next
+// batch, and kept is how many this message actually delivered.
 //
-// Parameter:maxSize<=0 Means unlimited;reserve It's for the head./The amount left in the tail;
-// size Responsible for measurement (different platforms: micro-enterprises)/Nail by Bytes,Telegram By character——
-// Use the wrong caliber is not a miscalculation.);
-// render Put the no. idx The bar is rendered into its actual text——The length varies from content to content..
+// maxSize <= 0 means no limit. reserve is set aside for the header and
+// footer. size measures length, and the unit differs by platform: WeCom and
+// DingTalk count bytes, Telegram counts characters. The wrong unit does not
+// error; it just compresses Chinese text far below the real cap. render
+// turns item idx into its actual text. Length depends on the content, so it
+// cannot be estimated.
 //
-// Return at least 1(As long as there are entries. It's the one to send out when it's extremely long.
-// Eventually cut the hole, or a super-long loophole will lock the whole batch in place..
+// At least 1 is returned when there are items. A single item that is
+// extremely long is still sent, and the caller's final truncation is the
+// backstop. Otherwise one oversized finding would stall the whole batch
+// forever.
 func packItemCount(items []Item, maxSize, reserve int, footer string, size func(string) int, render func(Item, int) string) int {
 	if maxSize <= 0 {
 		return len(items)
@@ -119,24 +141,27 @@ func packItemCount(items []Item, maxSize, reserve int, footer string, size func(
 	return len(items)
 }
 
-// byteSize / runeSize Yes packItemCount Two calibrations. Name them.
-// Naked. func(s string) int Close it, or it's hard to see what caliber it uses..
+// byteSize and runeSize are the two units packItemCount can measure with.
+// Naming them avoids a bare func(s string) int closure at the call site,
+// where it is hard to see which unit is in use.
 func byteSize(s string) int { return len(s) }
 func runeSize(s string) int { return utf8.RuneCountInString(s) }
 
-// assetLine Render the asset list as a line of display text, more than limit Delete the rest and indicate the total.
-// A loophole could anchor dozens of assets, all listed for breaking news..
+// assetLine renders an asset list as one line of display text. Past limit,
+// the rest are omitted and the total count is noted. A finding can be
+// anchored to dozens of assets, and listing all of them blows the message up.
 func assetLine(assets []string, limit int) string {
 	if len(assets) == 0 {
 		return ""
 	}
 	if limit <= 0 || len(assets) <= limit {
-		return strings.Join(assets, ",")
+		return strings.Join(assets, ", ")
 	}
-	return strings.Join(assets[:limit], ",") + " etc. " + itoa(len(assets)) + " pieces"
+	return strings.Join(assets[:limit], ", ") + " (" + itoa(len(assets)) + " total)"
 }
 
-// itoa Yes strconv.Itoa The short aliases are used only to spell out text and avoid going around. import strconv.
+// itoa is a short alias for the decimal form of n, used only when building
+// display text, so this file does not need to import strconv.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
