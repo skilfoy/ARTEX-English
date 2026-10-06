@@ -13,18 +13,19 @@ import (
 	"github.com/skilfoy/ARTEX-English/mcphttp"
 )
 
-// Asset synchronization(ScopeSentry Data source).
+// Asset sync (ScopeSentry data source).
 //
-// ScopeSentry It's one. ASM Asset mapping platform, through MCP Interface Press[Project]/[Task]Two dimensions
-// Draw sub-domain names,Web Assets, services, etc., map to ARTEX Company + Asset model. The data source itself is
-// A name. "ScopeSentry" of http Transfer MCP row(url + X-API-Key Keep Head on mcp_servers).
+// ScopeSentry is an ASM asset-mapping platform. This sync calls its MCP API on the
+// project and task dimensions, pulls subdomains, web apps, services, and so on, and
+// maps them onto ARTEX companies and assets. The source is an http-transport MCP row
+// named "ScopeSentry" (url and X-API-Key header stored on mcp_servers).
 //
-// With agent The tools are different. Here. mcphttp.Client.Call Direct Call MCP Tools, original JSON,
-// Do not trigger AskUser Permissioned bullet windows (backstage batch sync)).
+// Unlike the agent tool layer, this uses mcphttp.Client.Call directly and keeps the
+// raw JSON. It does not raise an AskUser permission prompt (background batch sync).
 
 const (
 	scopeSentryMCPName = "ScopeSentry"
-	syncMaxPerType     = 5000 // Single-target-type inventory protection ceiling
+	syncMaxPerType     = 5000 // per-target, per-type insert cap
 	syncDefaultPage    = 100
 )
 
@@ -53,7 +54,7 @@ func (s *Server) scopeSentryClient(ctx context.Context) (*mcphttp.Client, error)
 		return nil, fmt.Errorf("Data source %s does not exist; create it first", scopeSentryMCPName)
 	}
 	if m.URL == "" {
-		return nil, fmt.Errorf("Data source %s Not configured URL,Please configure first", scopeSentryMCPName)
+		return nil, fmt.Errorf("Data source %s has no URL; configure it first", scopeSentryMCPName)
 	}
 	return mcphttp.New(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 }
@@ -185,7 +186,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 	}
 	text, err := cl.Call(ctx, "list_projects_data", args)
 	if err != nil {
-		writeErr(w, 502, "list_projects_data Failed: "+err.Error())
+		writeErr(w, 502, "list_projects_data failed: "+err.Error())
 		return
 	}
 	// {result:{All:[{id,name,logo,AssetCount,tag}], <tag>:[...]}, tag:{...}}
@@ -194,7 +195,7 @@ func (s *Server) syncSSProjects(w http.ResponseWriter, r *http.Request) {
 		Tag    map[string]int             `json:"tag"`
 	}
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		writeErr(w, 502, "Failed to parse item list: "+err.Error())
+		writeErr(w, 502, "Failed to parse the project list: "+err.Error())
 		return
 	}
 	projects := json.RawMessage("[]")
@@ -228,14 +229,14 @@ func (s *Server) syncSSTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	text, err := cl.Call(ctx, "list_tasks", args)
 	if err != nil {
-		writeErr(w, 502, "list_tasks Failed: "+err.Error())
+		writeErr(w, 502, "list_tasks failed: "+err.Error())
 		return
 	}
 	var env struct {
 		List json.RawMessage `json:"list"`
 	}
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
-		writeErr(w, 502, "Can not open message: "+err.Error())
+		writeErr(w, 502, "Failed to parse the task list: "+err.Error())
 		return
 	}
 	tasks := env.List
@@ -271,11 +272,11 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Dimension != "project" && req.Dimension != "task" {
-		writeErr(w, 400, "dimension Must be. project or task")
+		writeErr(w, 400, "dimension must be project or task")
 		return
 	}
 	if len(req.Targets) == 0 {
-		writeErr(w, 400, "targets Cannot be empty")
+		writeErr(w, 400, "targets cannot be empty")
 		return
 	}
 	if len(req.AssetTypes) == 0 {
@@ -312,7 +313,7 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 				} else if name != "" {
 					cid, cerr := cs.UpsertByName(name)
 					if cerr != nil {
-						warnings = append(warnings, fmt.Sprintf("Company %s Creation failed: %v", name, cerr))
+						warnings = append(warnings, fmt.Sprintf("Failed to create company %s: %v", name, cerr))
 					} else {
 						companies = append(companies, name)
 						madeCompany = true
@@ -329,16 +330,16 @@ func (s *Server) syncSSRun(w http.ResponseWriter, r *http.Request) {
 		for _, at := range req.AssetTypes {
 			ssType, ok := map[string]string{"subdomain": "subdomain", "service": "asset", "app": "app"}[at]
 			if !ok {
-				warnings = append(warnings, "Unknown asset type, Skipped: "+at)
+				warnings = append(warnings, "Unknown asset type, skipped: "+at)
 				continue
 			}
 			items, truncated, ferr := s.ssPageAll(ctx, cl, ssType, filter, pageSize)
 			if ferr != nil {
-				errs = append(errs, fmt.Sprintf("%s(%s) Pull failed: %v", at, target, ferr))
+				errs = append(errs, fmt.Sprintf("%s (%s) fetch failed: %v", at, target, ferr))
 				continue
 			}
 			if truncated {
-				warnings = append(warnings, fmt.Sprintf("%s(%s) Achieved %d bar cap, cut", at, target, syncMaxPerType))
+				warnings = append(warnings, fmt.Sprintf("%s (%s) hit the %d row cap and was truncated", at, target, syncMaxPerType))
 			}
 			for _, raw := range items {
 				if e := s.ssIngest(as, at, raw, synced); e != "" {
@@ -431,7 +432,7 @@ func (s *Server) ssIngest(as *db.AssetStore, assetType string, raw json.RawMessa
 			IP    []string `json:"ip"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return "subdomain Parsing failed: " + err.Error()
+			return "failed to parse subdomain: " + err.Error()
 		}
 		if it.Host == "" {
 			return ""
@@ -455,7 +456,7 @@ func (s *Server) ssIngest(as *db.AssetStore, assetType string, raw json.RawMessa
 			ICP         string `json:"icp"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return "app Parsing failed: " + err.Error()
+			return "failed to parse app: " + err.Error()
 		}
 		if it.Name == "" {
 			return ""
@@ -477,7 +478,7 @@ func (s *Server) ssIngest(as *db.AssetStore, assetType string, raw json.RawMessa
 			Icon     string   `json:"icon"`
 		}
 		if err := json.Unmarshal(raw, &it); err != nil {
-			return "service Parsing failed: " + err.Error()
+			return "failed to parse service: " + err.Error()
 		}
 		if it.Service == "http" || it.URL != "" {
 			if it.URL == "" {

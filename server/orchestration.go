@@ -152,7 +152,7 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 	}
 	_ = json.Unmarshal(in, &head)
 	if strings.TrimSpace(head.TaskID) == "" {
-		return actool.Errorf("task_id As necessary."), nil
+		return actool.Errorf("task_id is required"), nil
 	}
 	t, ok := s.m.Task(head.TaskID)
 	if !ok {
@@ -166,8 +166,8 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 	if s.m.Assets() != nil {
 		tsx.SetAssetStore(s.m.Assets(), s.m.Assets().Companies())
 	}
-	tsx.SetNotify(t.Notify)         // Universal wake-up call (no specific callback to write away; reading tool is no-op)
-	tsx.SetNotifyHint(t.NotifyHint) // add_hint → Remember one.[People have added. N A strategic reminder:…]Trigger and wake up planner
+	tsx.SetNotify(t.Notify)         // generic wake-up (writes with no dedicated callback use it; read tools are a no-op)
+	tsx.SetNotifyHint(t.NotifyHint) // add_hint → record "a person added N strategic hints: …", then wake the planner
 	return pick(tsx).Call(ctx, inner, nil)
 }
 
@@ -175,7 +175,7 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 
 func (s *Server) toolListTasks() actool.CoreTool {
 	return roTool("list_tasks",
-		"List all tasks(id/Description/Target/Status/Running time/Father Job/LLM Configuration),Organization agent Use it to master the situation, see which missions are stuck too long, which ones are used. LLM.Run-time: running=Create→Now, final.=Create→Final activities(second).llm_profile:Task planner/worker The configuration name used,(Activate Configuration)=Follow Global Activation.",
+		"List every task (id, description, goal, status, runtime, parent task, LLM profile) so an orchestration agent can see the whole picture, which tasks have been stuck, and which LLM each one uses. Runtime: running = created→now; terminal = created→last activity, in seconds. llm_profile is the profile name the task planner and workers use; (active profile) means it follows the global active profile.",
 		objSchema(map[string]any{}),
 		func(context.Context, json.RawMessage) (actool.Result, error) {
 			lastAct, _ := s.m.PG().LastActivityAll()
@@ -205,11 +205,11 @@ func (s *Server) toolListTasks() actool.CoreTool {
 				}
 				llmState := t.llmStateSnapshot()
 				if llmState.ProfileID == nil {
-					row["llm_profile"] = "(Activate Configuration)"
+					row["llm_profile"] = "(active profile)"
 				} else if n, ok := profName[*llmState.ProfileID]; ok {
 					row["llm_profile"] = n
 				} else {
-					row["llm_profile"] = fmt.Sprintf("#%d(Deleted)", *llmState.ProfileID)
+					row["llm_profile"] = fmt.Sprintf("#%d (deleted)", *llmState.ProfileID)
 				}
 				out = append(out, row)
 			}
@@ -221,7 +221,7 @@ func (s *Server) toolListTasks() actool.CoreTool {
 // orchestration agent can pick one for spawn_task's llm_profile. Never leaks keys.
 func (s *Server) toolListLLMProfiles() actool.CoreTool {
 	return roTool("list_llm_profiles",
-		"List available LLM Configuration(profile):id,Name, model, format, current active configuration. Use id Give spawn_task of llm_profile_id Parameters specify sub-task exclusive LLM(For example, the use of cheap models and the use of strong models for reconnaissance). does not contain API Key.",
+		"List available LLM profiles: id, name, model, format, and whether it is the active profile. Pass id as spawn_task's llm_profile_id to pin a child task to one LLM (a cheap model for recon, a strong model for exploitation). API keys are not included.",
 		objSchema(map[string]any{}),
 		func(context.Context, json.RawMessage) (actool.Result, error) {
 			profs, err := s.m.pg.ListProfiles()
@@ -240,16 +240,16 @@ func (s *Server) toolListLLMProfiles() actool.CoreTool {
 
 func (s *Server) toolSpawnTask() actool.CoreTool {
 	return wrTool("spawn_task",
-		"Create a task with an independent objective and return its task_id. Supply parent_ref to record its parent task.",
+		"Create a child task, start its exploration engine, and return task_id. Use it to dispatch one piece of work (a challenge or a goal) as its own task. parent_ref is optional: the parent task id of this orchestration run, for the parent-child link.",
 		objSchema(map[string]any{
-			"description":            strParam("Short task title"),
-			"goal":                   strParam("Task objective"),
-			"parent_ref":             strParam("Optional parent task ID"),
-			"source_task_ids":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": fmt.Sprintf("Optional source task IDs, up to %d. The new task may read their recorded assets and conclusions. parent_ref alone does not add inherited sources.", db.MaxTaskSourceCount)},
-			"llm_profile_id":         map[string]any{"type": "integer", "description": "Optional LLM profile ID for the task planner and workers. Omit to inherit the parent or global configuration."},
-			"timeout_seconds":        map[string]any{"type": "integer", "description": "Optional task deadline in seconds. Zero or omitted means no deadline."},
-			"plan_heartbeat_seconds": map[string]any{"type": "integer", "description": "Optional planner heartbeat interval in seconds; defaults to 600."},
-			"seed_first_intent":      map[string]any{"type": "boolean", "description": "Optional direct initial intent for a simple task; defaults to false."},
+			"description":            strParam("short task title"),
+			"goal":                   strParam("what the task should achieve"),
+			"parent_ref":             strParam("optional parent task id (parent-child link)"),
+			"source_task_ids":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": fmt.Sprintf("optional read-only source task ids (at most %d). The child may read those tasks' discovered assets and conclusions as a starting point. Unlike parent_ref, which is only a parent pointer, this inherits content.", db.MaxTaskSourceCount)},
+			"llm_profile_id":         map[string]any{"type": "integer", "description": "optional LLM profile id for this child task's planner and workers (see list_llm_profiles). Empty inherits the parent, then falls back to the global active profile."},
+			"timeout_seconds":        map[string]any{"type": "integer", "description": "optional task timeout in seconds. When it hits, the task shuts down gracefully and becomes terminal status timeout. Empty or 0 means no limit."},
+			"plan_heartbeat_seconds": map[string]any{"type": "integer", "description": "optional planner heartbeat interval in seconds. When this long has passed since the last planning round or task start with no trigger, one planning round runs (deadlock backstop, and a wake to supervise in-flight workers). Empty or 0 means the default 600 (10 min)."},
+			"seed_first_intent":      map[string]any{"type": "boolean", "description": "optional. For a simple task, emit one seed intent at creation (text = description + goal) so the worker starts testing without waiting for the first planner round. Default false (plan first, then execute)."},
 		}, "description", "goal"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
@@ -264,27 +264,27 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 			}
 			_ = json.Unmarshal(in, &a)
 			if strings.TrimSpace(a.Description) == "" {
-				a.Description = "Unnamed Task"
+				a.Description = "Untitled task"
 			}
 			if strings.TrimSpace(a.Goal) == "" {
-				return actool.Errorf("goal As necessary."), nil
+				return actool.Errorf("goal is required"), nil
 			}
 			if a.TimeoutSeconds < 0 {
 				a.TimeoutSeconds = 0
 			}
-			// Inheritance-only mandates: maximum number + each id Valid./Heavy./Existence, verification rules and HTTP The mission is consistent..
+			// Read-only source tasks: cap the count and require each id to be valid, unique, and existing. Same checks as HTTP task creation.
 			if len(a.SourceTaskIDs) > db.MaxTaskSourceCount {
-				return actool.Errorf(fmt.Sprintf("Most selected associated tasks %d pieces", db.MaxTaskSourceCount)), nil
+				return actool.Errorf(fmt.Sprintf("Select at most %d related tasks", db.MaxTaskSourceCount)), nil
 			}
 			sourceIDs := make([]int64, 0, len(a.SourceTaskIDs))
 			seenSources := map[int64]bool{}
 			for _, raw := range a.SourceTaskIDs {
 				id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 				if err != nil || id <= 0 || seenSources[id] {
-					return actool.Errorf("Associated tasks id Invalid or repeated"), nil
+					return actool.Errorf("Related task ids are invalid or duplicated"), nil
 				}
 				if _, ok := s.m.Task(strconv.FormatInt(id, 10)); !ok {
-					return actool.Errorf(fmt.Sprintf("Associated tasks #%d does not exist", id)), nil
+					return actool.Errorf(fmt.Sprintf("Related task #%d does not exist", id)), nil
 				}
 				seenSources[id] = true
 				sourceIDs = append(sourceIDs, id)
@@ -293,7 +293,7 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 			var pin *int64
 			if id := parseProfileID(a.LLMProfileID); id > 0 {
 				if _, ok := s.loadProfileConfig(id); !ok {
-					return actool.Errorf(fmt.Sprintf("LLM Configuration #%d Not available or not set API Key", id)), nil
+					return actool.Errorf(fmt.Sprintf("LLM profile #%d does not exist or has no API key", id)), nil
 				}
 				pin = &id
 			} else if a.ParentRef != "" {
@@ -320,17 +320,17 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 					_ = s.m.PG().SetParentRef(id, a.ParentRef)
 				}
 			}
-			// Shared Post-Building Processes,With HTTP Construction tasks(server.go createTask)Repeat the same paragraph launchTask:
-			// seed + The target is decomposed from the backstage.(No.0wheel/LLMSteps/Article by articlegoal) + engine.Run.
-			// seed_first_intent Default false(Standards planned before implementation);A simple task starts with a direct release. work Test.
+			// Same post-create path as HTTP task creation (server.go createTask), via launchTask:
+			// seed, then a visible background goal breakdown (round 0, LLM steps, one goal node each), then engine.Run.
+			// seed_first_intent defaults to false (plan first, then execute). A simple task can emit one work item and start testing immediately.
 			s.launchTask(t, a.Description+" "+a.Goal, a.SeedFirstIntent)
 			return actool.Text(fmt.Sprintf("task created: %s", t.ID)), nil
 		})
 }
 
 func (s *Server) toolPauseTask() actool.CoreTool {
-	return wrTool("pause_task", "Pause Assignment(Stop it. planner/worker Loop).",
-		objSchema(map[string]any{"task_id": strParam("Tasks to suspend id")}, "task_id"),
+	return wrTool("pause_task", "Pause a task (stop its planner and worker loops).",
+		objSchema(map[string]any{"task_id": strParam("id of the task to pause")}, "task_id"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
 				TaskID string `json:"task_id"`
@@ -348,7 +348,7 @@ func (s *Server) toolPauseTask() actool.CoreTool {
 }
 
 func (s *Server) toolGetTaskGraph() actool.CoreTool {
-	return roTool("get_task_graph", "Read an overview of the search for specified tasks(Same graph_overview:Asset Count/frontier/Discover/Overwrite etc.),Use task_id Assign Task.",
+	return roTool("get_task_graph", "Read the exploration-graph overview of a task (same as graph_overview: asset counts, frontier, findings, coverage). Pass task_id.",
 		objSchema(map[string]any{"task_id": strParam("Task id")}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).GraphOverviewTool)
@@ -356,7 +356,7 @@ func (s *Server) toolGetTaskGraph() actool.CoreTool {
 }
 
 func (s *Server) toolListTaskFindings() actool.CoreTool {
-	return roTool("list_task_findings", "Can not open message Hole(incl. flag/PoC;Every band. id/task_id/intent_id/vulnclass/severity/Abstract/Status),Use task_id Assign Task.",
+	return roTool("list_task_findings", "Read confirmed findings for a task (including flag and PoC). Each row has id, task_id, intent_id, vulnclass, severity, summary, and status. Pass task_id.",
 		objSchema(map[string]any{"task_id": strParam("Task id")}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).ListFindingsTool)
@@ -364,14 +364,14 @@ func (s *Server) toolListTaskFindings() actool.CoreTool {
 }
 
 func (s *Server) toolAddHint() actool.CoreTool {
-	return wrTool("add_task_hint", "Infusion of strategic alerts for assigned tasks(Mission planner The next generation will read).\n"+
-		"★Priority batch: multi-tip in hints Submit arrays once (return) ids array, with hints Equivalent, Failed id=0);A single article is omitted hints Straight to the top. text.",
+	return wrTool("add_task_hint", "Inject strategic hints into a task. That task's planner reads them the next time it generates intents.\n"+
+		"Prefer a batch: put several hints in the hints array and submit once (returns an ids array, same length and order as hints; a failed item has id 0). For a single hint, omit hints and set the top-level text.",
 		objSchema(map[string]any{
 			"task_id":      strParam("Task id"),
-			"hints":        map[string]any{"type": "array", "description": "[Take this first.]prompt array, each element field is the top layer(text/asset_ids/traffic_refs).", "items": objSchema(map[string]any{"text": strParam("Note"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": agent.HintTrafficSchema()})},
-			"text":         strParam("[Single] Note"),
+			"hints":        map[string]any{"type": "array", "description": "preferred: an array of hints. Each element uses the same fields as the top level (text, asset_ids, traffic_refs).", "items": objSchema(map[string]any{"text": strParam("hint text"), "asset_ids": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}, "traffic_refs": agent.HintTrafficSchema()})},
+			"text":         strParam("single hint text"),
 			"traffic_refs": agent.HintTrafficSchema(),
-			"asset_ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Anchored assets id(Optional,0/1/Multiple; assets within the mandate id)"},
+			"asset_ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "asset ids to anchor (optional, zero or more; asset ids inside that task)"},
 		}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).AddHintTool)
@@ -380,11 +380,11 @@ func (s *Server) toolAddHint() actool.CoreTool {
 
 func (s *Server) toolGetWorkerTrace() actool.CoreTool {
 	return roTool("get_task_worker_trace",
-		"Look at one of the assigned tasks. work(Intention)Implementation process:get_task_worker_trace(task_id, intent_id) Read the summary of the steps; take another step_ids=[...] Take those steps.(Most at a time. 5 pieces,More just before you return. 5 pieces).",
+		"Read one work item (intent) in a task: get_task_worker_trace(task_id, intent_id) returns step summaries; pass step_ids=[...] for the full text of those steps (at most 5; extras are dropped and only the first 5 are returned).",
 		objSchema(map[string]any{
 			"task_id":   strParam("Task id"),
-			"intent_id": map[string]any{"type": "integer", "description": "Intention id(From the mission. work)"},
-			"step_ids":  map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional: Steps to retrieve full content id(Most at a time. 5 pieces,More just before you return. 5 pieces,The rest is here. omitted_step_ids List)"},
+			"intent_id": map[string]any{"type": "integer", "description": "intent id (a work item in that task)"},
+			"step_ids":  map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "optional step ids whose full content to return (at most 5; extras are not returned and are listed in omitted_step_ids)"},
 		}, "task_id", "intent_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).GetWorkerTraceTool)
@@ -392,7 +392,7 @@ func (s *Server) toolGetWorkerTrace() actool.CoreTool {
 }
 
 func (s *Server) toolListWorkerTraces() actool.CoreTool {
-	return roTool("list_task_worker_traces", "List a task's worker runs and steps. Use get_task_worker_trace for a detailed run.",
+	return roTool("list_task_worker_traces", "List which work items (intents) have run in a task and how many steps each has, so you can see which ones are worth opening with get_task_worker_trace.",
 		objSchema(map[string]any{"task_id": strParam("Task id")}, "task_id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).ListWorkerTracesTool)
@@ -400,7 +400,7 @@ func (s *Server) toolListWorkerTraces() actool.CoreTool {
 }
 
 func (s *Server) toolSearchWorkerTraces() actool.CoreTool {
-	return roTool("search_task_worker_traces", "Search all by keyword in the given task work Implementation process(Return hit step summary + intent_id).",
+	return roTool("search_task_worker_traces", "Search every work item's execution trace in a task by keyword. Returns the matching step summary and intent_id.",
 		objSchema(map[string]any{"task_id": strParam("Task id"), "q": strParam("Search keywords")}, "task_id", "q"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).SearchWorkerTracesTool)
@@ -409,10 +409,10 @@ func (s *Server) toolSearchWorkerTraces() actool.CoreTool {
 
 func (s *Server) toolGetTaskNodeDetail() actool.CoreTool {
 	return roTool("get_task_node_detail",
-		"Read the full content of an exploratory node in a given task(Discover/fact/Intention/Objective: Summary + Details/Evidence/PoC).id To explore nodes id(As report_finding Return, or list_task_findings inside id).Use it to get full evidence of the loophole before writing the bug report..",
+		"Read the full content of one exploration-graph node in a task (finding, fact, intent, or goal: summary plus detail, evidence, and PoC). id is the exploration node id (the id report_finding returned, or the id from list_task_findings). Read it before writing a finding report so the evidence is complete.",
 		objSchema(map[string]any{
 			"task_id": strParam("Task id"),
-			"id":      map[string]any{"type": "integer", "description": "Explore nodes id(Non-assets id)"},
+			"id":      map[string]any{"type": "integer", "description": "exploration-graph node id (not an asset id)"},
 		}, "task_id", "id"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			return s.delegateToTask(ctx, in, (*agent.ToolSet).NodeDetailTool)
@@ -425,11 +425,11 @@ func (s *Server) toolGetTaskNodeDetail() actool.CoreTool {
 // task-agnostic, so this host tool needs no task_id / exploration store.
 func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 	return wrTool("update_finding_report",
-		"Write for registered loopholes/Update[Detailed report](Markdown Full text,The whole paragraph overwrites old content).finding_id Pass report_finding Back. id(\"finding recorded: <id>\" Numbers in).Recommendation of the report:Summary of gaps, impacts and hazards, recovery steps, evidence/PoC,Repair suggestions.",
+		"Write or replace the detailed report of a registered finding (full Markdown; the whole text replaces the previous report). finding_id is the id report_finding returned (the number in \"finding recorded: <id>\"). A report should cover the summary, impact, reproduction steps, evidence or PoC, and a fix.",
 		objSchema(map[string]any{
-			"finding_id":       map[string]any{"type": "integer", "description": "Target loophole id(report_finding Returned id)"},
-			"report":           strParam("Full detailed report,Markdown Format"),
-			"evidence_version": map[string]any{"type": "integer", "description": "get_finding_traffic Evidence of return version;To prevent new evidentiary changes in reporting coverage"},
+			"finding_id":       map[string]any{"type": "integer", "description": "finding id returned by report_finding"},
+			"report":           strParam("full report in Markdown"),
+			"evidence_version": map[string]any{"type": "integer", "description": "evidence version returned by get_finding_traffic; stops the report from being marked stale when evidence changes"},
 		}, "finding_id", "report"),
 		func(ctx context.Context, in json.RawMessage) (actool.Result, error) {
 			var a struct {
@@ -438,16 +438,16 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 				Report          string          `json:"report"`
 			}
 			_ = json.Unmarshal(in, &a)
-			nodeID := parseProfileID(a.FindingID) // Reuse[Number or number string]Analysis
+			nodeID := parseProfileID(a.FindingID) // reuse the "number or numeric string" parser
 			if nodeID <= 0 {
-				return actool.Errorf("finding_id Invalid"), nil
+				return actool.Errorf("invalid finding_id"), nil
 			}
 			n, err := s.m.pg.SetFindingReportVersionByNodeID(ctx, nodeID, a.Report, a.EvidenceVersion)
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
 			if n == 0 {
-				return actool.Errorf(fmt.Sprintf("Not found finding_id=%d Corresponding loopholes(First. report_finding Register)", nodeID)), nil
+				return actool.Errorf(fmt.Sprintf("no finding record for finding_id=%d (register it with report_finding first)", nodeID)), nil
 			}
 			return actool.Text(fmt.Sprintf("finding %d report updated (%d chars)", nodeID, len(a.Report))), nil
 		})
@@ -471,8 +471,8 @@ func (s *Server) deriveTaskStatus(t *Task) string {
 // are bindable per-agent (default: bound to nobody — opt-in for orchestration
 // agents). First-insert only, like the traffic seeds.
 func (s *Server) seedOrchestrationTools() {
-	// task-op + platform tools default-bind to the built-in Auto agent (It's natural.
-	// Operating Platform).SeedTool First insert effective;Coop already seed Other Organiser seedAutoDefaultBindings Tie.
+	// task-op and platform tools default-bind to the built-in Auto agent (it exists to
+	// operate the platform). SeedTool applies on first insert; rows already seeded are bound by seedAutoDefaultBindings.
 	autoAgents, _ := json.Marshal([]string{"auto"})
 	for _, t := range s.orchestrationTools() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -491,21 +491,21 @@ func (s *Server) seedOrchestrationTools() {
 	s.seedPlannerDefaultBindings()
 	s.seedPlannerListAssetsBinding()
 	s.seedCompanyScopeRebind()
-	s.seedWorkerReadToolsUnbind() // list_facts/list_companies/list_worker_traces from worker Default untie(One-time)
-	s.seedWorkerReadbackRebind()  // Fix old migration error: search_all_worker_traces/get_worker_trace/node_detail Tie back. worker(One-time)
+	s.seedWorkerReadToolsUnbind() // unbind list_facts, list_companies, and list_worker_traces from worker by default (once)
+	s.seedWorkerReadbackRebind()  // fix an old migration that dropped them: bind search_all_worker_traces, get_worker_trace, and node_detail back onto worker (once)
 	s.seedAutoReportFindingBinding()
 	s.unbindGoalMetDefault()
-	s.reseedGoalsPrompt()             // goals Other Organiser[Pump Operating Limit]Step → Add a new version of the old library default(One-time)
-	s.reseedMainAgentPrompt()         // mainagent Other Organiser[After the goal is achieved add_intent Asked if we had a target.](One-time)
-	s.reseedPlannerPrompt()           // planner Prompt word:Rewrite[0 Intention]Justification + Increased laboratory intake check(One-time)
-	s.reseedWorkerPrompt()            // worker Prompt word:Add evidentiary threshold for negative conclusions(One-time)
-	s.seedReporterAgent()             // Preset[Report writing]agent + Tool binding + finding Trigger(One-time)
-	s.upgradeReporterTriggerMessage() // The old Kuchin move.:Let reporter Reply evidence_version(One-time)
+	s.reseedGoalsPrompt()             // goals prompt: add the "extract operation constraints" step → append a new default on old databases (once)
+	s.reseedMainAgentPrompt()         // mainagent prompt: after all goals are met, add_intent asks whether to record a formal goal (once)
+	s.reseedPlannerPrompt()           // planner prompt: rewrite the "zero intents" justification and add a quantitative acceptance check (once)
+	s.reseedWorkerPrompt()            // worker prompt: add an evidence bar for negative conclusions (once)
+	s.seedReporterAgent()             // preset the report-writer agent, its tool bindings, and the finding trigger (once)
+	s.upgradeReporterTriggerMessage() // old databases: make the reporter pass evidence_version back (once)
 	s.seedFindingTrafficTools()       // Add optional evidentiary parameters and read-only evidence tools to retain user profiles
 	s.seedFindingWorkflowTools()
-	// Note:pentest Default tool binding does not need to be migrated——BuiltinToolSeeds When the whole new thing starts.
-	// list_assets/insert_assets/report_finding/list_findings/list_companies with
-	// pentest Together. seed All right.).
+	// pentest's default tool bindings need no migration. BuiltinToolSeeds already seeds
+	// list_assets, insert_assets, report_finding, list_findings, and list_companies
+	// together with pentest on a fresh init (there is no old database to migrate).
 }
 
 // refreshBuiltinToolSchemas propagates code schema/description changes on the
@@ -525,13 +525,13 @@ func (s *Server) refreshBuiltinToolSchemas() {
 			log.Printf("[tools] refresh %s schema failed: %v", t.Name(), err)
 		}
 	}
-	// It's also a partial embedding. agent Tool brushes as code default:
-	//   - goal_met:Old Library seed . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . planner Think of it as
-	//     [Ending the Air Wheel..
-	//   - insert_assets:New related Participation(Mark if the asset is relevant to the current task and decides whether to cover it degrees),
-	//     SeedTool First Insertonly,Old Library Already seed of schema Otherwise you will not receive this new parameter..
-	//   - list_facts:Other Organiser limit/before/q Participation; old library already seed Empty schema Otherwise
-	//     Show on Tool Management Page[No parameters],The model doesn't have these parameters..
+	// Also refresh a few built-in agent tools to the code defaults:
+	//   - goal_met: the old seeded description said "end this planning round", so the planner
+	//     treated it as a way to end an empty round and marked the whole task done right after start.
+	//   - insert_assets: new related argument (whether the asset belongs to this task and counts toward coverage).
+	//     SeedTool is first-insert only, so an already-seeded schema would never gain the parameter.
+	//   - list_facts: now paged, with limit, before, and q. An old empty schema would show "no parameters"
+	//     on the tool page, and the model would not see those fields.
 	refreshBuiltin := map[string]bool{"goal_met": true, "insert_assets": true, "list_facts": true}
 	for _, sd := range agent.BuiltinToolSeeds() {
 		if !refreshBuiltin[sd.Key] {
@@ -557,214 +557,223 @@ func (s *Server) unbindGoalMetDefault() {
 		return
 	}
 	if err := s.m.pg.RemoveAgentFromTool("planner", "goal_met"); err != nil {
-		log.Printf("[tools] goal_met Unbind planner Failed: %v", err)
+		log.Printf("[tools] failed to unbind goal_met from planner: %v", err)
 		return
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// reseedGoalsPrompt handle goals The target demancipator's hint is painted[Current code default]——Because the default body has been added.
-// [Draw operational constraints first.(set_constraints)Disable target.]This step.,And SeedPromptIfEmpty First Insertonly,Old Library
-// Existing version 1 Can't get this far. Here's the version management.[Add a new version]And cut through.(ResetPromptToDefault),
-// The old version is still in history.,Users can be retrieved from the version record if they have defined themselves.settings flag Guard! → Just once.;
-// And then the default changes. bump This flag.The whole new library needs no processing.(SeedPromptIfEmpty Already seed Recent Default).
+// reseedGoalsPrompt refreshes the goals breaker prompt to the current code default. The default
+// now says to extract operation constraints (set_constraints) before splitting goals, and
+// SeedPromptIfEmpty is first-insert only, so an old version 1 never gets that step. This appends
+// a new version and switches to it (ResetPromptToDefault). The old version stays in history so a
+// customized prompt can be restored. A settings flag makes it once; bump the flag when the default
+// changes again. A fresh database needs nothing (SeedPromptIfEmpty already seeded the latest default).
 func (s *Server) reseedGoalsPrompt() {
 	const flag = "goals_prompt_constraint_step_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // I don't care if I try it once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once, whether it succeeds or not
 	a, err := s.m.pg.GetAgentByKey("goals")
 	if err != nil || a == nil {
-		return // The whole new library is not built yet. agent Line,seedPrompts It's straight. seed Recent Default,No need to move here
+		return // a fresh database has no agent row yet; seedPrompts writes the latest default, so this migration is unnecessary
 	}
 	tmpl := agent.BuiltinPromptSeeds()["goals"]
 	if tmpl == "" {
 		return
 	}
-	// New Library seedPrompts Already seed Recent Default → Current version equals code default,No additional copy required.
+	// A fresh database already has the latest default from seedPrompts, so do not append a duplicate version.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
 	if _, err := s.m.pg.ResetPromptToDefault(a.ID, tmpl); err != nil {
-		log.Printf("[prompts] goals Quote as new default failed: %v", err)
+		log.Printf("[prompts] failed to reset the goals prompt to the new default: %v", err)
 		return
 	}
-	log.Printf("[prompts] goals A new default version of the hint has been added(Add a draw-on binding step,One-time)")
+	log.Printf("[prompts] goals prompt: appended a new default version (extract operation constraints, once)")
 }
 
-// reseedMainAgentPrompt handle mainagent Phrasing[Current code default]——Default body added[All Targets
-// Once reached add_intent When you vote for intent,,Ask if the person is officially registered.]This direction.,And SeedPromptIfEmpty First Insert
-// only,The old library is not available. Manage with Version[Add a new version]And cut through.(ResetPromptToDefault),Old version still
-// In history.,Users can be retrieved from the version record if they have defined themselves.settings flag Guard! → Just do it once. The whole new library needs no processing.
-// (SeedPromptIfEmpty Already seed Recent Default).With reseedGoalsPrompt Exactly the same..
+// reseedMainAgentPrompt refreshes the mainagent prompt to the current code default. The default now
+// says that after every goal is met, an add_intent that posts an intent directly should ask the person
+// whether to record it as a formal goal. SeedPromptIfEmpty is first-insert only, so old versions never
+// get that guidance. This appends a new version and switches to it (ResetPromptToDefault). The old
+// version stays in history. A settings flag makes it once. A fresh database needs nothing. Same shape
+// as reseedGoalsPrompt.
 func (s *Server) reseedMainAgentPrompt() {
 	const flag = "mainagent_prompt_goalless_intent_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // I don't care if I try it once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once, whether it succeeds or not
 	a, err := s.m.pg.GetAgentByKey("mainagent")
 	if err != nil || a == nil {
-		return // The whole new library is not built yet. agent Line,seedPrompts It's straight. seed Recent Default,No need to move here
+		return // a fresh database has no agent row yet; seedPrompts writes the latest default, so this migration is unnecessary
 	}
 	tmpl := agent.BuiltinPromptSeeds()["mainagent"]
 	if tmpl == "" {
 		return
 	}
-	// New Library seedPrompts Already seed Recent Default → Current version equals code default,No additional copy required.
+	// A fresh database already has the latest default from seedPrompts, so do not append a duplicate version.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
 	if _, err := s.m.pg.ResetPromptToDefault(a.ID, tmpl); err != nil {
-		log.Printf("[prompts] mainagent Quote as new default failed: %v", err)
+		log.Printf("[prompts] failed to reset the mainagent prompt to the new default: %v", err)
 		return
 	}
-	log.Printf("[prompts] mainagent A new default version of the hint has been added(Once the goal has been achieved, the objective will be answered.,One-time)")
+	log.Printf("[prompts] mainagent prompt: appended a new default version (ask whether to record a goal after goals are met, once)")
 }
 
-// reseedPlannerPrompt handle planner Phrasing[Current code default]——The default body has been streamlined,And put[Restraint.]Downgrade to
-// Only heavy, add[Depth over Coverage][Hard Bottom Line:Unachieved objectives and no running intentions required output],To review the negative conclusion.
-// Every time there's a change in substance, bump Down there. flag(current v2)Let's do it again..SeedPromptIfEmpty First Insertonly,The old library is not available.,So manage it in version
-// [Add a new version]And cut through.(ResetPromptToDefault),The old version is still in history.,Users who have defined themselves can be recorded from the version
-// Get it back..settings flag Guard! → Just do it once. The whole new library needs no processing.(SeedPromptIfEmpty Already seed Recent Default).With
-// reseedGoalsPrompt Exactly the same..
+// reseedPlannerPrompt refreshes the planner prompt to the current code default. The default was
+// compacted: "restraint" is now only dedup, depth is preferred over coverage, there is a hard floor
+// (an unmet goal with no running intent must still produce output), and negative-conclusion review
+// has an upper bound. Bump the flag below (currently v2) whenever the default changes in substance
+// so existing databases refresh again. SeedPromptIfEmpty is first-insert only, so this appends a new
+// version and switches to it (ResetPromptToDefault). The old version stays in history. Once, via a
+// settings flag. A fresh database needs nothing. Same shape as reseedGoalsPrompt.
 func (s *Server) reseedPlannerPrompt() {
 	const flag = "planner_prompt_compact_realistic_v2"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // I don't care if I try it once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once, whether it succeeds or not
 	a, err := s.m.pg.GetAgentByKey("planner")
 	if err != nil || a == nil {
-		return // The whole new library is not built yet. agent Line,seedPrompts It's straight. seed Recent Default,No need to move here
+		return // a fresh database has no agent row yet; seedPrompts writes the latest default, so this migration is unnecessary
 	}
 	tmpl := agent.BuiltinPromptSeeds()["planner"]
 	if tmpl == "" {
 		return
 	}
-	// New Library seedPrompts Already seed Recent Default → Current version equals code default,No additional copy required.
+	// A fresh database already has the latest default from seedPrompts, so do not append a duplicate version.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
 	if _, err := s.m.pg.ResetPromptToDefault(a.ID, tmpl); err != nil {
-		log.Printf("[prompts] planner Quote as new default failed: %v", err)
+		log.Printf("[prompts] failed to reset the planner prompt to the new default: %v", err)
 		return
 	}
-	log.Printf("[prompts] planner A new default version of the hint has been added(Streamlined re-engineering+Repressive downgrading.+Depth priority+Overruled review.,One-time)")
+	log.Printf("[prompts] planner prompt: appended a new default version (compact rewrite, restraint reduced to dedup, depth over coverage, cap on negative review, once)")
 }
 
-// reseedWorkerPrompt handle worker Phrasing[Current code default]——Default Body record_fact It's been deleted.[Negative conclusion
-// Write Observation+Experimental reading]The whole sentence, and... confidence(observed/inferred)With[Did you exhaust your means?]Disarm(These susceptible planners.),
-// In the meantime, facts Align the arrays to[They're completely independent. They can't be integrated.]Very few exceptions..bump flag To v3 Let's do it again..
-// SeedPromptIfEmpty First Insertonly,The old library is not available.,So manage it in version[Add a new version]And cut through.,The old version is still available in history..
-// settings flag Guard! → Just do it once. The whole new library needs no processing. and reseedGoalsPrompt Exactly the same..
+// reseedWorkerPrompt refreshes the worker prompt to the current code default. The record_fact
+// section no longer says to write a negative conclusion as an observation plus a tentative reading,
+// and confidence (observed/inferred) is decoupled from "did you exhaust this intent's means" (that
+// pairing misleads the planner). facts must be fully independent items that cannot be merged, with
+// few exceptions. The flag is bumped so existing databases refresh again. SeedPromptIfEmpty is
+// first-insert only, so this appends a new version and switches to it; the old version stays in
+// history. Once, via a settings flag. A fresh database needs nothing. Same shape as reseedGoalsPrompt.
 func (s *Server) reseedWorkerPrompt() {
 	const flag = "worker_prompt_compact_v4"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // I don't care if I try it once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once, whether it succeeds or not
 	a, err := s.m.pg.GetAgentByKey("worker")
 	if err != nil || a == nil {
-		return // The whole new library is not built yet. agent Line,seedPrompts It's straight. seed Recent Default,No need to move here
+		return // a fresh database has no agent row yet; seedPrompts writes the latest default, so this migration is unnecessary
 	}
 	tmpl := agent.BuiltinPromptSeeds()["worker"]
 	if tmpl == "" {
 		return
 	}
-	// New Library seedPrompts Already seed Recent Default → Current version equals code default,No additional copy required.
+	// A fresh database already has the latest default from seedPrompts, so do not append a duplicate version.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
 	if _, err := s.m.pg.ResetPromptToDefault(a.ID, tmpl); err != nil {
-		log.Printf("[prompts] worker Quote as new default failed: %v", err)
+		log.Printf("[prompts] failed to reset the worker prompt to the new default: %v", err)
 		return
 	}
-	log.Printf("[prompts] worker A new default version of the hint has been added(Check the context as list_assets/list_findings,Get rid of it. list_facts/node_detail/asset_neighbors,One-time)")
+	log.Printf("[prompts] worker prompt: appended a new default version (context lookup is list_assets/list_findings; dropped list_facts/node_detail/asset_neighbors, once)")
 }
 
-// reporterToolCallMessage We have to ask unconditionally to read it first. get_finding_traffic Write the report..
-// The tool is read-only.,[Not dependent on capture switches],The evidence of artificial binding can be read at all times. If here...
-// Written[Enable automatic binding to read],Default close configuration reporter It won't pass. evidence_version,
-// SetFindingReportVersionByNodeID Press legacy Semantic -1,Gap Details and Markdown Export
-// Other Organiser[Evidence changed, report to be updated],And UI There's no entrance to clear it..
-const reporterToolCallMessage = "A finding has been recorded with report_finding. Read its finding_id and finding_node_id from the tool result. " +
-	"Call get_finding_traffic with finding_id to read the evidence list and version. If automatic binding is enabled, verify and bind relevant traffic before reporting. " +
-	"Read node details with finding_node_id. Save the report with update_finding_report using finding_node_id and the evidence_version returned by get_finding_traffic."
+// reporterToolCallMessage must always tell the reporter to read get_finding_traffic before writing.
+// The tool is read-only and does not depend on the capture switch, so manually bound evidence is
+// readable either way. If the text said "read only when automatic binding is on", a default-off
+// reporter would omit evidence_version, SetFindingReportVersionByNodeID would store the legacy -1,
+// and the finding detail and Markdown export would stay on "evidence changed, report needs update"
+// with no UI control to clear it.
+const reporterToolCallMessage = "A finding was just registered with report_finding. Read finding_id (the finding record id) and finding_node_id (the exploration node id) from the returned JSON. " +
+	"Call get_finding_traffic(finding_id) first and read the evidence list and its version. An empty list is normal; still write the report. " +
+	"If the run instructions enable automatic binding, verify and bind this finding's traffic before reading. Use finding_node_id for node detail. " +
+	"Then call update_finding_report with finding_id set to finding_node_id, the report, and evidence_version set to the version you actually read. " +
+	"evidence_version is required; without it the report is permanently marked as needing an update. Do not mix the two ids."
 
-// Old Trigger Message(0.3.8 And sooner.).Only records that are still the same word for word will be migrated to cover, and users will have changed to keep the same..
+// Previous trigger message (0.3.8 and earlier). Only a record that still matches this text byte for byte is overwritten; a message the user edited is left alone.
+// The string below is a migration sentinel. Do not reword it or existing rows will no longer match.
 const reporterToolCallMessageV1 = "There's just a hole in it. report_finding Registration. Please remove from the trigger context finding_id" +
 	"(Tool Return \"finding recorded: <id>\" ) and the mission id,Write a detailed report on that loophole in accordance with your duties.," +
 	"Last Call update_finding_report(finding_id, report) Save."
 
-// upgradeReporterTriggerMessage The old Curry is still a default. reporter Trigger message as a new version.
-// seedReporterAgent Yes. reporter_agent_seed_v1 Guard and only new ones. agent Time-writing trigger, so...
-// The upgraded library won't get the new file. —— Tools schema By seedFindingTrafficTools It's done.
-// evidence_version,But nothing was told. reporter Go use it. One-time, covering only unaltered texts.
+// upgradeReporterTriggerMessage rewrites reporter trigger messages that are still the old default.
+// seedReporterAgent is guarded by reporter_agent_seed_v1 and writes the trigger only when the agent
+// is created, so an upgraded database never receives the new text. seedFindingTrafficTools added the
+// evidence_version schema, but nothing told the reporter to pass it. Once, and only untouched text.
 func (s *Server) upgradeReporterTriggerMessage() {
 	const flag = "reporter_trigger_evidence_version_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Just once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once
 	triggers, err := s.m.pg.ListTriggersFor("reporter")
 	if err != nil {
-		log.Printf("[reporter] Reading trigger failed: %v", err)
+		log.Printf("[reporter] failed to read triggers: %v", err)
 		return
 	}
 	for _, t := range triggers {
 		if !t.OnToolCall || t.ToolCallMessage != reporterToolCallMessageV1 {
-			continue // User changed or not finding Trigger, hold it..
+			continue // the user edited it, or it is not the finding trigger; leave it
 		}
 		t.ToolCallMessage = reporterToolCallMessage
 		if err := s.m.pg.UpdateTrigger(t); err != nil {
-			log.Printf("[reporter] Upgrade Trigger Message Failed: %v", err)
+			log.Printf("[reporter] failed to upgrade the trigger message: %v", err)
 			return
 		}
-		log.Printf("[reporter] Trigger message upgraded to read and return Pass evidence_version")
+		log.Printf("[reporter] trigger message upgraded to read traffic and pass evidence_version")
 	}
 }
 
-// seedReporterAgent Preset one.[Report writing]Customized agent(builtin=false,Available at UI Edit/Delete):
-// Binding update_finding_report + Job Query Tool, and Hang One[report_finding Call or trigger.]of
-// Trigger —— Every loophole registered calls for detailed reports. One-time(settings flag Guard!):User delete and not rebuild.
-// Dependence:orchestration Tools are above this function SeedTool Enter the library, so it's bound..
+// seedReporterAgent presets a custom "report writer" agent (builtin=false, editable and deletable in the UI).
+// It binds update_finding_report and the task-query tools, and hangs a trigger that fires when
+// report_finding is called, so each registered finding gets a detailed report. Once (settings flag):
+// if the user deletes it, it is not recreated. The orchestration tools are SeedTool'd above, so the bind succeeds.
 func (s *Server) seedReporterAgent() {
 	const flag = "reporter_agent_seed_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // I don't care if I try it once.
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // try once, whether it succeeds or not
 
 	if exist, _ := s.m.pg.GetAgentByKey("reporter"); exist != nil {
-		return // key Already occupied(User-built)——Do Not Overwrite
+		return // key is already taken (a user created it); do not overwrite
 	}
 	a, err := s.m.pg.CreateAgent("reporter", "Report writer",
-		"Draft a detailed Markdown report from recorded finding evidence and execution traces.")
+		"Writes a detailed finding report: triggered when a finding is recorded, reads the evidence and execution trace, then writes a Markdown report back.")
 	if err != nil {
-		log.Printf("[reporter] Create agent Failed: %v", err)
+		log.Printf("[reporter] failed to create agent: %v", err)
 		return
 	}
 	if err := s.m.pg.SeedPromptIfEmpty(a.ID, agent.ReporterDefaultPrompt); err != nil {
-		log.Printf("[reporter] seed prompt Failed: %v", err)
+		log.Printf("[reporter] failed to seed prompt: %v", err)
 	}
-	// Trigger Run Policy:parallel + none —— One loophole, one report, multiple. finding I'll write it all out..
-	// merge Must be. none:Otherwise(Default all)One wave. finding It's going to be combined into a single operation, and there's no point in parallel..
-	// maxParallel=5:At the same time. 5 It's a report session. LLM Call.
+	// Trigger run policy: parallel + none — one finding, one report, and several findings write at once.
+	// merge must be none. The default all would fold a burst of findings into one run, which makes parallel pointless.
+	// maxParallel=5: at most 5 report sessions at once, so a burst does not fan out into too many LLM calls.
 	if err := s.m.pg.SetAgentTriggerBehavior("reporter", "parallel", "none", 5); err != nil {
-		log.Printf("[reporter] Failed to set a trigger running policy: %v", err)
+		log.Printf("[reporter] failed to set the trigger run policy: %v", err)
 	}
-	// The tools it needs to bind: report. + Read the evidence./Execution process/Trends.
+	// Tools it needs: write the report, and read evidence, the execution trace, and the picture.
 	if err := s.m.pg.AddAgentToToolBinding("reporter", []string{
 		"update_finding_report", "get_task_node_detail", "list_task_findings",
 		"get_task_worker_trace", "list_task_worker_traces", "search_task_worker_traces",
 		"get_task_graph",
 	}); err != nil {
-		log.Printf("[reporter] Failed to bind tool: %v", err)
+		log.Printf("[reporter] failed to bind tools: %v", err)
 	}
-	// Trigger:report_finding Call or trigger (tool return) "finding recorded: <id>" Take it. finding_id,
-	// Task id It's in the trigger.).
+	// Trigger: fires when report_finding is called. The tool result "finding recorded: <id>" carries
+	// finding_id, and the task id is in the trigger message too.
 	if _, err := s.m.pg.CreateTrigger(&db.AgentTrigger{
 		AgentKey:        "reporter",
 		Enabled:         true,
@@ -772,9 +781,9 @@ func (s *Server) seedReporterAgent() {
 		ToolNames:       []string{"report_finding"},
 		ToolCallMessage: reporterToolCallMessage,
 	}); err != nil {
-		log.Printf("[reporter] Failed to create trigger: %v", err)
+		log.Printf("[reporter] failed to create trigger: %v", err)
 	}
-	log.Printf("[reporter] Configured reporter agent and finding trigger")
+	log.Printf("[reporter] preset the report-writer agent and its finding trigger")
 }
 
 // seedAutoReportFindingBinding adds "auto" to report_finding's binding ONCE so
@@ -831,7 +840,7 @@ func (s *Server) seedPlannerListAssetsBinding() {
 // PlannerTools() and lack worker via WorkerTools(); this only backfills old rows.
 // One-shot + flag-guarded so a user who later re-binds worker isn't overridden.
 func (s *Server) seedCompanyScopeRebind() {
-	const flag = "company_scope_rebind_v1" // worker→planner Default binding switch
+	const flag = "company_scope_rebind_v1" // one-time worker→planner default binding move
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
@@ -840,7 +849,7 @@ func (s *Server) seedCompanyScopeRebind() {
 		return
 	}
 	if err := s.m.pg.RemoveAgentFromTool("worker", "add_company_scope"); err != nil {
-		log.Printf("[worker] add_company_scope Untie failed: %v", err)
+		log.Printf("[worker] failed to unbind add_company_scope: %v", err)
 		return
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
@@ -867,8 +876,8 @@ func (s *Server) seedWorkerReadToolsUnbind() {
 		"list_facts", "list_companies", "list_worker_traces",
 	} {
 		if err := s.m.pg.RemoveAgentFromTool("worker", k); err != nil {
-			log.Printf("[worker] %s from worker Untie failed: %v", k, err)
-			return // If you make a mistake, you don't. flag,Try again next time.
+			log.Printf("[worker] failed to unbind %s from worker: %v", k, err)
+			return // on error, do not set the flag, so the next startup retries
 		}
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
@@ -881,15 +890,15 @@ func (s *Server) seedWorkerReadToolsUnbind() {
 // Fresh DBs already have them via WorkerTools() and this is a harmless no-op there.
 // One-shot + flag-guarded so a user who later deliberately unbinds them isn't overridden.
 func (s *Server) seedWorkerReadbackRebind() {
-	const flag = "worker_readback_rebind_v2" // v2: Append node_detail
+	const flag = "worker_readback_rebind_v2" // v2: also bind node_detail
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
 	if err := s.m.pg.AddAgentToToolBinding("worker", []string{
 		"search_all_worker_traces", "get_worker_trace", "node_detail",
 	}); err != nil {
-		log.Printf("[worker] Look back./Detail tool binding failed: %v", err)
-		return // If you make a mistake, you don't. flag,Try again next time.
+		log.Printf("[worker] failed to bind look-back and detail tools: %v", err)
+		return // on error, do not set the flag, so the next startup retries
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
 }
@@ -899,7 +908,7 @@ func (s *Server) seedWorkerReadbackRebind() {
 // before Auto existed still give Auto its default toolset — without re-adding it
 // after a user deliberately unbinds.
 func (s *Server) seedAutoDefaultBindings() {
-	const flag = "auto_default_bindings_v3" // v3: Replace old asset toolnames, add insert_assets/add_company_scope
+	const flag = "auto_default_bindings_v3" // v3: drop old asset tool names; add insert_assets and add_company_scope
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
@@ -908,7 +917,7 @@ func (s *Server) seedAutoDefaultBindings() {
 		keys = append(keys, t.Name())
 	}
 	keys = append(keys, platformToolKeys...)
-	// Asset tool:Auto The operating platform always looks at it./Register assets, manage the scope of the company.
+	// Asset tools: Auto runs the platform, so it always lists and registers assets and manages company scope.
 	keys = append(keys, "insert_assets", "add_company_scope", "list_assets")
 	if err := s.m.pg.AddAgentToToolBinding("auto", keys); err != nil {
 		log.Printf("[auto] Default binding failed: %v", err)

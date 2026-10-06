@@ -17,44 +17,44 @@ import (
 	"github.com/skilfoy/ARTEX-English/notify"
 )
 
-// This document overwhelms end-to-end behaviour for the delivery function: loopholes Library → Event → Distribution → Really? HTTP.
+// End-to-end coverage of finding notifications: a finding is stored → an event → fan-out → a real HTTP send.
 //
-// A safety alert: these examples**Do not call global Notifier.step()**,It's just something you created.
-// Channel Call stepRealtime/stepDigest.Because... step() It'll be all over the library.——
-// It's a real nail in one./Microbots are running tests on the developer. step It'll take the test.
-// The holes created were pushed into those groups. Called on a channel-by-channel to limit impact to test self-made false receivers Move!.
+// Safety: these tests do **not** call the global Notifier.step(). They call stepRealtime or stepDigest
+// only on channels they created. step() walks every enabled channel in the database. On a dev database
+// that already has a real DingTalk or WeCom robot, a global step would push findings created during the
+// test into those rooms. Per-channel calls keep the effect on the test's own fake receiver.
 //
-// Clearance: elimination of events and channels arising from this example by the end of the case, without leaving a backlog of real channels.
+// Cleanup deletes the events this test created (deliveries cascade) and the channels, so real channels
+// are not left with a backlog.
 //
-// The caliber.:stepRealtime/stepDigest No return value, internal log, so here's the assertion:
-// **Observable external behaviour**(What's received by the false receiver, what's the status of the delivery line, not the function?
-// Return value——It's closer to a real call path than putting a pillar on a return value..
+// stepRealtime and stepDigest return nothing and only log, so assertions are on observable behavior
+// (what the fake receiver got, and what state the delivery row landed in), not on a return value.
+// That is closer to the real call path than stubbing the return.
 
-// notifyFixture It's a public device for example in this document..
+// notifyFixture is the shared setup for tests in this file.
 type notifyFixture struct {
 	s       *Server
 	pg      *db.DB
 	request func(method, path, body string) *httptest.ResponseRecorder
 	n       *Notifier
-	// Self-built. task/exploration:Take the example of a loophole here and isolate it from other examples..
+	// This test's own task and exploration, so findings stay isolated from other tests.
 	taskID int64
 	expID  int64
-	// cleanupMark The event that follows is removed during cleanup.
+	// events created after cleanupMark are deleted during cleanup.
 	cleanupMark int64
 }
 
 func newNotifyFixture(t *testing.T) *notifyFixture {
 	t.Helper()
-	// All false receivers of this document are running at 127.0.0.1 Up, and the delivery default refuses loop back to address
-	// (Prevention SSRF Call the same machine service and cloud metadata. Test visible to open this switch.;
-	// Guard![Default Rejection]by notify The bag. ssrf_test.go override.
+	// Every fake receiver in this file listens on 127.0.0.1. Delivery refuses loopback by default
+	// (SSRF against a local service or cloud metadata). Tests set the allow-local switch explicitly.
+	// The default-deny behavior is covered by notify/ssrf_test.go.
 	t.Setenv(notify.AllowLocalTargetsEnv, "1")
 	s, _, request := trafficEvidenceServer(t)
 	pg := s.m.pg
 
-	// Build your own task:Shared devices trafficEvidenceServer Made it. task I can't get it. exploration id,
-	// And the record gap has to provide it..
-	task, err := s.m.CreateTask("Notify transfer test", "Organisation", nil, 0, 0)
+	// Own task: the shared trafficEvidenceServer task has no exploration id, and recording a finding requires one.
+	task, err := s.m.CreateTask("notification delivery test", "verify delivery behavior", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,13 +68,12 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 	if err := pg.QueryRow(`SELECT COALESCE(max(id),0) FROM notification_events`).Scan(&mark); err != nil {
 		t.Fatal(err)
 	}
-	// Let the device be self-contained: fixture One-time tag for events that existed before is assigned.
+	// Close the fixture over itself: mark every event that already existed as fanned out.
 	//
-	// Why do you have to?:FanOutPendingEvents Yes**Global**We'll get all the unassigned incidents in Curly.
-	// Expand to all matching channels. And shared devices trafficEvidenceServer You'll remember a loophole.
-	// (It's the first time it returns. finding),Other examples may also have residues. Without quarantine.,
-	// These sprawling events will be assigned to the channels of this example.[Yes. N Bar delivery]Such claims
-	// Right and wrong.——And the law of error depends on the order of execution, which is harder than a direct failure. Cha..
+	// FanOutPendingEvents is global. It expands every unfanned event onto every matching channel.
+	// The shared trafficEvidenceServer records a finding of its own (the initial finding it returns),
+	// and other tests may leave leftovers. Without this, those stray events land on this test's channel
+	// and "expected N deliveries" passes or fails depending on test order, which is harder to debug than a hard failure.
 	if _, err := pg.Exec(`UPDATE notification_events SET fanned_out = true WHERE id <= $1 AND NOT fanned_out`, mark); err != nil {
 		t.Fatal(err)
 	}
@@ -85,15 +84,15 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 			t.Logf("Failed to clear notification event: %v", err)
 		}
 	})
-	// The total switch must be on. It's...).
+	// The global switch must be on (another test may have turned it off).
 	if err := pg.SetBool(settingNotifyEnabled, true); err != nil {
 		t.Fatal(err)
 	}
 	return f
 }
 
-// record Take the real evidence and write down a loophole. Go back. finding id.
-// This way will be**Same business.**Lee registered the push event——It's the hanger of the function..
+// record writes a finding through the real evidence path and returns the finding id.
+// That path records the notify event in the same transaction, which is the hook this feature uses.
 func (f *notifyFixture) record(t *testing.T, vulnclass, severity string) int64 {
 	t.Helper()
 	out, err := f.s.evidenceStore().Record(context.Background(), db.RecordFindingInput{
@@ -107,7 +106,7 @@ func (f *notifyFixture) record(t *testing.T, vulnclass, severity string) int64 {
 		Evidence:      "poc",
 	}, nil)
 	if err != nil {
-		t.Fatalf("Record loophole failed: %v", err)
+		t.Fatalf("failed to record finding: %v", err)
 	}
 	return out.FindingID
 }
@@ -144,13 +143,13 @@ func (f *notifyFixture) createChannel(t *testing.T, payload map[string]any) int6
 		ID int64 `json:"id"`
 	}
 	if err := json.Unmarshal(r.Body.Bytes(), &res); err != nil || res.ID == 0 {
-		t.Fatalf("There's no way to get back.: %s (%v)", r.Body, err)
+		t.Fatalf("channel create returned an unexpected body: %s (%v)", r.Body, err)
 	}
 	t.Cleanup(func() { f.pg.Exec(`DELETE FROM notification_channels WHERE id=$1`, res.ID) })
 	return res.ID
 }
 
-// fakeWebhook It's a recorded receipt of the requested body. End.
+// fakeWebhook records the request bodies the fake receiver got.
 type fakeWebhook struct {
 	*httptest.Server
 	mu     sync.Mutex
@@ -246,7 +245,7 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 			t.Fatalf("Message body missing %q:\n%s", want, text)
 		}
 	}
-	// Organisation sent.
+	// The delivery should now be sent.
 	var pending int
 	if err := f.pg.QueryRow(`SELECT count(*) FROM notification_deliveries WHERE channel_id=$1 AND state <> $2`,
 		chID, db.NotifyStateSent).Scan(&pending); err != nil {
@@ -347,11 +346,11 @@ func TestNotifyChannelAPICreateValidation(t *testing.T) {
 		payload map[string]any
 		wantSub string
 	}{
-		{"Type illegal", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Channel type invalid"},
+		{"Type illegal", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Invalid channel type"},
 		{"Missing Name", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "Missing channel name"},
 		{"Missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "Webhook"},
 		{"webhook It's illegal.", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "Webhook Address invalid"},
-		{"Pattern Illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "Send mode invalid"},
+		{"Pattern Illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "Invalid delivery mode"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -406,7 +405,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 		"config": map[string]any{"webhook": hook.URL},
 	})
 	for i := 0; i < 3; i++ {
-		f.record(t, fmt.Sprintf("Summary loopholes%d", i+1), "high")
+		f.record(t, fmt.Sprintf("digest-finding-%d", i+1), "high")
 	}
 	ctx := context.Background()
 	if _, _, err := f.pg.FanOutPendingEvents(ctx, 500); err != nil {
@@ -431,7 +430,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 		t.Fatalf("The sum message is missing the number of bars/Time Window:\n%s", text)
 	}
 	for i := 1; i <= 3; i++ {
-		if !strings.Contains(text, fmt.Sprintf("Summary loopholes%d", i)) {
+		if !strings.Contains(text, fmt.Sprintf("digest-finding-%d", i)) {
 			t.Fatalf("The summary message is missing %d strip:\n%s", i, text)
 		}
 	}
@@ -471,7 +470,7 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "Organisation",
+		"name":   "status changes",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 		"filter": map[string]any{"on_status_change": true},
@@ -501,7 +500,7 @@ func TestNotifyStatusChangeSuppressedByDefault(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "Can not open message",
+		"name":   "status changes off",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
@@ -554,7 +553,7 @@ func TestNotifyTestMessageEndpoint(t *testing.T) {
 
 func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 	f := newNotifyFixture(t)
-	// Pointing to the address of the inevitable failure. failed Organisation.
+	// Point at an address that always fails, to create a failed delivery.
 	chID := f.createChannel(t, map[string]any{
 		"name":   "Failed to try again",
 		"kind":   notify.KindDingTalk,
@@ -608,7 +607,7 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatalf("The number of attempts should be recorded. %d", hist.Deliveries[0].Attempts)
 	}
 	if hist.Deliveries[0].Title != "It'll fail." {
-		t.Fatalf("History should lead to a loophole. %q", hist.Deliveries[0].Title)
+		t.Fatalf("history should include the finding title, got %q", hist.Deliveries[0].Title)
 	}
 
 	// Re-activate manually: should return pending And count to zero..
@@ -685,7 +684,7 @@ func TestNotifyDeepLinkUsesPublicBaseURL(t *testing.T) {
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	finding := f.record(t, "Bring back the loophole.", "high")
+	finding := f.record(t, "finding with a deep link", "high")
 	f.deliver(t, chID, "https://artex.example.com")
 
 	body := hook.last(t)
@@ -709,7 +708,7 @@ func TestNotifyNoDeepLinkWithoutBaseURL(t *testing.T) {
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	f.record(t, "A loophole in the no-return chain", "high")
+	f.record(t, "finding with no deep link", "high")
 	f.deliver(t, chID, "")
 
 	body := hook.last(t)
@@ -717,23 +716,23 @@ func TestNotifyNoDeepLinkWithoutBaseURL(t *testing.T) {
 		t.Fatalf("Should be sent without an external address markdown,get %v", body["msgtype"])
 	}
 	if text := markdownText(t, body); strings.Contains(text, "View details") {
-		t.Fatalf("No detail chain should appear without an external address Answer.:\n%s", text)
+		t.Fatalf("with no external base URL the message must not contain a detail link:\n%s", text)
 	}
 }
 
-// TestNotifyDigestSegmentsAndDefersRemainder Yes[Quietly lost.]End-to-end evidence of repair.
+// TestNotifyDigestSegmentsAndDefersRemainder is the end-to-end proof of the silent-loss fix.
 //
-// Summarized messages are subject to the maximum length of the channel 4096 Bytes) , a batch must be filled**Press the whole article**Cut:
-// The markings loaded into this article were delivered and the rest returned to the next line, etc. Once achieved, the whole lot was marked.
-// Success——Those intercepted are neither in the message nor in the failed list, and the delivery history shows success.,
-// The hole is gone..
+// A digest is capped by the channel length (WeCom markdown is 4096 bytes). When a batch does not
+// fit, it must be split on whole findings: the ones that fit are marked sent, and the rest go back
+// on the queue for the next message. The old code marked the whole batch sent, so truncated findings
+// were in neither the message nor the failure list, history said success, and the finding vanished.
 //
-// Four things.:① Only the actual number of bars is marked ② The rest is still pending. ③ Deferred entries
-// **No retests consumed** ④ Another round will send the rest.).
+// Assert four things: (1) only the findings that fit are marked sent, (2) the rest stay pending,
+// (3) deferred rows do not consume a retry, (4) another round sends the rest and does not stall.
 func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
-	// Use corporate Wisdom:markdown upper limit 4096 It's the tightest of the six channels..
+	// WeCom: markdown limit is 4096 bytes, the tightest of the six channels.
 	chID := f.createChannel(t, map[string]any{
 		"name":   "Summary of subparagraphs",
 		"kind":   notify.KindWeCom,
@@ -741,7 +740,7 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 		"config": map[string]any{"webhook": hook.URL},
 	})
 	const total = 60
-	// Longer in the title, guaranteed. 60 It's far too far. 4096 bytes, necessary.
+	// A long title so 60 findings are far past 4096 bytes and must be split.
 	longName := strings.Repeat("Overlong Hole Name", 6)
 	for i := 0; i < total; i++ {
 		f.record(t, longName+strconv.Itoa(i+1), "high")
@@ -767,7 +766,7 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sent == 0 {
-		t.Fatal("Other Organiser")
+		t.Fatal("expected some entries to be marked sent")
 	}
 	if pending == 0 {
 		t.Fatalf("Groups %d It's impossible to load all the bars. 4096 Byte, left to be issued;sent=%d", total, sent)
@@ -790,8 +789,8 @@ WHERE channel_id=$1 AND state=$2`, chID, db.NotifyStatePending).Scan(&maxAttempt
 		t.Fatalf("Postponed entries should not consume the number of re-tests (other than a few that will fail), received attempts=%d", maxAttempts)
 	}
 
-	// Run over and over until it's condensed. The assertion is...**It's all there.**And there were multiple rounds.——
-	// This is more than[Second round.]Stronger: it proves it won't get stuck, it won't get rid of the rest..
+	// Keep going until everything is delivered, and assert that it really took more than one round.
+	// Stronger than "the second round finished": segmentation must not stall and must not drop the remainder.
 	rounds := 0
 	for {
 		var undelivered int
@@ -805,38 +804,38 @@ WHERE channel_id=$1 AND state <> $2 AND state <> $3`, chID, db.NotifyStateSent, 
 		}
 		rounds++
 		if rounds > total+5 {
-			t.Fatalf("Divisional delivery is not subdued: %d The wheel is still there. %d Article outstanding", rounds, undelivered)
+			t.Fatalf("segmented delivery did not converge: %d rounds and %d still outstanding", rounds, undelivered)
 		}
 		before := hook.count()
 		f.n.stepDigest(ctx, ch, 50, "")
 		if hook.count() == before {
-			t.Fatalf("No. %d There's no progress on the wheel. %d It'll be stuck forever.", rounds, undelivered)
+			t.Fatalf("round %d made no progress; %d would stay stuck forever", rounds, undelivered)
 		}
 	}
 	if rounds < 2 {
-		t.Fatalf("One. 4096 I can't load the bytes. %d Long title gaps, should be distributed in multiple rounds, actually only used %d wheel", total, rounds)
+		t.Fatalf("one 4096-byte message cannot hold %d long-title findings; expected several rounds, got %d", total, rounds)
 	}
-	// Every round after the first round should be**Pure renewal.**,No entries rejected by channel.
+	// Every round after the first should be a pure continuation. The fake receiver never rejects, so nothing should be failed.
 	var failed int
 	if err := f.pg.QueryRow(`SELECT count(*) FROM notification_deliveries WHERE channel_id=$1 AND state=$2`,
 		chID, db.NotifyStateFailed).Scan(&failed); err != nil {
 		t.Fatal(err)
 	}
 	if failed != 0 {
-		t.Fatalf("The false receiver always returns a successful entry. %d", failed)
+		t.Fatalf("the fake receiver always succeeds, so nothing should be failed, got %d", failed)
 	}
 }
 
-// TestNotifyBackoffTableMatchesAttemptBudget It's a drift-proof assertion..
+// TestNotifyBackoffTableMatchesAttemptBudget guards against the two constants drifting apart.
 //
-// Retry budget(db.MaxNotifyAttempts)Sequence table with retreat(notifyBackoff)Two bags separated.:
-// The former is the strategy of the status machine and the latter is the executive beat of the engine. If you change one of them,——For example, mention the budget. 5
-// And then I forgot to drop out.——The code doesn't go wrong. It's just for the next one. 4,5 Try again the last slot interval,
-// As in[Try again to slow down for no reason.],It's hard to think of it when you're checking..
-// It's the same length. CI It's exposed..
+// The retry budget (db.MaxNotifyAttempts) and the backoff table (notifyBackoff) live in different
+// packages: one is the state machine's policy, the other is the engine's timing. Changing only one
+// — for example raising the budget to 5 and forgetting a backoff slot — does not fail to compile.
+// Retries 4 and 5 would just reuse the last interval, so retries mysteriously slow down.
+// Asserting equal length makes that drift fail in CI.
 func TestNotifyBackoffTableMatchesAttemptBudget(t *testing.T) {
 	if len(notifyBackoff) != db.MaxNotifyAttempts {
-		t.Fatalf("Number of exit slots(%d)with maximum number of attempts(%d)Inconsistencies——One has to be the other.",
+		t.Fatalf("backoff slots (%d) and max attempts (%d) disagree — changing one requires changing the other",
 			len(notifyBackoff), db.MaxNotifyAttempts)
 	}
 	// The distance between retreats must be kept intact, otherwise the re-test will increase the speed of the trials and the flow limits..
@@ -908,42 +907,42 @@ func TestNotifyTakeTokensKeepsUnusedTokens(t *testing.T) {
 	}
 }
 
-// TestDigestTickPlanDecouplesBatchSizeFromSendBudget Collapse the two scales of aggregation..
+// TestDigestTickPlanDecouplesBatchSizeFromSendBudget pins the two different units of digest mode.
 //
-// Once the size of the aggregate batch is on the budget per round,rate_per_min=20 There's only one channel.
-// 3 second tick Add to 1 A token, so each aggregate message is only loaded. 1 A loophole.——Functionally no.
-// It's a summary, and the message says,[near 30 min Add 1 A loophole.].This degradation doesn't make a mistake.,
-// Existing end-to-end examples are not visible either. Here. stepDigest One big enough. limit,
-// It's bypassed. step So here's the decision-making itself..
+// If the digest batch size were tied to the per-tick request budget, a channel with rate_per_min=20
+// would earn one token per 3-second tick and each digest would hold one finding. That is not a digest,
+// and the header would still say "1 finding in the last 30 minutes". The bug does not error.
+// Existing end-to-end tests pass stepDigest a large limit and skip the budget math inside step,
+// so this test asserts the decision itself.
 func TestDigestTickPlanDecouplesBatchSizeFromSendBudget(t *testing.T) {
 	tokens, claimLimit := digestTickPlan()
-	// Groups = A message. = One request. = A token. The token is for information, not a loophole..
+	// One batch = one message = one HTTP request = one token. Tokens count messages, not findings.
 	if tokens != 1 {
-		t.Fatalf("One message from the group, which should be consumed. 1 A token. Got it. %d", tokens)
+		t.Fatalf("one digest batch is one message and must cost exactly 1 token, got %d", tokens)
 	}
 	if claimLimit != db.MaxDigestBatchSize {
 		t.Fatalf("The sum batch size should be memory upper db.MaxDigestBatchSize=%d,get %d",
 			db.MaxDigestBatchSize, claimLimit)
 	}
-	// Key relationships: Batch size must be much larger than the budget requested per round. Once they're equal,,
-	// It's another one.[Send a few messages.]and[A bunch of holes.]It's a number..
+	// The batch size must be much larger than the per-tick request budget. If they are the same
+	// magnitude, "how many messages to send" and "how many findings in a batch" have been collapsed into one number.
 	if claimLimit <= notifyMaxSendsPerChannelPerTick {
-		t.Fatalf("Summarize Batch Size %d Budget not subject to per round of requests %d Constraints——"+
-			"The request for the budget was reversed by the lease.[How many requests?],With[A bunch of holes.]It's two scales.",
+		t.Fatalf("digest batch size %d must not be capped by the per-tick request budget %d — "+
+			"the request budget is how many HTTP calls fit in the lease, and how many findings a batch holds is a different unit",
 			claimLimit, notifyMaxSendsPerChannelPerTick)
 	}
 }
 
-// TestNotifyTickBudgetFitsWithinLease It's another drift-proof assertion..
+// TestNotifyTickBudgetFitsWithinLease is another drift guard.
 //
-// Maximum number of deliverers per round for single channel(notifyMaxSendsPerChannelPerTick)It's from the lease.:
-// The worst part of the series must take time. < Leases. Otherwise, the last few will expire before the lease is issued.,
-// Multiple instances are retaken and duplicated when deployed. These three constants are in different places.,
-// Any change could break the relationship without a report. Wrong.——That's why I nailed it here..
+// notifyMaxSendsPerChannelPerTick is derived from the lease: the worst-case time of the serial
+// sends in one round must stay under the lease. Otherwise the last sends outlive the lease, and
+// another instance reclaims and resends them. The three constants live in different places, and
+// changing any one can break the relationship without a compiler error, so pin it here.
 func TestNotifyTickBudgetFitsWithinLease(t *testing.T) {
 	worst := time.Duration(notifyMaxSendsPerChannelPerTick) * notifySendTimeout
 	if worst >= notifyLease {
-		t.Fatalf("One-channel round takes the worst time. %v No lease should be reached or exceeded %v"+
+		t.Fatalf("worst-case one-channel round %v must stay under the lease %v "+
 			"(notifyMaxSendsPerChannelPerTick=%d × notifySendTimeout=%v)——"+
 			"Change any of these three constants and check the other two simultaneously.",
 			worst, notifyLease, notifyMaxSendsPerChannelPerTick, notifySendTimeout)
