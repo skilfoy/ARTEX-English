@@ -41,7 +41,7 @@ ORDER BY (kind='deny'), id`, s.expID)
 // AddConstraint inserts one constraint (kind must be allow|deny) and returns its id.
 func (s *ExplorationStore) AddConstraint(kind, text, origin string) (int64, error) {
 	if kind != "allow" && kind != "deny" {
-		return 0, fmt.Errorf("kind Must be. allow or deny")
+		return 0, fmt.Errorf("kind must be allow or deny")
 	}
 	if origin == "" {
 		origin = "system"

@@ -35,7 +35,7 @@ var ToolAugment func(ctx context.Context, agentKey string) (extra []actool.CoreT
 
 // AugmentTools returns base plus the agent's visible skill/MCP tools, the
 // DeferredInfo, and a cleanup func the caller must defer (closes MCP clients).
-// Built-in base tools are kept as-is — never filtered (Internal tools leave layers without visible filtering).
+// Built-in base tools are kept as-is — never filtered (built-in tools stay in the code layer and are not visibility-filtered).
 func AugmentTools(ctx context.Context, agentKey string, base []actool.CoreTool) ([]actool.CoreTool, DeferredInfo, func()) {
 	var (
 		def     DeferredInfo
@@ -80,7 +80,7 @@ func (g *guardedTool) Call(ctx context.Context, in json.RawMessage, tc *actool.T
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("[tools] %s panic: %v\n%s", g.Name(), r, debug.Stack())
-			res, err = actool.Errorf(fmt.Sprintf("Tools %s Internal error:%v(This call has failed, so you can change parameters or use another tool)", g.Name(), r)), nil
+			res, err = actool.Errorf(fmt.Sprintf("tool %s internal error: %v (this call failed; change the arguments or use another tool)", g.Name(), r)), nil
 		}
 	}()
 	return g.CoreTool.Call(ctx, in, tc)

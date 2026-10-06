@@ -16,21 +16,26 @@ import (
 	"time"
 )
 
-// allowLocalTargets Whether or not to allow the message to be sent back to the ring / Local address for links.
+// allowLocalTargets reports whether delivery to loopback and link-local
+// addresses is allowed.
 //
-// Default rejection. These are not the addresses. IM Where robots or public network mail servers will appear, and they can.
-// It's sensitive: a management port for another service, and metadata for the cloud environment. Points
-// (169.254.169.254,An example is available. The delivery address was matched by the administrator, but one was... XSS/CSRF
-// A management session borrowed or shared JWT The second person can read the response back by changing the configuration.
-// ——doJSON will 4xx/5xx Other Organiser 200 Byte Write last_error,And deliver history interfaces
-// That's a half-blind reading..
+// The default is to refuse them. IM bots and public mail servers do not live
+// on those ranges, and the things they can reach are sensitive: an admin
+// port of another process on the same host, and the cloud metadata endpoint
+// (169.254.169.254, which can yield instance credentials). The delivery
+// address is set by an administrator, but a session borrowed through
+// XSS/CSRF, or a second person sharing the same JWT, can change the config
+// and read the response back. doJSON writes the first 200 bytes of a 4xx/5xx
+// body into last_error, and the delivery-history API echoes that, which is
+// a semi-blind read primitive.
 //
-// But...[Here. SMTP Relay](127.0.0.1:25 Top postfix)It's a common configuration for custom mail.,
-// One cut will hold people. That's why we left a visible escape without a hard code. Okay.:
-// Settings ARTEX_NOTIFY_ALLOW_LOCAL=1 Allow.
+// A local SMTP relay (postfix on 127.0.0.1:25) is a normal self-hosted mail
+// setup, and a hard ban would block it. There is an explicit escape hatch
+// instead of a hardcoded allow: set ARTEX_NOTIFY_ALLOW_LOCAL=1.
 //
-// Export As AllowLocalTargetsEnv It's to get the test to open it clearly.——This package and server The bag.
-// Extensive use of examples 127.0.0.1 Top httptest If you don't open it, the guards will stop you..
+// AllowLocalTargetsEnv is exported so tests can turn the hatch on. This
+// package and the server package use httptest receivers on 127.0.0.1, and
+// without the hatch the guard would reject all of them.
 const AllowLocalTargetsEnv = "ARTEX_NOTIFY_ALLOW_LOCAL"
 
 func allowLocalTargets() bool {
@@ -38,17 +43,21 @@ func allowLocalTargets() bool {
 	return v == "1" || strings.EqualFold(v, "true")
 }
 
-// isBlockedDialIP Reporting objectives IP Whether it belongs to[Default not allowed delivery]Chile.
+// isBlockedDialIP reports whether ip is in a range that must not be dialed
+// by default.
 //
-// Only reject ring return, link local (with cloud metadata) 169.254.169.254),No program specified.
-// **Not Rejected** RFC1918 Private networking: built-in intranet Mattermost / SMTP Relay is a common legal usage.,
-// If you block them together, the function is simply not available in the real environment. It's a trade-off.——
-// Protect against truly sensitive targets, while not eliminating normal deployments..
+// Only loopback, link-local (including the cloud metadata address
+// 169.254.169.254), unspecified, and multicast addresses are refused.
+// RFC1918 private space is not refused: an internal Mattermost or SMTP relay
+// is a common legitimate target, and blocking it would make the feature
+// unusable in real deployments. The split is deliberate — stop the sensitive
+// targets without breaking normal installs.
 func isBlockedDialIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	// IPv4-mapped IPv6(::ffff:127.0.0.1)To restore it. IPv4 Let's do it again, or we'll go around..
+	// IPv4-mapped IPv6 (::ffff:127.0.0.1) is unwrapped to IPv4 first.
+	// Otherwise it slips past the check.
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
@@ -56,13 +65,15 @@ func isBlockedDialIP(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
-// blockInternalDial Yes http.Transport Dialer. Control The hook.**When connection is created**
-// Check destination address.
+// blockInternalDial is the Control hook on the HTTP dialer. It checks the
+// target address at connect time.
 //
-// Why is it at the dialup stage instead of only checking while saving configuration: this is the final effective point?.
-// It covers both scenarios that bypass the configuration check.——DNS Reset (resolve to public network during validation) IP,
-// When you're actually connected, resolve to the inner net) and redirect (although we have refused to jump across the mainframe, we jump with the host)
-// It's still possible to point the path elsewhere.).
+// The check belongs on the dial, not only when the config is saved, because
+// this is the point that actually takes effect. It also covers two ways
+// around a save-time check: DNS rebinding (a public IP at validation time, a
+// private IP when the connection is made) and redirects (cross-host hops are
+// already refused, but a same-host hop can still point the path somewhere
+// else).
 func blockInternalDial(_, address string, _ syscall.RawConn) error {
 	if allowLocalTargets() {
 		return nil
@@ -73,17 +84,17 @@ func blockInternalDial(_, address string, _ syscall.RawConn) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return fmt.Errorf("Cannot parse target address %q", host)
+		return fmt.Errorf("cannot resolve target address %q", host)
 	}
 	if isBlockedDialIP(ip) {
-		return fmt.Errorf("Refuse delivery to this machine/Local address for links %s(If you really need to deliver to this service, settings %s=1)", ip, AllowLocalTargetsEnv)
+		return fmt.Errorf("refusing to deliver to loopback or link-local address %s (set %s=1 to allow delivery to a local service)", ip, AllowLocalTargetsEnv)
 	}
 	return nil
 }
 
-// notifyTransport On Default Transport Only one dial-up guard is added to the base..
-// Use Clone Keep all the adjustments of the default (connecting pool),HTTP/2,Timeout,proxy etc.),
-// Avoid changing other behaviors for one additional inspection.
+// notifyTransport is the default transport plus one dial guard.
+// Clone keeps the default tuning (pool, HTTP/2, timeouts, proxy, and so on)
+// so the extra check does not change anything else.
 var notifyTransport = func() *http.Transport {
 	t, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
@@ -94,56 +105,63 @@ var notifyTransport = func() *http.Transport {
 	return clone
 }()
 
-// httpClient It's a common client for all channels..
+// httpClient is the client shared by every channel delivery.
 //
-// I mean it.**No**Global Export Agent for Reused Projects(server Side. GlobalProxy):That agent is for infiltration.
-// Target traffic is often used in unstable tunnels, and the availability of notification should not be kidnapped by the target network's vibrations..
-// IM Just push straight to the company. Timeout As 15 second——Slower than this is actually a malfunction..
+// It deliberately does not use the project's global egress proxy
+// (GlobalProxy on the server side). That proxy is for traffic aimed at
+// pentest targets and is often an unstable tunnel. Notification availability
+// must not be tied to jitter on the target network. IM pushes go direct.
+// The timeout is 15 seconds; a peer slower than that is already failing.
 //
-// Deny cross-host redirection: this function is both sent to[One fixed endpoint]Form. Normal.
-// Redirect to another host; these are the proofs. access_token,Micro key,Telegram of
-// bot token)**Right here. URL inside**,Following a cross-host jump equals giving the proof to a re-direction target. Same Host
-// Jump (e.g. end slash) is still allowed.
+// Cross-host redirects are refused. Delivery targets here are a single fixed
+// endpoint and do not normally redirect elsewhere. Credentials for these
+// platforms (DingTalk access_token, the WeCom key, the Telegram bot token)
+// sit in the URL, so following a cross-host hop would hand the credential to
+// the redirect target. A same-host hop, such as a trailing slash, is still
+// allowed.
 var httpClient = &http.Client{
 	Timeout:   15 * time.Second,
 	Transport: notifyTransport,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
-			return errors.New("Too many redirections")
+			return errors.New("too many redirects")
 		}
 		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-			return fmt.Errorf("Deny cross-host reorientation(%s → %s)", via[0].URL.Host, req.URL.Host)
+			return fmt.Errorf("refusing cross-host redirect (%s → %s)", via[0].URL.Host, req.URL.Host)
 		}
 		return nil
 	},
 }
 
-// respBodyLimit Limits the size of the reader response. You know, it's like we're gonna throw it back when the end is abnormal.
-// The error code and a small error description are used to show it in the delivery history.
+// respBodyLimit caps how much of a response body is read. A misbehaving peer
+// can return a huge body, and all we need is the status and a short error
+// description for the delivery history.
 const respBodyLimit = 8 << 10
 
-// doJSON Send one request and return response (limited) Long).
+// doJSON sends one request and returns the response body, already length-limited.
 //
-// payload for nil Organisation body(for GET Or not required by the platform body The scene).
-// headers in which the value is attached as it is, for general use Webhook Custom Header.
+// A nil payload sends an empty body (GET, or a platform that wants no body).
+// headers are attached as given, for a generic webhook's custom headers.
 //
-// Error classification is the core function of this function: network failure and 5xx/408/429 Attribution[Retry],
-// The rest 4xx Attribution[Permanent Failure]——Try again 403 Just brushing the same mistake. 3 Through Logs.
+// Classifying the error is the point of this function. Transport failures
+// and 5xx/408/429 are retryable. Other 4xx responses are permanent — retrying
+// a 403 only writes the same error into the log three times.
 func doJSON(ctx context.Context, method, url string, headers map[string]string, payload any) ([]byte, error) {
 	var body io.Reader
 	if payload != nil {
 		raw, err := json.Marshal(payload)
 		if err != nil {
-			// Serialization failure is local bug(Configure field types not correct).
-			return nil, Permanent(fmt.Errorf("Construct requested body failed: %w", err))
+			// A marshal failure is a local bug (a config field has the wrong
+			// type). Retrying will not fix it.
+			return nil, Permanent(fmt.Errorf("failed to build request body: %w", err))
 		}
 		body = bytes.NewReader(raw)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		// URL Illegal——Most of the users filled out the wrong address..
-		// There's no such thing as passing through here. err:url.Parse The error text contains the full address.
-		return nil, Permanent(fmt.Errorf("Requesting address is illegal: %s", redactRequestTarget(url)))
+		// A bad URL is usually a mistyped address, so it is permanent.
+		// Do not pass err through: url.Parse's text contains the full address.
+		return nil, Permanent(fmt.Errorf("invalid request URL: %s", redactRequestTarget(url)))
 	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -153,68 +171,80 @@ func doJSON(ctx context.Context, method, url string, headers map[string]string, 
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		// Connection denied,DNS Failure, timeout.——It's mostly instantaneous failure..
+		// Connection refused, DNS failure, timeout — usually transient, so
+		// leave it for backoff retry.
 		//
-		// Error text must be unsensitized before being passed on. Reason:http.Client.Do Return *url.Error,
-		// It's... Error() Yes `Op "CompleteURL": Bottom Error`,And it's the evidence of these people.**Right here. URL inside**
-		// (DingTalk access_token,Micro key,Feishu hook id,Telegram /bot<token>/).
-		// If you're not allergic, the evidence will follow this error to four places.:notification_deliveries
-		// of last_error(Reactions to express library, delivery of historical interfaces(**Surround the channel configuration mask**),
-		// Service-end logs, and test sending interface back to frontend 502 Text.
-		return nil, fmt.Errorf("Request Failed: %s", redactTransportError(err))
+		// The error text must be redacted before it leaves this function.
+		// http.Client.Do returns *url.Error, and Error() is
+		// `Op "full URL": underlying error`. Credentials for these platforms
+		// live in the URL (DingTalk access_token, WeCom key, Feishu hook id,
+		// Telegram /bot<token>/). Without redaction the secret flows to four
+		// places: notification_deliveries.last_error (stored in the clear),
+		// the delivery-history API (which bypasses channel-config masking),
+		// server logs, and the 502 text the test-send API returns to the
+		// frontend.
+		return nil, fmt.Errorf("request failed: %s", redactTransportError(err))
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, respBodyLimit))
 	if readErr != nil {
-		return nil, fmt.Errorf("Failed to read response: %w", readErr)
+		return nil, fmt.Errorf("failed to read response: %w", readErr)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return raw, nil
 	}
-	// 429() and 408(Timeout) is worth trying again; the rest 4xx It's a question of configuration or permission. It's pointless to try again..
+	// 429 (rate limit) and 408 (timeout) are worth retrying. Other 4xx
+	// responses are config or permission problems; retrying them does nothing.
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout {
-		return nil, fmt.Errorf("Competing time limit or overtime (HTTP %d): %s", resp.StatusCode, snippet(raw))
+		return nil, fmt.Errorf("remote rate limit or timeout (HTTP %d): %s", resp.StatusCode, snippet(raw))
 	}
 	if resp.StatusCode >= 500 {
-		return nil, fmt.Errorf("The client's service is abnormal. (HTTP %d): %s", resp.StatusCode, snippet(raw))
+		return nil, fmt.Errorf("remote server error (HTTP %d): %s", resp.StatusCode, snippet(raw))
 	}
-	return nil, Permanent(fmt.Errorf("The other side denied the request. (HTTP %d): %s", resp.StatusCode, snippet(raw)))
+	return nil, Permanent(fmt.Errorf("request rejected (HTTP %d): %s", resp.StatusCode, snippet(raw)))
 }
 
-// snippet Presss the response body into a line of short text for error information. There may be a change of line and a lot of gaps in the response,
-// Right in. last_error It's gonna blow up the slide page..
+// snippet collapses a response body to one short line for an error message.
+// The body may contain newlines and runs of whitespace, and stuffing that
+// into last_error wrecks the delivery-history page.
 func snippet(raw []byte) string {
 	return OneLine(string(raw), 200)
 }
 
-// redactRequestTarget Press the delivery address.[scheme://host/…],For Error Information.
+// redactRequestTarget reduces a delivery URL to "scheme://host/…" for error
+// messages.
 //
-// It's the only address in this bag that's allergic.**That's rough enough.**:Except... scheme With host,
-// The rest is abandoned. The reason is not one.[Universal and safe.]How to judge URL Which part is based on evidence?:
+// This is the only address-redaction format in the package, and it is
+// deliberately blunt: everything except scheme and host is dropped. There is
+// no general, safe way to decide which part of a URL is the credential:
 //
-//	Nailed. query      /robot/send?access_token=xxx
-//	The evidence. query      /cgi-bin/webhook/send?key=xxx
-//	Flying Book.**End of Path** /open-apis/bot/v2/hook/<hook_id>
-//	Telegram On the evidence.**Center segment of the path** /bot<token>/sendMessage
+//	DingTalk   credential in the query        /robot/send?access_token=xxx
+//	WeCom      credential in the query        /cgi-bin/webhook/send?key=xxx
+//	Feishu     credential in the last path    /open-apis/bot/v2/hook/<hook_id>
+//	Telegram   credential in the middle path  /bot<token>/sendMessage
 //
-// Yes.[Keep only the useful part]You're gonna have to go through the patch, and the missing family is a leak..
-// Reservations host It's enough for the search.(DNS I can't figure it out. I can't get it. I can't get it right.),
-// Specifically, which robot is identified by a coded tail signal from the channel configuration..
+// Keeping "only the useful part" would mean a per-channel patch, and missing
+// one platform is a credential leak. The host is enough to diagnose DNS,
+// connectivity, and certificate problems. Which bot it was is identified by
+// the masked tail shown in the channel config.
 //
-// Return fixed placeholder when parsing failed——Never reveal the original string..
+// An unparseable input returns a fixed placeholder. The raw string is never
+// echoed.
 func redactRequestTarget(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return "(Address Not Parsed)"
+		return "(unparseable address)"
 	}
 	return u.Scheme + "://" + u.Host + "/…"
 }
 
-// redactTransportError Remove the address from the error of the transfer layer and keep only the bottom reason.
+// redactTransportError strips the address out of a transport error and keeps
+// only the underlying cause.
 //
-// *url.Error The structure is... {Op, URL, Err},Error() will URL Let's fight it..
-// Here you go. Err Fields, bypass it. Error() ——More reliable than replacing strings later,
-// Because the replacement has to be right. URL Encode/The mutations of transposition are easy to miss..
+// *url.Error is {Op, URL, Err}, and Error() prints the URL with it. Taking
+// the Err field bypasses Error(). That is more reliable than a later string
+// replace, which has to cope with every encoded or escaped variant of the URL
+// and is easy to get wrong.
 func redactTransportError(err error) string {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
@@ -225,16 +255,20 @@ func redactTransportError(err error) string {
 		if uerr.Err != nil {
 			return fmt.Sprintf("%s %s: %s", uerr.Op, host, uerr.Err)
 		}
-		return fmt.Sprintf("%s %s: Unknown error", uerr.Op, host)
+		return fmt.Sprintf("%s %s: unknown error", uerr.Op, host)
 	}
-	// Not *url.Error(It's also possible to take an address and get dissensitized..
+	// Errors that are not *url.Error (for example from the redirect policy)
+	// can still contain an address, so they go through the same redaction.
 	return redactURLsInText(err.Error())
 }
 
-// redactURLsInText Puts a text in it. http(s) Address replaced with dissensitisation form.
+// redactURLsInText replaces http(s) URLs in a piece of text with the redacted
+// form.
 //
-// To pry out errors that do not capture structured fields (redirective strategy errors, custom errors in third-party libraries)).
-// Only recognized http/https Prefix, split by blank and quotation marks——Address does not contain these two characters.
+// This is the fallback for errors that do not expose a structured field
+// (redirect-policy errors, custom errors from a third-party library). Only
+// an http or https prefix is recognized, and the URL is cut at whitespace or
+// a quote — an address does not contain either.
 func redactURLsInText(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {

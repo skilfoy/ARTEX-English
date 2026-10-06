@@ -9,39 +9,45 @@ import (
 	"strings"
 )
 
-// telegramTextLimit Yes Telegram sendMessage of text Field cap (number of characters)).
+// telegramTextLimit is the character cap on Telegram sendMessage's text field.
 const telegramTextLimit = 4096
 
-// telegramChannel Achieved Telegram Bot API.
+// telegramChannel implements the Telegram Bot API.
 //
-// Platform Features:
-//   - All rights are vested in you. URL path inside(/bot<token>/sendMessage),No need to sign.
-//   - Use HTML Parsing mode instead of MarkdownV2:MarkdownV2 Request for conversion. `_*[]()~`>#+-=|{}.!`
-//     Total 18 One character, one missing, the whole message is rejected.;HTML Just a transfer. & < > Three..
-//   - Business mistakes are also hidden. HTTP 200 Shit. ok Field judgement.
+// Platform constraints:
+//   - Auth is entirely in the URL path (/bot<token>/sendMessage). There is
+//     no signature.
+//   - HTML parse mode is used instead of MarkdownV2. MarkdownV2 requires
+//     escaping `_*[]()~`>#+-=|{}.!` — 18 characters — and missing one rejects
+//     the whole message. HTML only needs &, <, and > escaped.
+//   - Business errors are also hidden in HTTP 200 and are reported by the ok
+//     field.
 type telegramChannel struct{}
 
 func (telegramChannel) Kind() string { return KindTelegram }
 
-// Telegram We'll talk. 1 strip/seconds, groups 20 strip/Minutes. Take Conservative Value.
+// A private chat is about 1 message per second and a group is 20 per minute.
+// The conservative value is used.
 func (telegramChannel) DefaultRatePerMin() int { return 20 }
 
-// Bot Token It's complete evidence.;chat_id It's not a secret. Token I can't send a message.).
+// The bot token is the full credential. chat_id is only the recipient and
+// is not a secret: without the token it cannot send a message.
 func (telegramChannel) SecretKeys() []string { return []string{"bot_token"} }
 
-// base_url Decision Token To whom? API Endpoints (e.g., self-constructing) where change must be made Token.
+// base_url decides which API endpoint the token is sent to (a self-hosted
+// reverse proxy, for example). Changing it requires stating the token again.
 func (telegramChannel) DestinationKeys() []string { return []string{"base_url"} }
 
 func (telegramChannel) Validate(cfg map[string]any) error {
 	if cfgString(cfg, "bot_token") == "" {
-		return errors.New("Missing Bot Token")
+		return errors.New("missing Bot Token")
 	}
 	if cfgString(cfg, "chat_id") == "" {
-		return errors.New("Missing Chat ID")
+		return errors.New("missing Chat ID")
 	}
 	if base := cfgString(cfg, "base_url"); base != "" {
 		if err := validateHTTPURL(base); err != nil {
-			return fmt.Errorf("API Address invalid: %w", err)
+			return fmt.Errorf("invalid API address: %w", err)
 		}
 	}
 	return nil
@@ -72,21 +78,23 @@ func (c telegramChannel) Send(ctx context.Context, cfg map[string]any, m Message
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return 0, fmt.Errorf("Analysis Telegram Failed to respond: %w (%s)", err, snippet(raw))
+		return 0, fmt.Errorf("failed to parse Telegram response: %w (%s)", err, snippet(raw))
 	}
 	if res.OK {
 		return kept, nil
 	}
-	// 429 It is restricted, and it is tried again; the rest(400 Error Parameter,401 token Wrong.,403 ♪ To be taken ♪,
-	// 404 chat It doesn't exist. It's all about configuration. It's not gonna heal..
+	// 429 is a rate limit and is worth retrying after backoff. The rest
+	// (400 bad parameters, 401 bad token, 403 blocked by the user, 404 chat
+	// not found) are configuration problems and will not heal on retry.
 	if res.ErrorCode == 429 {
-		return 0, fmt.Errorf("Telegram Current limiting: %s", res.Description)
+		return 0, fmt.Errorf("Telegram rate limited: %s", res.Description)
 	}
-	return 0, Permanent(fmt.Errorf("Telegram Return error %d: %s", res.ErrorCode, res.Description))
+	return 0, Permanent(fmt.Errorf("Telegram returned error %d: %s", res.ErrorCode, res.Description))
 }
 
-// telegramEndpoint Spell sendMessage Address.base_url It's official. API,
-// Non-empty time for self-building Bot API Inverse (common demand under domestic networks)).
+// telegramEndpoint builds the sendMessage URL. An empty base_url uses the
+// official API. A non-empty value is a self-hosted Bot API reverse proxy,
+// which is a common need on networks that cannot reach Telegram directly.
 func telegramEndpoint(cfg map[string]any) (string, error) {
 	base := cfgString(cfg, "base_url")
 	if base == "" {
@@ -97,21 +105,24 @@ func telegramEndpoint(cfg map[string]any) (string, error) {
 	raw := base + "/bot" + token + "/sendMessage"
 	u, err := url.Parse(raw)
 	if err != nil {
-		// I don't know. err:Chile Bot Token,And at this point, addr I shouldn't have..
-		return "", fmt.Errorf("Collapse API Chile(API Address:%s)", redactRequestTarget(base))
+		// Do not pass err through: the address contains the bot token, and
+		// even the address itself must not be echoed.
+		return "", fmt.Errorf("failed to build API URL (API address: %s)", redactRequestTarget(base))
 	}
 	return u.String(), nil
 }
 
-// telegramHTML Rendering HTML Text, return text and actual entries (see Channel.Send).
+// telegramHTML renders the HTML body and returns it with the number of items
+// actually written. See Channel.Send.
 func telegramHTML(m Message) (string, int) {
 	var b strings.Builder
 	b.WriteString("<b>" + telegramEscape(markdownTitle(m)) + "</b>\n")
 	if m.Batch {
-		// Telegram The limit is...**Number of characters**,So packing is also measured by characters.(runeSize).
+		// Telegram's cap is a character count, so packing is measured in
+		// runes (runeSize).
 		footer := ""
 		if m.HomeURL != "" {
-			footer = fmt.Sprintf("\n\n<a href=\"%s\">View All on Platform</a>", telegramEscapeAttr(m.HomeURL))
+			footer = fmt.Sprintf("\n\n<a href=\"%s\">View all on platform</a>", telegramEscapeAttr(m.HomeURL))
 		}
 		kept := packItemCount(m.Items, telegramTextLimit, telegramReservedRunes, footer, runeSize, func(it Item, idx int) string {
 			return telegramBatchLine(it, idx+1)
@@ -130,17 +141,17 @@ func telegramHTML(m Message) (string, int) {
 	}
 	it := m.Items[0]
 	if it.IsStatusChange() {
-		b.WriteString(fmt.Sprintf("\n<b>Status change</b>:%s → %s",
+		b.WriteString(fmt.Sprintf("\n<b>Status change</b>: %s → %s",
 			telegramEscape(StatusLabel(it.FromStatus)), telegramEscape(StatusLabel(it.ToStatus))))
 	}
 	if it.VulnClass != "" && it.VulnClass != it.Title() {
-		b.WriteString("\n<b>Type</b>:" + telegramEscape(it.VulnClass))
+		b.WriteString("\n<b>Type</b>: " + telegramEscape(it.VulnClass))
 	}
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
-		b.WriteString("\n<b>Assets</b>:" + telegramEscape(a))
+		b.WriteString("\n<b>Assets</b>: " + telegramEscape(a))
 	}
 	if s := OneLine(it.Summary, maxSummaryRunes); s != "" {
-		b.WriteString("\n<b>Abstract</b>:" + telegramEscape(s))
+		b.WriteString("\n<b>Summary</b>: " + telegramEscape(s))
 	}
 	if it.DetailURL != "" {
 		b.WriteString(fmt.Sprintf("\n\n<a href=\"%s\">View details</a>", telegramEscapeAttr(it.DetailURL)))
@@ -148,10 +159,12 @@ func telegramHTML(m Message) (string, int) {
 	return TruncateHTML(b.String(), telegramTextLimit), 1
 }
 
-// telegramReservedRunes Save message headers and possible cut-off tips (charts)).
+// telegramReservedRunes is reserved for the title and a possible truncation
+// notice, counted in characters.
 const telegramReservedRunes = 160
 
-// telegramBatchLine One of the rendering combinations (not converted, unified by caller)).
+// telegramBatchLine renders one digest line. It is not escaped; the caller
+// escapes the whole line.
 func telegramBatchLine(it Item, idx int) string {
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
 		return fmt.Sprintf("%d. %s · %s — %s", idx, SeverityLabel(it.Severity), it.Title(), a)
@@ -159,12 +172,13 @@ func telegramBatchLine(it Item, idx int) string {
 	return fmt.Sprintf("%d. %s · %s", idx, SeverityLabel(it.Severity), it.Title())
 }
 
-// telegramBatchTitle Renders the title line of the summary message. The number of bars is...**This article actually covers**number of items,
-// Not the total number of instalments——Otherwise, readers think the numbers in the headline are all..
+// telegramBatchTitle renders the digest title. The count is how many items
+// this message actually contains, not the size of the whole batch.
+// Otherwise the reader treats the number in the header as the full set.
 func telegramBatchTitle(m Message, items []Item, total int) string {
 	title := fmt.Sprintf("%d findings", total)
 	if extra := total - len(items); extra > 0 {
-		title += fmt.Sprintf(" (%d shown; %d remain for the next message.)", len(items), extra)
+		title += fmt.Sprintf(" (%d shown; %d remain for the next message)", len(items), extra)
 	}
 	if m.WindowMinutes > 0 {
 		title = fmt.Sprintf("Past %d minutes · %s", m.WindowMinutes, title)
@@ -172,9 +186,10 @@ func telegramBatchTitle(m Message, items []Item, total int) string {
 	return title
 }
 
-// telegramEscape Conversion HTML Text Contents.
-// Telegram Only these three entities. &amp; An existing entity like that is subject to secondary conversion.——Exactly.
-// Expectations: We're going to show original characters, not infusion. HTML.
+// telegramEscape escapes HTML text. Telegram only recognizes these three
+// entities. An ampersand that was already part of an entity is escaped
+// again, which is what we want: the original characters should be shown,
+// not treated as HTML the user injected.
 func telegramEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -182,8 +197,9 @@ func telegramEscape(s string) string {
 	return s
 }
 
-// telegramEscapeAttr Conversion HTML attribute value. We have to deal with quotation marks in addition to text transposition.——
-// URL The quotes will close early. href Properties, turn the rest into an injection point..
+// telegramEscapeAttr escapes an HTML attribute value. Quotes are escaped in
+// addition to the text escapes. A quote in the URL would close the href
+// early and turn the rest into an injection point.
 func telegramEscapeAttr(s string) string {
 	s = telegramEscape(s)
 	s = strings.ReplaceAll(s, "\"", "&quot;")

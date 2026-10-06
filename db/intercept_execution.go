@@ -6,10 +6,10 @@ import (
 	"strconv"
 )
 
-var ErrInterceptTaskDeleted = errors.New("Tasks deleted or archived")
-var ErrInterceptSessionDeleted = errors.New("The corresponding session or execution record has been deleted or does not exist")
+var ErrInterceptTaskDeleted = errors.New("task has been deleted or archived")
+var ErrInterceptSessionDeleted = errors.New("the session or execution record was deleted or does not exist")
 
-var ErrInterceptExecutionUnavailable = errors.New("No original tool for unique association was found to call; records may have been deleted or old approvals did not save the connection ID")
+var ErrInterceptExecutionUnavailable = errors.New("no uniquely associated original tool call was found; the record may have been deleted, or an old approval did not save the link id")
 
 // InterceptExecution is a navigation target read from original activity rows.
 // It is not model context and never falls back to matching command text.

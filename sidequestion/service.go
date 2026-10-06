@@ -46,7 +46,7 @@ func (s SideQuestionService) Answer(ctx context.Context, req llm.CompletionReque
 			}
 		}
 		if err == nil && !complete {
-			err = errors.New("Model response aborted. Please ask again.")
+			err = errors.New("the model response was cut off; please ask again")
 		}
 	} else {
 		var msg llm.Message
@@ -60,7 +60,7 @@ func (s SideQuestionService) Answer(ctx context.Context, req llm.CompletionReque
 		if out.ToolUse {
 			out.Text = "Cannot execute tool calls in a side question. Send the request in the main session."
 		} else {
-			err = errors.New("Model does not return answer")
+			err = errors.New("the model returned no answer")
 		}
 	}
 	return out, err

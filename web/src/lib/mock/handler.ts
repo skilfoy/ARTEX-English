@@ -2478,7 +2478,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // Must explicitly hit: path ends with s The ending will be judged as a set and returned by the following reading [],items That's it undefined.
   if (seg.at(-1) === "side-questions") {
     if (m === "GET") return { items: [], current: null, next_cursor: 0, snapshot: null };
-    if (m === "POST") throw new Error("Demo mode does not support bypass questions");
+    if (m === "POST") throw new Error("Demo mode does not support side questions");
   }
 
   // ── The write operation is complete: successful but not lost in the database ──

@@ -5,18 +5,18 @@ import (
 	"time"
 )
 
-// LLM Retry Policy: Five Layers Retry[Number of times + interval]Global configuration, see docs/LLMRetry Design.md.
-// Existence settings Table 1 JSON Value —— It's an operating parameter for the whole machine. It's not worth a watch.;
-// Read to remove the internal default bottom so the key does not exist(New Library/Never configured)The behavior is exactly the same as the era of death constants..
+// LLM retry policy: global attempt-count and interval settings for the five retry layers. See the LLM retry design.
+// Stored as one JSON value in the settings table. It is a single machine-wide runtime parameter and does not deserve its own table.
+// Reads fall back to the built-in defaults, so a missing key (a new database, or one that was never configured) behaves exactly as the old hard-coded constants did.
 
 const settingLLMRetryPolicy = "llm_retry_policy"
 
 // RetryRule is one layer's knob pair. The zero value means "unset":
 //
-//	Attempts   0 = Use internal default number; -1 = Close this layer and try again; >0 = Use this value
-//	IntervalMS 0 = Use the original interval policy of the layer(It's usually an index retreat.); >0 = Change to fixed millisecond interval
+//	Attempts   0 = use the built-in default count; -1 = disable this layer; >0 = use this value
+//	IntervalMS 0 = keep the layer's own interval policy (usually exponential backoff); >0 = use this fixed millisecond interval
 //
-// -1 Yes[Show off.]instead of[0 times],Because... 0 Already.[Not configured]It's occupied..
+// -1 means "explicitly off", not "zero attempts", because 0 already means "not configured".
 type RetryRule struct {
 	Attempts   int `json:"attempts"`
 	IntervalMS int `json:"interval_ms"`

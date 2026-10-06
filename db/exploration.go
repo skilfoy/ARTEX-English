@@ -76,7 +76,7 @@ type Node struct {
 	Origin        string          `json:"origin,omitempty"`
 	Owner         string          `json:"owner,omitempty"`
 	BlockedReason string          `json:"blocked_reason,omitempty"`
-	DeleteReason  string          `json:"delete_reason,omitempty"` // With intent only to delete(state='deleted')Time is not empty
+	DeleteReason  string          `json:"delete_reason,omitempty"` // set only when an intent is soft-deleted (state='deleted')
 	Anchors       []int64         `json:"anchors,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 	SourceTaskID  int64           `json:"source_task_id,omitempty"`
@@ -284,7 +284,7 @@ func (s *ExplorationStore) UpdateGoalPayload(id int64, text, vulnclass string) e
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("Target does not exist.")
+		return fmt.Errorf("goal does not exist")
 	}
 	return nil
 }
@@ -299,7 +299,7 @@ func (s *ExplorationStore) DeleteGoal(id int64) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("Target does not exist.")
+		return fmt.Errorf("goal does not exist")
 	}
 	return nil
 }
@@ -425,12 +425,17 @@ func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, er
 	return summary, tx.Commit()
 }
 
-// CancelIntent Physically delete an intention,and"It's only the intention that sustains it."All the children and grandchildren.——From the intent
-// yields/derived_from Downable and all parent points(All the sources that point to it.)It's all in the deleted set..
-// goal With origin fact Never Delete;It was also deleted from the set./digest Quoted shared nodes are also maintained,In case of sabotage.
-// Other branches, creating broken chains. Everything that's been deleted intent First. token rollup(Keep irreversible measurement)And clean it up. activity
-// Meetings with Deputy;Deleted. finding Delete first. findings Table Lines(node_id FK for ON DELETE SET NULL,Or you leave an orphan.).
-// Side with Node CASCADE Clear,The whole clean-up stays within a business. The caller has to stop running worker Preventing their subsequent inclusion.
+// CancelIntent physically deletes an intent and every exclusive descendant that
+// only that intent supports: nodes reachable downward from the intent along
+// yields/derived_from whose every parent (every edge source pointing at them)
+// is also in the delete set. Goals and the origin fact are never deleted.
+// Shared nodes still referenced by an intent or digest outside the delete set
+// are kept, so other branches are not broken. Each deleted intent first rolls
+// up its tokens (the irreversible meter is kept) and clears its activity and
+// side sessions. Each deleted finding first deletes the findings row (the
+// node_id foreign key is ON DELETE SET NULL, which would otherwise leave an
+// orphan). Edges are removed by CASCADE with the nodes. The whole cleanup stays
+// in one transaction. The caller must stop a running worker first so it cannot write afterwards.
 func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 	var out IntentCleanup
 	tx, err := s.db.Begin()
@@ -439,8 +444,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 	}
 	defer tx.Rollback()
 
-	// Lock Intend Line Confirm exists(Wait.:Deleted not found).Status not verified——Really delete any status established,
-	// running of worker Stop by the caller.
+	// Lock the intent row and confirm it exists (idempotent: already deleted returns not found).
+	// Status is not checked. A real delete is valid in any state. The caller stops a running worker first.
 	if err := tx.QueryRow(`SELECT 1 FROM exploration_nodes
 		WHERE id=$1 AND exploration_id=$2 AND kind='intent' FOR UPDATE`, id, s.expID).Scan(new(int)); err != nil {
 		if err == sql.ErrNoRows {
@@ -449,7 +454,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		return out, err
 	}
 
-	// Load full chart nodes(Judgement protected)Sides(Count it down. + Parent set).The scale is small for real tasks..
+	// Load every node (to decide protected) and every edge (downward reachability and the parent set). Real tasks have a small graph.
 	kind := map[int64]string{}
 	protected := map[int64]bool{}
 	nrows, err := tx.Query(`SELECT id, kind, state FROM exploration_nodes WHERE exploration_id=$1`, s.expID)
@@ -496,8 +501,9 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		return out, err
 	}
 
-	// Independent cascades:Expand Down From Intent,One node goes into the deleted collection and only when it is unprotected and each of its fathers is in the collection.
-	// (There's no way but through the cut.).It's not moving..
+	// Exclusive cascade: expand downward from the intent. A node joins the delete
+	// set only when it is not protected and every parent is already in the set
+	// (it has no path in except through a deleted node). Iterate to a fixed point.
 	del := map[int64]bool{id: true}
 	for changed := true; changed; {
 		changed = false
@@ -521,7 +527,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// Split barrels by type.
+	// Bucket by node kind.
 	var ids, intentIDs, findingIDs []int64
 	for nid := range del {
 		ids = append(ids, nid)
@@ -537,8 +543,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// Every one of them is being deleted.:token rollup(Keep irreversible measurement)It's over. activity.rollup row node_id for NULL,
-	// You won't get hit. node_id Deleting hits.
+	// Each deleted intent rolls up tokens first (the irreversible meter is kept), then clears activity.
+	// The rollup row has a NULL node_id, so the node_id delete below does not remove it.
 	for _, iid := range intentIDs {
 		tokenBuckets, err := intentTokenRollup(tx, s.expID, iid)
 		if err != nil {
@@ -561,7 +567,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 				exploration_id, worker, kind, summary, metadata,
 				input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at)
 				VALUES ($1,'token-ledger','result',$2,$3,$4,$5,$6,$7,$8)`,
-				s.expID, fmt.Sprintf("Canceled intent #%d token accounting", iid), metadata,
+				s.expID, fmt.Sprintf("token accounting for cancelled intent #%d", iid), metadata,
 				bucket.Usage.InputTokens, bucket.Usage.OutputTokens,
 				bucket.Usage.CacheReadTokens, bucket.Usage.CacheWriteTokens, bucket.Day); err != nil {
 				return out, err
@@ -572,14 +578,14 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 	}
 
-	// finding Delete node before deleting findings Table Lines(Or stay. node_id=NULL Orphaned).
+	// Delete the findings row before the finding node, or ON DELETE SET NULL would leave a node_id=NULL orphan.
 	for _, fid := range findingIDs {
 		if _, err := tx.Exec(`DELETE FROM findings WHERE node_id=$1`, fid); err != nil {
 			return out, err
 		}
 	}
 
-	// Delete Nodes(Side by side CASCADE Clear).Delete and check lines individually,Parallel changes.
+	// Delete the nodes (edges go with CASCADE). Delete one at a time and check the row count so a concurrent change is caught.
 	var removed int64
 	for _, nid := range ids {
 		res, err := tx.Exec(`DELETE FROM exploration_nodes WHERE id=$1 AND exploration_id=$2`, nid, s.expID)
@@ -884,7 +890,7 @@ func (s *ExplorationStore) NodesPage(f NodeFilter, page, size int) ([]*Node, int
 		args = append(args, "%"+q+"%")
 		mark := "$" + fmt.Sprint(len(args))
 		ors := []string{"payload::text ILIKE " + mark, "COALESCE(origin,'') ILIKE " + mark}
-		// Pure numbers(or UI Inside. # Prefix Forms,As[#41])As Node id Exact match,It's easy to locate a node directly..
+		// A bare number, or the UI's # prefix form such as "#41", is an exact node-id match so one node can be located directly.
 		if idStr := strings.TrimPrefix(q, "#"); idStr != "" {
 			if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 				args = append(args, id)
@@ -1160,8 +1166,9 @@ WHERE exploration_id=$1 AND kind='intent' AND state IN ('open','running'))`, s.e
 }
 
 // HasOpenGoal reports whether this exploration still has any goal in state 'open'.
-// false ⇒ All targets are in place. met/abandoned(Or this mission has no objective.)⇒ Enter goalless(Branches:
-// planner Stop. Is the mission over or not? frontier It's up to you..met With abandoned All of it."Completed".
+// false means every goal is met or abandoned (or the task has no goals), so the
+// goalless branch applies: the planner stops, and whether the task is finished
+// is decided by whether the frontier is drained. Both met and abandoned count as closed.
 func (s *ExplorationStore) HasOpenGoal() (bool, error) {
 	var exists bool
 	err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM exploration_nodes

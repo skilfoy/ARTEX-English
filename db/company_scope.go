@@ -107,17 +107,17 @@ func ParseScopeInput(input ScopeInput) (ParsedScope, error) {
 	case "icp":
 		value := NormalizeICP(raw)
 		if value == "" {
-			return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("ICP Cannot be empty")
+			return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("ICP cannot be empty")
 		}
 		return ParsedScope{Kind: kind, Value: value, Raw: raw}, nil
 	case "keyword":
 		value := normalizeKeyword(raw)
 		if value == "" {
-			return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("Business keywords cannot be empty.")
+			return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("company keyword cannot be empty")
 		}
 		return ParsedScope{Kind: kind, Value: value, Raw: raw}, nil
 	default:
-		return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("Scope type not supported: %s", kind)
+		return ParsedScope{Kind: kind, Raw: raw}, fmt.Errorf("unsupported scope type: %s", kind)
 	}
 }
 
@@ -127,7 +127,7 @@ func ParseScopeInput(input ScopeInput) (ParsedScope, error) {
 func ParseAutoScopeLine(line string) (ParsedScope, error) {
 	raw := strings.TrimSpace(line)
 	if raw == "" {
-		return ParsedScope{}, fmt.Errorf("Empty Lines")
+		return ParsedScope{}, fmt.Errorf("empty line")
 	}
 
 	if _, _, err := net.ParseCIDR(raw); err == nil {
@@ -139,12 +139,12 @@ func ParseAutoScopeLine(line string) (ParsedScope, error) {
 	if slash := strings.LastIndexByte(raw, '/'); slash > 0 {
 		address := strings.TrimSpace(raw[:slash])
 		if net.ParseIP(address) != nil || looksLikeIPAddress(address) {
-			return ParsedScope{Raw: raw}, fmt.Errorf("Invalid CIDR: %s", raw)
+			return ParsedScope{Raw: raw}, fmt.Errorf("invalid CIDR: %s", raw)
 		}
 	}
 
 	if looksLikeIPAddress(raw) {
-		return ParsedScope{Raw: raw}, fmt.Errorf("Invalid IP: %s", raw)
+		return ParsedScope{Raw: raw}, fmt.Errorf("invalid IP: %s", raw)
 	}
 
 	looksLikeDomain := strings.Contains(raw, "://") ||
@@ -165,7 +165,7 @@ func ParseAutoScopeLine(line string) (ParsedScope, error) {
 func scopeHostname(raw string) (string, error) {
 	candidate := strings.TrimSpace(raw)
 	if candidate == "" {
-		return "", fmt.Errorf("Host name is empty")
+		return "", fmt.Errorf("hostname is empty")
 	}
 	if strings.HasPrefix(candidate, "//") {
 		candidate = "http:" + candidate
@@ -175,7 +175,7 @@ func scopeHostname(raw string) (string, error) {
 	parsed, err := url.Parse(candidate)
 	if err != nil || parsed.Host == "" {
 		if err == nil {
-			err = fmt.Errorf("Missing hostname")
+			err = fmt.Errorf("missing hostname")
 		}
 		return "", err
 	}
@@ -192,19 +192,19 @@ func scopeHostname(raw string) (string, error) {
 	}
 	host = strings.ToLower(host)
 	if len(host) > 253 {
-		return "", fmt.Errorf("Domain Name More 253 characters")
+		return "", fmt.Errorf("domain longer than 253 characters")
 	}
 	labels := strings.Split(host, ".")
 	if len(labels) < 2 {
-		return "", fmt.Errorf("Domain name needs at least two labels")
+		return "", fmt.Errorf("domain needs at least two labels")
 	}
 	for _, label := range labels {
 		if label == "" || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return "", fmt.Errorf("Domain Name Tab Invalid")
+			return "", fmt.Errorf("invalid domain label")
 		}
 		for _, r := range label {
 			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
-				return "", fmt.Errorf("Domain name contains invalid characters")
+				return "", fmt.Errorf("domain contains invalid characters")
 			}
 		}
 	}
@@ -224,10 +224,10 @@ func ParseScopeLine(line string) (ParsedScope, error) {
 	if _, ipnet, err := net.ParseCIDR(raw); err == nil {
 		ones, bits := ipnet.Mask.Size()
 		if bits == 32 && ones < 16 {
-			return r, fmt.Errorf("The grid is too wide.(IPv4 Required >= /16): %s", raw)
+			return r, fmt.Errorf("network is too wide (IPv4 must be >= /16): %s", raw)
 		}
 		if bits == 128 && ones < 32 {
-			return r, fmt.Errorf("The grid is too wide.(IPv6 Required >= /32): %s", raw)
+			return r, fmt.Errorf("network is too wide (IPv6 must be >= /32): %s", raw)
 		}
 		r.Kind, r.Net = "cidr", ipnet.String()
 		return r, nil
@@ -244,7 +244,7 @@ func ParseScopeLine(line string) (ParsedScope, error) {
 	}
 	host, err := scopeHostname(raw)
 	if err != nil {
-		return r, fmt.Errorf("Could not recognize as valid domain name/IP/CIDR: %s", raw)
+		return r, fmt.Errorf("not a valid domain, IP, or CIDR: %s", raw)
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		r.Kind = "ip"
@@ -259,12 +259,12 @@ func ParseScopeLine(line string) (ParsedScope, error) {
 		return r, fmt.Errorf("Invalid IP: %s", raw)
 	}
 	if strings.Contains(raw, "-") && strings.Count(raw, ".") >= 6 {
-		return r, fmt.Errorf("IP Here you go. CIDR Organisation(As 1.2.3.0/24): %s", raw)
+		return r, fmt.Errorf("express the IP range as CIDR (for example 1.2.3.0/24): %s", raw)
 	}
 	// Domain (registrable). Reject bare TLDs / public suffixes.
 	d := DomainKey(host)
 	if suf, icann := publicsuffix.PublicSuffix(d); icann && suf == d {
-		return r, fmt.Errorf("Not naked. TLD As scope: %s", raw)
+		return r, fmt.Errorf("a bare TLD cannot be a scope: %s", raw)
 	}
 	r.Kind, r.Domain = "domain", d
 	return r, nil

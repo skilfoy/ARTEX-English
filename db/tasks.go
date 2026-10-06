@@ -12,7 +12,7 @@ import (
 // Task is a row in the task registry (1:1 with an exploration).
 type Task struct {
 	ID            int64      `json:"id"`
-	Name          string     `json:"name"` // Optional task name;Empty=Unnamed
+	Name          string     `json:"name"` // optional task name; empty means unnamed
 	CategoryID    *int64     `json:"category_id,omitempty"`
 	CategoryName  string     `json:"category_name,omitempty"`
 	Pinned        bool       `json:"pinned"`
@@ -35,20 +35,23 @@ type Task struct {
 	LLMFailoverReason  string     `json:"llm_failover_reason,omitempty"`
 	SourceTaskIDs      []int64    `json:"source_task_ids,omitempty"`
 	CompanyIDs         []int64    `json:"company_ids,omitempty"`
-	ParentRef          string     `json:"parent_ref,omitempty"` // Father Job id(Organization spawn Record;Empty=Top)
+	ParentRef          string     `json:"parent_ref,omitempty"` // parent task id (recorded by orchestrator spawn; empty means top-level)
 	CreatedAt          time.Time  `json:"created_at"`
-	CompletedAt        *time.Time `json:"completed_at,omitempty"` // To the end.(done/failed/timeout)♪ The moment ♪;Not final nil
-	// Task level timeout(See docs/Task-level overtime and end-of-service design.md).
-	TimeoutSeconds int        `json:"timeout_seconds"`        // 0=No time limit
-	FirstRunAt     *time.Time `json:"first_run_at,omitempty"` // The moment of the first real start(Not created_at);nil=Not run yet
-	DeadlineAt     *time.Time `json:"deadline_at,omitempty"`  // = first_run_at + timeout_seconds;nil=Unlimited or not running
-	// planner Heart beat trigger interval(second):Distance to Upper Wheel plan End/The task starts with the full value and the duration does not trigger → Trigger Round.
-	// Lower limit=Default=300(5min),Bring it all below. 300(at CreateTask Reunification).See docs/planner-trigger-impl-plan.md
+	CompletedAt        *time.Time `json:"completed_at,omitempty"` // when the task entered a terminal state (done/failed/timeout); nil if not terminal
+	// Task-level timeout (see docs/Task-level overtime and end-of-service design.md).
+	TimeoutSeconds int        `json:"timeout_seconds"`        // 0 means no time limit
+	FirstRunAt     *time.Time `json:"first_run_at,omitempty"` // first real start (not created_at); nil means not started
+	DeadlineAt     *time.Time `json:"deadline_at,omitempty"`  // first_run_at + timeout_seconds; nil means unlimited or not started
+	// Planner heartbeat interval in seconds. When this long has passed since the
+	// previous plan ended or the task started, and nothing else triggered in between, start another round.
+	// Floor and default are 300 (5 min). Anything lower is raised to 300 in CreateTask. See docs/planner-trigger-impl-plan.md.
 	PlanHeartbeatSeconds int `json:"plan_heartbeat_seconds"`
-	// CoverageEnabled Yes[Asset coverage function]Master switch(Default true).false time: not calculated/Do Not Show Tests
-	// Coverage, no automatic accumulation task_scope(source=auto),I won't. agent Open add_task_scope/
-	// list_untested_assets,No infusion. coverage block(scope Fields remain).company Association
-	// (task_scope kind=company)It has nothing to do with the switch and will never be affected. See db/task_scope.go.
+	// CoverageEnabled is the master switch for asset-coverage (default true).
+	// When false: do not compute or show test coverage, do not auto-accumulate
+	// task_scope (source=auto), do not expose add_task_scope or list_untested_assets
+	// to the agent, and do not inject a coverage block into the situation prompt
+	// (the scope field stays). Company links (task_scope kind=company) are unrelated
+	// to this switch and are never affected. See db/task_scope.go.
 	CoverageEnabled bool `json:"coverage_enabled"`
 }
 
@@ -70,16 +73,17 @@ type TaskDeletePreparation struct {
 }
 
 // IsTerminal reports whether a task status is a terminal (finished) state.
-// Single real source, replace scattered everywhere. done/failed Hard-coding determination.
+// The single source of truth, replacing scattered done/failed hard-coded checks.
 func IsTerminal(status string) bool {
 	return status == "done" || status == "failed" || status == "timeout"
 }
 
 // CreateTask creates an exploration + task in one transaction and returns the task.
-// timeoutSeconds is the task-level wall-clock budget (0 = No time limit); deadline_at is
+// timeoutSeconds is the task-level wall-clock budget (0 means no time limit); deadline_at is
 // stamped later at first real run (see engine), not here.
-// MinPlanHeartbeatSeconds Yes planner Lower limit for heartbeat interval = Default = 10min.
-// Below it.(Including defaults 0 / Negative / Malformed small values)All of them. 10min,Prevention of diversion planner Break!.
+// MinPlanHeartbeatSeconds is the planner heartbeat floor and the default, 10 minutes.
+// Anything below it (including the zero default, negatives, and mistakenly small values)
+// is raised to 10 minutes so a bad setting cannot overwhelm the planner.
 const MinPlanHeartbeatSeconds = 600
 
 // MaxTaskSourceCount bounds the amount of live inherited context one task can
@@ -144,17 +148,19 @@ func (d *DB) CreateTask(description, goal string, llmProfileID *int64, timeoutSe
 // TaskCreateOptions contains the task data that must be committed atomically
 // with the task/exploration row.
 type TaskCreateOptions struct {
-	Name                 string // Optional task name;Empty=Unnamed
+	Name                 string // optional task name; empty means unnamed
 	CategoryID           *int64
 	SourceTaskIDs        []int64
 	CompanyIDs           []int64
 	LLMProfileIDs        []int64
 	TimeoutSeconds       int
 	PlanHeartbeatSeconds int
-	// CoverageEnabled Yes[Asset coverage function]Switch;nil=On by default(true),Letting not care about the creation of the switch
-	// Path(Organization spawn,Old API)Follow the original behaviour. Only web Other Organiser false Close.
+	// CoverageEnabled is the asset-coverage switch. nil defaults to on (true), so
+	// create paths that do not care about the switch (orchestrator spawn, the old API)
+	// keep the previous behavior. Only the web create-task form can pass false to turn it off.
 	CoverageEnabled *bool
-	// InterceptRules It's a mission-level asset intercept rule.,Write in the same transaction when creating task_intercept_rules.
+	// InterceptRules are task-level asset intercept rules, written to task_intercept_rules
+	// in the same transaction that creates the task.
 	InterceptRules []TaskInterceptRuleInput
 }
 
@@ -184,7 +190,7 @@ func (d *DB) CreateTaskWithOptions(description, goal string, opts TaskCreateOpti
 	// is global and shared, not isolated per task). Being a fact (not a special 'begin' kind) lets every
 	// intent uniformly connect to a fact node, including the first ones.
 	originPayload, _ := json.Marshal(map[string]any{
-		"summary":     "Mission Start:" + description + ";Target:" + goal,
+		"summary":     "Task start: " + description + "; goal: " + goal,
 		"description": description,
 		"goal":        goal,
 	})
@@ -355,7 +361,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 	return &t, nil
 }
 
-// SetParentRef records a task's parent task id (Organization agent spawn_task Association).
+// SetParentRef records a task's parent task id (the orchestrator agent's spawn_task link).
 func (d *DB) SetParentRef(id int64, parentRef string) error {
 	_, err := d.Exec(`UPDATE tasks SET parent_ref=NULLIF($2,'') WHERE id=$1`, id, parentRef)
 	return err
@@ -363,7 +369,7 @@ func (d *DB) SetParentRef(id int64, parentRef string) error {
 
 // ListTasks returns alive tasks with pinned tasks first, then newest ids.
 func (d *DB) ListTasks() ([]*Task, error) {
-	// id Yes BIGSERIAL,The tasks created at the same time have a stable and only sequence..
+	// id is BIGSERIAL, so tasks created at the same instant still have a stable, unique order.
 	rows, err := d.Query(`SELECT ` + taskCols + ` FROM tasks WHERE deleted_at IS NULL
 ORDER BY (pinned_at IS NOT NULL) DESC, pinned_at DESC NULLS LAST, id DESC`)
 	if err != nil {

@@ -393,7 +393,7 @@ export const assets: Asset[] = [
     category: "corp",
     status_code: 200,
     content_length: 48213,
-    page_title: "Acme Corp   Official corporate website",
+    page_title: "Acme Corp Official corporate website",
     technologies: ["Nginx", "React", "Cloudflare"],
     favicon_mmh3: "-1580860059",
     last_seen: T("2026-07-26T02:08:00Z"),

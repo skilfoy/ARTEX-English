@@ -85,7 +85,7 @@ func run() int {
 		cfgPath = abs
 	}
 	if _, e := os.Stat(cfgPath); e == nil {
-		log.Printf("[config] Profile: %s", cfgPath)
+		log.Printf("[config] Config file: %s", cfgPath)
 	} else {
 		log.Printf("[config] Config file %s not found; checking environment variables, including ARTEX_PG_DSN", cfgPath)
 	}

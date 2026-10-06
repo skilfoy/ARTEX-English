@@ -193,7 +193,7 @@ func TestCompanyScopeLimitsAndCheckedErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanupCompany(d, companyID)
-	// ♪ Once on top ♪ 256 strip,Individual IP / It's easy for a company with a domain list.;There's no bar now..
+	// There used to be a cap of 256 rules. A company that lists IPs or domains one by one hit it easily. There is no count cap now.
 	const bulk = 300
 	rules := make([]ScopeInput, bulk)
 	for i := range rules {

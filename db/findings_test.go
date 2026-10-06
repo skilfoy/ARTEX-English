@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestDeleteFinding verifiesRemove vulnerability removes both the findings row and its
+// TestDeleteFinding checks that removing a finding deletes both the findings row and its
 // originating exploration node (kind='finding').
 func TestDeleteFinding(t *testing.T) {
 	d, err := Open(testDSN(t))

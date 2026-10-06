@@ -71,7 +71,7 @@ func New(as *db.AssetStore, proxy func() string, workers int) *Engine {
 		Timeout:       4 * time.Second,
 	})
 	if err != nil {
-		log.Printf("[enrich] dnsx Initialization failed,DNS Parsing disabled:%v", err)
+		log.Printf("[enrich] dnsx init failed; DNS resolution disabled: %v", err)
 		resolv = nil
 	}
 	e := &Engine{
@@ -128,7 +128,7 @@ func (e *Engine) enqueue(j job) {
 	select {
 	case e.jobs <- j:
 	default: // queue full → drop (best-effort enrichment)
-		log.Printf("[enrich] Line's full. Drop the job. kind=%d id=%d", j.kind, j.id)
+		log.Printf("[enrich] queue full; dropping job kind=%d id=%d", j.kind, j.id)
 	}
 }
 

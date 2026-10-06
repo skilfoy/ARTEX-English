@@ -10,24 +10,27 @@ import (
 	"testing"
 )
 
-// This document complements the protocol-level testing of mail channels. Before that. email.Send The coverage is: 0——
-// Article as a whole SMTP There's no example of the path running, and it's the largest of the six channels.,
-// The one most prone to error (handshake, authentication, envelope),DATA Each stage has its own syntax of failure.).
+// This file fills in protocol-level tests for the email channel. Before
+// this, email.Send had zero coverage: the whole SMTP path had never been
+// exercised, and it is the largest and easiest-to-get-wrong protocol surface
+// of the six channels (handshake, auth, envelope, and DATA each have their
+// own failure semantics).
 //
-// It's the smallest built here. SMTP Server driven, not mock Drop it. net/smtp:
-// The majority of the risks to the mail channel are in--[And true. SMTP Server Dialogue]This step.,
-// Take this step. mock It's bad luck..
+// A minimal SMTP server drives the tests, rather than mocking net/smtp.
+// Most of the risk is in talking to a real SMTP server, and mocking that
+// step means not testing it.
 
-// fakeSMTP It's a perfect one. SMTP Server: Enabled greet/EHLO/AUTH/MAIL/RCPT/DATA/QUIT,
-// and return the specified response number for a specific stage as required.
+// fakeSMTP is an SMTP server that is just complete enough: it handles
+// greet, EHLO, AUTH, MAIL, RCPT, DATA, and QUIT, and returns a configured
+// reply code for a given stage.
 type fakeSMTP struct {
 	ln net.Listener
 
-	// rcptReply Yes RCPT TO responses;defaults 250.
+	// rcptReply is the RCPT TO reply. Default 250.
 	rcptReply string
-	// mailReply Yes MAIL FROM responses;defaults 250.
+	// mailReply is the MAIL FROM reply. Default 250.
 	mailReply string
-	// advertiseAuth for true It's time. EHLO It says yes. AUTH PLAIN.
+	// advertiseAuth, when true, advertises AUTH PLAIN in EHLO.
 	advertiseAuth bool
 
 	mu       sync.Mutex
@@ -51,7 +54,7 @@ func (f *fakeSMTP) hostPort(t *testing.T) (string, int) {
 	t.Helper()
 	addr, ok := f.ln.Addr().(*net.TCPAddr)
 	if !ok {
-		t.Fatal("Not TCP Listening Address")
+		t.Fatal("listener address is not TCP")
 	}
 	return "127.0.0.1", addr.Port
 }
@@ -97,14 +100,15 @@ func (f *fakeSMTP) serve() {
 		f.record(line)
 		switch {
 		case strings.HasPrefix(line, "EHLO"), strings.HasPrefix(line, "HELO"):
-			// Not stated STARTTLS:Let the code be explicit. TLS).
+			// Do not advertise STARTTLS: the test target is envelope logic,
+			// not TLS, so the code takes the cleartext branch.
 			w("250-fake.local")
 			if f.advertiseAuth {
 				w("250-AUTH PLAIN")
 			}
 			w("250 8BITMIME")
 		case strings.HasPrefix(line, "AUTH"):
-			// Simplified processing:PLAIN The initial response may be multi-line, directly accepted.
+			// Simplified: PLAIN's initial response may span lines. Accept it.
 			w("235 2.7.0 Authentication successful")
 		case strings.HasPrefix(line, "MAIL FROM"):
 			w(f.mailReply)
@@ -157,45 +161,47 @@ func TestEmailSendDeliversFullMessage(t *testing.T) {
 	cfg := emailCfg(t, f, map[string]any{"username": "artex", "password": "pw"})
 
 	if _, err := (emailChannel{}).Send(context.Background(), cfg, singleMsg()); err != nil {
-		t.Fatalf("Can not open message: %v", err)
+		t.Fatalf("delivery failed: %v", err)
 	}
-	// Envelope phase must be reached: sender, two incoming People,DATA.
+	// The envelope stage must be reached: sender, both recipients, and DATA.
 	for _, want := range []string{"MAIL FROM:<artex@example.com>", "RCPT TO:<a@example.com>", "RCPT TO:<b@example.com>", "DATA", "AUTH", "QUIT"} {
 		if !f.sawCommand(want) {
-			t.Errorf("SMTP Missing session %q,Actual command:%v", want, f.commands)
+			t.Errorf("SMTP session is missing %q, commands: %v", want, f.commands)
 		}
 	}
-	// The text is... base64 of HTML,And it's a real loophole.).
+	// The body is base64 HTML and still carries the real finding content
+	// (recognizable after encoding).
 	body := f.body()
 	if body == "" {
-		t.Fatal("DATA No text received at the stage")
+		t.Fatal("DATA stage received no body")
 	}
 	if !strings.Contains(body, "Content-Type: text/html") {
-		t.Errorf("Missing Content-Type head:\n%s", body)
+		t.Errorf("missing Content-Type header:\n%s", body)
 	}
 	if !strings.Contains(body, "base64") {
-		t.Errorf("Text not pressed base64 Encoding (long) HTML It's gonna ruin it. SMTP of 1000 byte long limit):\n%s", body)
+		t.Errorf("body is not base64 (a long HTML line would break SMTP's 1000-byte line limit):\n%s", body)
 	}
-	// Multiple recipients will appear. To Head..
+	// Every recipient must appear in the To header.
 	if !strings.Contains(body, "a@example.com, b@example.com") {
-		t.Errorf("To Head does not contain all recipients:\n%s", body)
+		t.Errorf("To header does not list every recipient:\n%s", body)
 	}
 }
 
 func TestEmailSendWithoutAuth(t *testing.T) {
-	// No accounts should be issued when not matched AUTH —— Some relays refused to accept it..
+	// With no account configured, AUTH must not be sent. Some relays reject
+	// the message because of it.
 	f := newFakeSMTP(t)
 	cfg := emailCfg(t, f, nil)
 	if _, err := (emailChannel{}).Send(context.Background(), cfg, singleMsg()); err != nil {
-		t.Fatalf("Can not open message: %v", err)
+		t.Fatalf("delivery failed: %v", err)
 	}
 	if f.sawCommand("AUTH") {
-		t.Errorf("It was sent out without an account number. AUTH: %v", f.commands)
+		t.Errorf("AUTH was sent even though no account is configured: %v", f.commands)
 	}
 }
 
-// TestEmailSendClassifiesSMTPReplies It's a direct validation of this audit.:
-// 5xx Final Failure,4xx(We can try again..
+// TestEmailSendClassifiesSMTPReplies is the direct check for this audit fix:
+// 5xx is permanent, 4xx (greylisting) is retryable.
 func TestEmailSendClassifiesSMTPReplies(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -203,11 +209,11 @@ func TestEmailSendClassifiesSMTPReplies(t *testing.T) {
 		mailReply string
 		permanent bool
 	}{
-		{"Recipient by 550 Permanent refusal", "550 5.1.1 User unknown", "250 OK", true},
-		{"Addresses 450 Grey List", "450 4.7.1 Greylisting in action", "250 OK", false},
-		{"Addresses 452 Mailbox full", "452 4.2.2 Mailbox full", "250 OK", false},
-		{"Sender by 553 Permanent refusal", "250 OK", "553 5.1.3 Bad address", true},
-		{"From Meeting 451 Temporary Error", "250 OK", "451 4.3.0 Temporary failure", false},
+		{"recipient permanently rejected with 550", "550 5.1.1 User unknown", "250 OK", true},
+		{"recipient greylisted with 450", "450 4.7.1 Greylisting in action", "250 OK", false},
+		{"recipient mailbox full with 452", "452 4.2.2 Mailbox full", "250 OK", false},
+		{"sender permanently rejected with 553", "250 OK", "553 5.1.3 Bad address", true},
+		{"sender hits a temporary 451", "250 OK", "451 4.3.0 Temporary failure", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,28 +222,30 @@ func TestEmailSendClassifiesSMTPReplies(t *testing.T) {
 			f.mailReply = tc.mailReply
 			_, err := (emailChannel{}).Send(context.Background(), emailCfg(t, f, nil), singleMsg())
 			if err == nil {
-				t.Fatal("Wrong-doing.")
+				t.Fatal("expected an error")
 			}
 			if got := IsPermanent(err); got != tc.permanent {
-				t.Fatalf("permanent Error of determination: expectation %v get %v (%v)", tc.permanent, got, err)
+				t.Fatalf("permanent classification: want %v, got %v (%v)", tc.permanent, got, err)
 			}
-			// Keep the original server, otherwise the user does not know whether to call the server administrator or change location Address.
+			// The server's original reply must be kept, or the user cannot
+			// tell whether to talk to the mail admin or change the address.
 			if !strings.Contains(err.Error(), strings.Fields(tc.rcptReply)[0]) && !strings.Contains(err.Error(), strings.Fields(tc.mailReply)[0]) {
-				t.Errorf("SMTP reply was absent from error: %v", err)
+				t.Errorf("error should keep the server's reply code: %v", err)
 			}
 		})
 	}
 }
 
 func TestEmailSendRefusesPlaintextCredentials(t *testing.T) {
-	// net/smtp of PlainAuth Refuse sending a certificate on an unencrypted connection (unless the target is localhost).
-	// This is...**Correct.**Safety behavior, not to be bypassed; but to give the error that guides the user to fix.
-	// We'll use one here. localhost The host name triggers it..
+	// net/smtp's PlainAuth refuses to send credentials on an unencrypted
+	// connection unless the target is localhost. That is the correct
+	// security behavior and must not be bypassed, but the error has to tell
+	// the user how to fix it. A non-localhost hostname triggers it here.
 	f := newFakeSMTP(t)
 	f.advertiseAuth = true
 	_, port := f.hostPort(t)
 	cfg := map[string]any{
-		"host":     "smtp.example.com", // Not localhost
+		"host":     "smtp.example.com", // not localhost
 		"port":     float64(port),
 		"from":     "a@example.com",
 		"to":       []any{"b@example.com"},
@@ -246,91 +254,97 @@ func TestEmailSendRefusesPlaintextCredentials(t *testing.T) {
 	}
 	_, err := (emailChannel{}).Send(context.Background(), cfg, singleMsg())
 	if err == nil {
-		t.Skip("Here. DNS Parsing local server, skipping (without prejudice to other examples))")
+		t.Skip("local DNS resolved to a local server; skipping (other cases are unaffected)")
 	}
-	// It's not even true, or it's rejected; the point is,**I can't.**Send the code quietly..
-	if !IsPermanent(err) && !strings.Contains(err.Error(), "Connection") {
-		t.Logf("Error:%v(Not localhost We can't connect to expectations.)", err)
+	// Either a failed connect or a refusal to send credentials passes. The
+	// point is that the password must not be sent silently.
+	if !IsPermanent(err) && !strings.Contains(err.Error(), "connect") {
+		t.Logf("error: %v (failing to connect to a non-localhost host is expected)", err)
 	}
 }
 
 func TestEmailValidateReportsMissingFields(t *testing.T) {
-	// The largest number of configuration fields in the mail channel, and any missing field will be exposed only upon delivery; confirm here on a case-by-case basis
-	// Validation can stop in advance. It's a test.[What's missing?].
+	// The email channel has the most config fields, and a missing one would
+	// otherwise show up only at delivery time. Each case checks that
+	// validation stops it early. The assertion is "the error says what is
+	// missing".
 	cases := []struct {
 		name string
 		cfg  map[string]any
 	}{
-		{"Missing host", map[string]any{"port": float64(25), "from": "a@b.c", "to": []any{"d@e.f"}}},
-		{"Missing port", map[string]any{"host": "smtp.example.com"}},
-		{"port Crossing the border", map[string]any{"host": "h", "port": float64(70000), "from": "a@b.c", "to": []any{"d@e.f"}}},
-		{"Missing from", map[string]any{"host": "h", "port": float64(25), "to": []any{"d@e.f"}}},
-		{"Missing to", map[string]any{"host": "h", "port": float64(25), "from": "a@b.c"}},
+		{"missing host", map[string]any{"port": float64(25), "from": "a@b.c", "to": []any{"d@e.f"}}},
+		{"missing port", map[string]any{"host": "smtp.example.com"}},
+		{"port out of range", map[string]any{"host": "h", "port": float64(70000), "from": "a@b.c", "to": []any{"d@e.f"}}},
+		{"missing from", map[string]any{"host": "h", "port": float64(25), "to": []any{"d@e.f"}}},
+		{"missing to", map[string]any{"host": "h", "port": float64(25), "from": "a@b.c"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := (emailChannel{}).Validate(tc.cfg); err == nil {
-				t.Fatalf("Failed to verify: %v", tc.cfg)
+				t.Fatalf("validation should fail: %v", tc.cfg)
 			}
 		})
 	}
 }
 
-// TestEmailConfigTolerance Overwrite the readable error of the configuration:JSONB The median is float64,
-// But the user is UI may fill the port in a string; array may be a single string.
+// TestEmailConfigTolerance covers tolerant config reads. JSONB numbers are
+// float64, but the UI may submit a port as a string, and an array may arrive
+// as a single string.
 func TestEmailConfigTolerance(t *testing.T) {
 	cfg := map[string]any{
 		"host": "smtp.example.com",
-		"port": "587", // Port in string form
+		"port": "587", // port as a string
 		"from": "a@b.c",
-		"to":   "d@e.f", // Single string instead of array
-		"tls":  "true",  // Boolean in String
+		"to":   "d@e.f", // a single string rather than an array
+		"tls":  "true",  // boolean as a string
 	}
 	if err := (emailChannel{}).Validate(cfg); err != nil {
-		t.Fatalf("Values in the form of strings should be tolerated: %v", err)
+		t.Fatalf("string forms of numbers should be accepted: %v", err)
 	}
 	if got := cfgInt(cfg, "port"); got != 587 {
-		t.Errorf("cfgInt Unsolved string port, get %d", got)
+		t.Errorf("cfgInt did not parse a string port, got %d", got)
 	}
 	if !cfgBool(cfg, "tls") {
-		t.Error("cfgBool Unsolved string \"true\"")
+		t.Error(`cfgBool did not parse the string "true"`)
 	}
 	if to := cfgStrings(cfg, "to"); len(to) != 1 || to[0] != "d@e.f" {
-		t.Errorf("cfgStrings Uncompatible single string, get %v", to)
+		t.Errorf("cfgStrings did not accept a single string, got %v", to)
 	}
 }
 
-// TestFilterValidateRejectsTypo Direct validation of audit repairs:
-// The error in the threshold must be stopped while writing, otherwise the filter will collapse silently into a full thrust.
+// TestFilterValidateRejectsTypo is the direct check for the audit fix: a
+// misspelled threshold must be rejected on write, or the filter silently
+// turns into "push everything".
 func TestFilterValidateRejectsTypo(t *testing.T) {
 	good := []string{"", "low", "medium", "high", "critical"}
 	for _, s := range good {
 		if err := (Filter{MinSeverity: s}).Validate(); err != nil {
-			t.Errorf("Legitimate threshold %q Rejected: %v", s, err)
+			t.Errorf("valid threshold %q was rejected: %v", s, err)
 		}
 	}
-	// These are real mistakes.——All must be rejected..
-	for _, s := range []string{"hgih", "HIGH", "Serious", "high ", "crit"} {
+	// These are typos that actually happen. All of them must be rejected.
+	for _, s := range []string{"hgih", "HIGH", "severe", "high ", "crit"} {
 		err := (Filter{MinSeverity: s}).Validate()
 		if err == nil {
-			t.Errorf("Illegal threshold %q It should be rejected (or the filter silently failed, turned into a total thrust))", s)
+			t.Errorf("invalid threshold %q should be rejected (otherwise the filter fails silently and pushes everything)", s)
 			continue
 		}
-		// The error message should guide the user to change it..
+		// The error has to tell the user what to change it to.
 		if !strings.Contains(err.Error(), "low") || !strings.Contains(err.Error(), "critical") {
-			t.Errorf("Error information should list the optional values and get %q", err.Error())
+			t.Errorf("error should list the allowed values, got %q", err.Error())
 		}
 	}
 }
 
-// TestFilterValidateIsWriteTimeOnly Lock it.[Writing hard, reading wide]Division of labour:
-// The bad values that Curly already has can't be read by the entire channel.).
+// TestFilterValidateIsWriteTimeOnly locks the split "strict on write, lenient
+// on read". A bad value already in the database must not make the whole
+// channel unreadable (that would suddenly stop every historical channel).
 func TestFilterValidateIsWriteTimeOnly(t *testing.T) {
 	raw := []byte(`{"min_severity":"hgih"}`)
-	f := ParseFilter(raw) // No mistakes.
+	f := ParseFilter(raw) // does not error
 	if f.MinSeverity != "hgih" {
-		t.Fatalf("Read path should be kept as it is. %q", f.MinSeverity)
+		t.Fatalf("the read path should keep the value as stored, got %q", f.MinSeverity)
 	}
-	// And the channel can still judge the incident (no) panic,No blocking.).
+	// The channel can still decide the event (no panic, no stall).
 	_ = Match(f, Snapshot{Kind: EventFindingCreated, Severity: "critical"})
 }

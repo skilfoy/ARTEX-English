@@ -1,39 +1,43 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ARTEX Manager password reset script
+# ARTEX administrator password reset
 #
-# Login username fixed to ARTEX;Password by bcrypt Hash is in the database. settings Table
-# auth.password_hash key. When this script is connected to the database, use pgcrypto Generate in library bcrypt Hash.
-# and write back the key——Verify with Backend Login(golang.org/x/crypto/bcrypt)Full compatibility.
+# The login username is always ARTEX. The password is stored as a bcrypt hash
+# in the settings table under the auth.password_hash key. This script connects
+# to the database, generates the bcrypt hash inside the database with pgcrypto,
+# and writes that key back. The hash is fully compatible with the backend login
+# check (golang.org/x/crypto/bcrypt).
 #
 # Two deployments:
-#   local (Default)—— Live host direct use psql Connect database. Connect information according to the following priority:
-#                    Command Line Parameters > --dsn/$ARTEX_PG_DSN > config.json of database.*
-#   docker        —— Pass `docker compose exec`(or `docker exec`)at postgres
-#                    Execute inside the container psql(compose Default not exposed to host 5432,So go inside the container.).
+#   local  (default) — the host connects with psql. Connection info is taken in
+#                      this order: flags > --dsn/$ARTEX_PG_DSN > config.json database.*
+#   docker           — run psql inside the postgres container via
+#                      `docker compose exec` (or `docker exec`). Compose does not
+#                      publish 5432 to the host by default, so the query runs in the container.
 #
-# Example usage:
-#   ./reset-password.sh                          # Local, autoread config.json/Environment, interactive input of new passwords
-#   ./reset-password.sh -p 'NewPass!'            # Local, give the new password directly.
+# Examples:
+#   ./reset-password.sh                          # local; read config.json/env; prompt for the new password
+#   ./reset-password.sh -p 'NewPass!'            # local; pass the new password directly
 #   ./reset-password.sh --dsn postgres://u:p@h:5432/artex
 #   ./reset-password.sh -H 127.0.0.1 -P 5433 -U autopentest -W pass -d artex
-#   ./reset-password.sh -m docker                # docker Deployment (read .env of POSTGRES_*)
-#   ./reset-password.sh -m docker -c pgContainer Name --exec docker
+#   ./reset-password.sh -m docker                # docker deployment (read POSTGRES_* from .env)
+#   ./reset-password.sh -m docker -c pg-container-name --exec docker
 #
-# Security: new password passed by environment variable + psql \getenv Import (not in process) argv),Use both :'var'
-# Automatic conversion (prevention) SQL Injection; database password Yes. PGPASSWORD Pass it. Same thing. argv.
+# Security: the new password is passed via an environment variable and psql \getenv
+# (it never enters process argv) and is escaped with :'var' (against SQL injection).
+# The database password is passed via PGPASSWORD and likewise stays out of argv.
 # =============================================================================
 set -euo pipefail
 
 PASS_KEY="auth.password_hash"
 BCRYPT_COST=10
 
-MODE=""            # local | docker(Empty=Automatic determination)
+MODE=""            # local | docker (empty = auto-detect)
 DSN=""
 HOST="" PORT="" USER="" DBPASS="" DBNAME="" SSLMODE=""
 CONFIG=""
-CONTAINER=""       # docker Mode postgres Service/Container name (default) postgres)
-EXEC_KIND=""       # compose | docker(docker What's the pattern? exec;Empty=Automatic)
+CONTAINER=""       # postgres service/container name in docker mode (default postgres)
+EXEC_KIND=""       # compose | docker (which exec to use in docker mode; empty = auto)
 NEWPASS=""
 ASSUME_YES=0
 
@@ -42,7 +46,7 @@ info() { echo "· $*" >&2; }
 
 usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
-# ---- Parameter Parsing -------------------------------------------------------------
+# ---- argument parsing ---------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -m|--mode)        MODE="${2:-}"; shift 2 ;;
@@ -59,12 +63,12 @@ while [[ $# -gt 0 ]]; do
     -p|--new-password) NEWPASS="${2:-}"; shift 2 ;;
     -y|--yes)         ASSUME_YES=1; shift ;;
     -h|--help)        usage ;;
-    *) die "Unknown parameter:$1(-h View Usage)" ;;
+    *) die "unknown argument: $1 (use -h for usage)" ;;
   esac
 done
 
-# ---- from config.json Read database.*(Only local Mode, without visible connection)-----
-# Priority python3 (b) Analysis (hardness); python3 Back then. grep(config.json Sets the field).
+# ---- Read database.* from config.json (local mode, and only when no connection was given) -----
+# Prefer python3 (robust). If python3 is missing, fall back to grep (one field per line).
 read_config_json() {
   local path="$1"
   [[ -f "$path" ]] || return 1
@@ -75,7 +79,7 @@ try:
     d = json.load(open(sys.argv[1])).get("database", {})
 except Exception:
     sys.exit(1)
-# Support directly to dsn,or by field
+# A dsn may be given directly, or as separate fields.
 if d.get("dsn"):
     print("DSN\t" + d["dsn"]); sys.exit(0)
 for k in ("host","port","user","password","dbname","sslmode"):
@@ -83,7 +87,7 @@ for k in ("host","port","user","password","dbname","sslmode"):
         print(k.upper() + "\t" + str(d[k]))
 PY
   else
-    # Very simple backup: keys by key grep(Value is string or number)
+    # Minimal fallback: grep each key (the value is a string or a number).
     local k
     for k in host port user password dbname sslmode; do
       local v
@@ -110,7 +114,7 @@ apply_config_fields() {
   done
 }
 
-# ---- Automatic award mode ---------------------------------------------------------
+# ---- auto-detect the mode -----------------------------------------------------
 if [[ -z "$MODE" ]]; then
   if [[ -n "$DSN$HOST$USER$DBNAME" || -n "${ARTEX_PG_DSN:-}" || -f "${CONFIG:-config.json}" ]]; then
     MODE="local"
@@ -120,22 +124,23 @@ if [[ -z "$MODE" ]]; then
     MODE="local"
   fi
 fi
-info "Deployment pattern:$MODE"
+info "Deployment mode: $MODE"
 
-# ---- Collect new password -----------------------------------------------------------
+# ---- collect the new password -------------------------------------------------
 if [[ -z "$NEWPASS" ]]; then
-  read -r -s -p "Enter a new password (username fixed to ARTEX):" NEWPASS; echo >&2
+  read -r -s -p "Enter a new password (username is always ARTEX): " NEWPASS; echo >&2
   [[ -n "$NEWPASS" ]] || die "Password cannot be empty"
-  read -r -s -p "Enter again to confirm:" NEWPASS2; echo >&2
-  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "Double input is inconsistent"
+  read -r -s -p "Enter it again to confirm: " NEWPASS2; echo >&2
+  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "the two entries do not match"
 fi
 [[ -n "$NEWPASS" ]] || die "Password cannot be empty"
 
-# Give the password to the environment variable. psql(\getenv Read, do not enter argv/ps)
+# Hand the password to psql via an environment variable (\getenv reads it; it never enters argv).
 export ARTEX_RESET_NEWPASS="$NEWPASS"
 
-# Library Generation bcrypt and upsert;Password :'newpw' Autotransformation.CREATE EXTENSION Wait.,
-# Errors are reported here if the database character has no extension (see below for hint) run Other Organiser).
+# Generate bcrypt inside the database and upsert it. :'newpw' escapes the password.
+# CREATE EXTENSION is idempotent. A role that cannot create extensions fails here
+# (the hint is in the failure branch below).
 SQL=$(cat <<SQL
 \\set ON_ERROR_STOP on
 \\getenv newpw ARTEX_RESET_NEWPASS
@@ -146,29 +151,29 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
 SQL
 )
 
-# ---- Execute -----------------------------------------------------------------
+# ---- run ----------------------------------------------------------------------
 if [[ "$MODE" == "local" ]]; then
-  # Connect information priority: command line > --dsn/$ARTEX_PG_DSN > config.json
+  # Connection precedence: command line > --dsn/$ARTEX_PG_DSN > config.json
   if [[ -z "$DSN" && -z "$HOST$USER$DBNAME" ]]; then
     [[ -n "${ARTEX_PG_DSN:-}" ]] && DSN="$ARTEX_PG_DSN"
   fi
   if [[ -z "$DSN" && -z "$HOST$USER$DBNAME" ]]; then
     cfg="${CONFIG:-config.json}"
     if [[ -f "$cfg" ]]; then
-      info "from $cfg Read Database Configuration"
+      info "Reading database configuration from $cfg"
       apply_config_fields < <(read_config_json "$cfg")
     fi
   fi
 
-  command -v psql >/dev/null 2>&1 || die "Not found psql(Please install postgresql-client,Or change it. -m docker)"
+  command -v psql >/dev/null 2>&1 || die "psql was not found (install postgresql-client, or use -m docker)"
 
   declare -a PSQL_ARGS=()
   if [[ -n "$DSN" ]]; then
     PSQL_ARGS=("$DSN")
     target="$DSN"
   else
-    [[ -n "$USER"   ]] || die "Missing database users(-U)Or effective. config.json/DSN"
-    [[ -n "$DBNAME" ]] || die "Missing database name(-d)Or effective. config.json/DSN"
+    [[ -n "$USER"   ]] || die "missing database user (-U), or a usable config.json/DSN"
+    [[ -n "$DBNAME" ]] || die "missing database name (-d), or a usable config.json/DSN"
     HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-5432}"; SSLMODE="${SSLMODE:-disable}"
     PSQL_ARGS=(-h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME")
     [[ -n "$SSLMODE" ]] && export PGSSLMODE="$SSLMODE"
@@ -176,22 +181,22 @@ if [[ "$MODE" == "local" ]]; then
     target="$USER@$HOST:$PORT/$DBNAME"
   fi
 
-  info "Target database:$target"
+  info "Target database: $target"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "Confirm to Reset in the Library ARTEX Password?[y/N] " ans
+    read -r -p "Reset the ARTEX password in this database? [y/N] " ans
     [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Cancelled"
   fi
 
   if ! printf '%s\n' "$SQL" | psql "${PSQL_ARGS[@]}" -v ON_ERROR_STOP=1 -q >/dev/null; then
-    die "Writing failed. If you report pgcrypto Permissions/Missing, use a role with build-up permission, or start manually CREATE EXTENSION pgcrypto."
+    die "Write failed. If pgcrypto is missing or not permitted, use a role that can create extensions, or run CREATE EXTENSION pgcrypto first."
   fi
 
 else
   # ---- docker ----
-  command -v docker >/dev/null 2>&1 || die "Not found docker"
+  command -v docker >/dev/null 2>&1 || die "docker was not found"
   CONTAINER="${CONTAINER:-postgres}"
 
-  # Choose exec Modalities: priority docker compose exec(Service name) docker exec(Container Name)
+  # Choose how to exec: prefer docker compose exec (service name), otherwise docker exec (container name).
   if [[ -z "$EXEC_KIND" ]]; then
     if docker compose version >/dev/null 2>&1 && [[ -f docker-compose.yml ]]; then
       EXEC_KIND="compose"
@@ -200,7 +205,7 @@ else
     fi
   fi
 
-  # Inside the container psql Documentary: Priority command line, second .env of POSTGRES_*,Back up. compose Default(artex)
+  # psql credentials inside the container: command line, then POSTGRES_* from .env, then the compose default (artex).
   if [[ -f .env ]]; then
     # shellcheck disable=SC1091
     set -a; . ./.env; set +a
@@ -210,13 +215,13 @@ else
   [[ -n "$DBPASS" ]] && export PGPASSWORD="$DBPASS"
   [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]] && export PGPASSWORD="$POSTGRES_PASSWORD"
 
-  info "Target: Containers $CONTAINER Within psql -U $DUSER -d $DNAME(exec=$EXEC_KIND)"
+  info "Target: psql -U $DUSER -d $DNAME inside container $CONTAINER (exec=$EXEC_KIND)"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "Confirm to reset the container database ARTEX Password?[y/N] " ans
+    read -r -p "Reset the ARTEX password in this container database? [y/N] " ans
     [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Cancelled"
   fi
 
-  # -e Only a name without value. → From the current environment, the password does not appear docker Command argv inside.
+  # -e with a name and no value inherits the current environment, so the password never appears in docker argv.
   declare -a EXEC_CMD
   if [[ "$EXEC_KIND" == "compose" ]]; then
     EXEC_CMD=(docker compose exec -T -e ARTEX_RESET_NEWPASS -e PGPASSWORD "$CONTAINER"
@@ -227,9 +232,9 @@ else
   fi
 
   if ! printf '%s\n' "$SQL" | "${EXEC_CMD[@]}" >/dev/null; then
-    die "Writing failed. Please confirm the name of the container.(-c),Database Account(.env of POSTGRES_*),And the character. pgcrypto Permissions."
+    die "Write failed. Check the container name (-c), the database account (POSTGRES_* in .env), and that the role can use pgcrypto."
   fi
 fi
 
 unset ARTEX_RESET_NEWPASS
-echo "✓ Resetd ARTEX The administrator password. Use username ARTEX + New password login (service not to restart))."
+echo "Reset the ARTEX administrator password. Log in as ARTEX with the new password (no service restart needed)."

@@ -10,25 +10,28 @@ import (
 	"time"
 )
 
-// Repo Is the release source. Write to die instead of as a configuration item: Update the source equals one for anyone who can reconfigure
-// It's a remote code execution channel. It's not open for a penetration test platform..
+// Repo is the release source. It is hard-coded rather than configurable:
+// a configurable update source would be a remote code-execution channel for
+// anyone who can change settings, and a penetration-testing platform cannot
+// leave that open.
 const Repo = "skilfoy/ARTEX-English"
 
-// latestURL Yes GitHub of"Updated official version"Interface. It skips automatically. prerelease and draft.
+// latestURL is GitHub's "latest stable release" endpoint. It skips prereleases and drafts.
 const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 
-// allowedHosts Defines the domain name that the upgrade link can access. Get down there. checkRedirect,
-// Any host whose jump is redirected to outside the list will simply fail.——It's a precaution. DNS Pollution / Intermediaries
-// The first gate to replace the binary, the second is... SHA256SUMS Match.
+// allowedHosts limits which hosts the upgrade path may contact. Together with
+// checkRedirect below, any hop redirected to a host outside this list fails
+// immediately. That is the first gate against DNS poisoning or a
+// man-in-the-middle swapping the binary; the second is the SHA256SUMS check.
 var allowedHosts = map[string]bool{
 	"api.github.com":                       true,
 	"github.com":                           true,
-	"objects.githubusercontent.com":        true, // release Physically landed object storage of assets
+	"objects.githubusercontent.com":        true, // object storage where release assets actually live
 	"release-assets.githubusercontent.com": true,
 	"raw.githubusercontent.com":            true,
 }
 
-// Release Yes GitHub Release The fields we care about.
+// Release is the subset of a GitHub Release this package cares about.
 type Release struct {
 	TagName     string    `json:"tag_name"`
 	Name        string    `json:"name"`
@@ -40,17 +43,18 @@ type Release struct {
 	Assets      []Asset   `json:"assets"`
 }
 
-// Asset Yes Release A file on top.
+// Asset is one file attached to a Release.
 type Asset struct {
 	Name string `json:"name"`
 	URL  string `json:"browser_download_url"`
 	Size int64  `json:"size"`
 }
 
-// NewClient Construct a recognition only GitHub Domain Name HTTP Client.proxy It's empty..
+// NewClient builds an HTTP client that only accepts GitHub hosts. An empty proxy dials directly.
 //
-// Do not use default again deliberately Transport:The upgrade must be forced. TLS And you can't be anywhere else.
-// Settings InsecureSkipVerify And so on..
+// The default Transport is deliberately not reused: the upgrade path must use
+// TLS and verify certificates, and must not inherit InsecureSkipVerify (or
+// similar) set somewhere else.
 func NewClient(proxy string) *http.Client {
 	tr := &http.Transport{
 		ForceAttemptHTTP2:   true,
@@ -63,28 +67,28 @@ func NewClient(proxy string) *http.Client {
 	}
 	return &http.Client{
 		Transport: tr,
-		Timeout:   30 * time.Minute, // Download the whole package. You can't die as requested.
+		Timeout:   30 * time.Minute, // whole-archive download; a per-request timeout would abort it
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
-				return fmt.Errorf("Too many redirections")
+				return fmt.Errorf("too many redirects")
 			}
 			return checkURL(req.URL)
 		},
 	}
 }
 
-// checkURL Force https + White list of domain names.
+// checkURL requires https and a host on the allowlist.
 func checkURL(u *url.URL) error {
 	if u.Scheme != "https" {
-		return fmt.Errorf("Refuse HTTPS Address: %s", u.Scheme+"://"+u.Host)
+		return fmt.Errorf("refusing non-HTTPS URL: %s", u.Scheme+"://"+u.Host)
 	}
 	if !allowedHosts[strings.ToLower(u.Hostname())] {
-		return fmt.Errorf("Refuse GitHub Domain name: %s", u.Hostname())
+		return fmt.Errorf("refusing non-GitHub host: %s", u.Hostname())
 	}
 	return nil
 }
 
-// FetchLatest Query an updated official version.
+// FetchLatest queries the latest stable release.
 func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestURL, nil)
 	if err != nil {
@@ -98,37 +102,38 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Visits GitHub Failed (can configure global agents in system settings)): %w", err)
+		return nil, fmt.Errorf("failed to reach GitHub (a global proxy can be set in system settings): %w", err)
 	}
 	defer resp.Body.Close()
 
 	switch {
 	case resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusTooManyRequests:
-		// Uncertified GitHub API It's every IP Hourly 60 Second, common export IP It's easy to hit..
-		return nil, fmt.Errorf("GitHub Interface restricted flow (per hour) 60 Please try again later.")
+		// Unauthenticated GitHub API access is 60 requests per IP per hour, which
+		// a shared egress IP hits easily.
+		return nil, fmt.Errorf("GitHub API rate limited (60 requests per hour); try again later")
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("Warehouse %s No official version has yet been published", Repo)
+		return nil, fmt.Errorf("repository %s has not published a stable release", Repo)
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("GitHub Return %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub returned %d", resp.StatusCode)
 	}
 
 	var rel Release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, fmt.Errorf("Analysis Release Failed: %w", err)
+		return nil, fmt.Errorf("failed to parse release: %w", err)
 	}
 	if strings.TrimSpace(rel.TagName) == "" {
-		return nil, fmt.Errorf("Release Missing tag")
+		return nil, fmt.Errorf("release is missing a tag")
 	}
 	return &rel, nil
 }
 
-// AssetName Returns the release name of the current platform, and build.sh of package_binary Consistency:
-// artex-<version>-<os>-<arch>.zip(No version number v Prefix).
+// AssetName returns the archive name for the current platform, matching
+// package_binary in build.sh: artex-<version>-<os>-<arch>.zip (version without a v prefix).
 func AssetName(tag, goos, goarch string) string {
 	return fmt.Sprintf("artex-%s-%s-%s.zip", strings.TrimPrefix(tag, "v"), goos, goarch)
 }
 
-// FindAsset at Release Lee looks for assets by name..
+// FindAsset looks up an asset by name.
 func (r *Release) FindAsset(name string) (Asset, bool) {
 	for _, a := range r.Assets {
 		if strings.EqualFold(a.Name, name) {

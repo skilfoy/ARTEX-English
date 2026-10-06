@@ -52,7 +52,7 @@ func verifyFile(path, hash string, length int64) error {
 		return err
 	}
 	if n != length || hex.EncodeToString(h.Sum(nil)) != hash {
-		return fmt.Errorf("Evidence body correction failed: %s", hash)
+		return fmt.Errorf("evidence body checksum mismatch: %s", hash)
 	}
 	return nil
 }
@@ -76,10 +76,10 @@ func (s *Store) writeBody(r io.Reader, expectedLength int64, expectedHash string
 	}
 	hash = hex.EncodeToString(h.Sum(nil))
 	if n != expectedLength {
-		return "", fmt.Errorf("Text incomplete: Projected %d bytes, read %d Bytes", expectedLength, n)
+		return "", fmt.Errorf("incomplete body: expected %d bytes, read %d", expectedLength, n)
 	}
 	if expectedHash != "" && expectedHash != hash {
-		return "", errors.New("Original flow body Hash does not match")
+		return "", errors.New("captured body hash does not match")
 	}
 	if err = f.Sync(); err != nil {
 		return "", err
@@ -249,7 +249,7 @@ func (s *Store) OpenBody(snapshot db.TrafficEvidenceSnapshot, side string) (*os.
 	if side == "response" {
 		hash, length = snapshot.RespHash, snapshot.RespLen
 	} else if side != "request" {
-		return nil, 0, errors.New("side Must be. request or response")
+		return nil, 0, errors.New("side must be request or response")
 	}
 	path, err := hashPath(s.Dir, hash)
 	if err != nil {
@@ -317,7 +317,7 @@ func (s *Store) WithInstalledSnapshots(ctx context.Context, snapshots []db.Traff
 	return s.DB.WithEvidenceTx(ctx, func(*sql.Tx) error {
 		for _, v := range snapshots {
 			if v.ID != db.TrafficSnapshotID(v) {
-				return errors.New("Archiving evidence is not matched by metadata.")
+				return errors.New("archived evidence does not match its metadata")
 			}
 			for _, body := range []struct {
 				hash   string

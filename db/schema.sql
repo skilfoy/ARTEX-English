@@ -1,17 +1,18 @@
--- ARTEX PostgreSQL schema (Single Data Source)
--- Tunnel etc.: can be repeated(IF NOT EXISTS / OR REPLACE / DROP TRIGGER IF EXISTS).
+-- ARTEX PostgreSQL schema (single source of truth)
+-- Idempotent: safe to run again (IF NOT EXISTS / OR REPLACE / DROP TRIGGER IF EXISTS).
 
 -- =====================================================================
--- 0. General:updated_at Trigger
+-- 0. Shared: updated_at trigger
 -- =====================================================================
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger AS $$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $$ LANGUAGE plpgsql;
 
--- Clear. text→inet Conversion: Illicit value returned NULL Not throw. 22P02.assets.ip It's free.
--- (Agent / Assets API Could write to hostname),Naked. a.ip::inet It'll make a single line of dirty data take the whole line.
--- The rest of the business is recalculated. Caller try_inet(...) IS NULL Find out what's going on and report it..
--- No need. pg_input_is_valid It's because of that. PG16+,This place has to fit older stocks. Library.
+-- Safe text-to-inet cast: an invalid value returns NULL instead of raising 22P02.
+-- assets.ip is free text (the agent or asset API may store a hostname). A bare
+-- a.ip::inet would let one dirty row abort an entire company-attribution statement.
+-- Callers use try_inet(...) IS NULL to find those rows and warn. pg_input_is_valid
+-- is not used because it requires PostgreSQL 16+, and this must work on older databases.
 CREATE OR REPLACE FUNCTION try_inet(value text) RETURNS inet AS $$
 BEGIN
     RETURN value::inet;
@@ -371,26 +372,26 @@ CREATE TABLE IF NOT EXISTS llm_profiles (
     rate_per_second  DOUBLE PRECISION NOT NULL DEFAULT 0,
     rate_per_minute  DOUBLE PRECISION NOT NULL DEFAULT 0,
     context_window_k INTEGER NOT NULL DEFAULT 0,
-    -- Split think parameters into two separate fields:thinking_type=Think switch(''/disabled/enabled),
-    -- reasoning_effort=Thinking intensity(''/low/medium/high/xhigh/max),It's not connected..
+    -- Thinking is two independent fields: thinking_type is the switch (''/disabled/enabled),
+    -- reasoning_effort is the strength (''/low/medium/high/xhigh/max). They do not affect each other.
     reasoning_effort TEXT NOT NULL DEFAULT '',
     thinking_type    TEXT NOT NULL DEFAULT '',
     is_default       BOOLEAN NOT NULL DEFAULT false,
-    -- Polling(Failover)Parameters, see docs/LLMInquiries Design.md:
-    --   priority     Incoming, bigger and bigger; activate configuration(is_default)It's not about the value..
-    --   pool_exclude true=Not as a failover target(♪ Still allowed ♪ agent/Task explicit binding is used).
+    -- Failover-pool parameters (see the LLM failover design):
+    --   priority     order; a larger value is chosen first. The active profile (is_default) always leads the chain, regardless of this value.
+    --   pool_exclude true means not a failover target (an agent or task may still bind it explicitly).
     priority         INTEGER NOT NULL DEFAULT 0,
     pool_exclude     BOOLEAN NOT NULL DEFAULT false,
-    -- streaming=true(Default)Fluid SSE;false It's not fluent.(stream:false,One-time JSON).
+    -- streaming=true (default) uses streaming SSE; false is real non-streaming (stream:false, one JSON response).
     streaming        BOOLEAN NOT NULL DEFAULT true,
-    -- The output limit of a single reply(token).0=Do not send this field, determined by the default value of the server——Keep your behavior..
-    -- With context_window_k(Model total capacity, used locally only to compress thresholds)It's a different thing: it's going to follow the request..
+    -- Output cap for one reply, in tokens. 0 means do not send the field and let the server default decide, which keeps existing behavior.
+    -- This is not context_window_k (the model's total capacity, used only locally for compaction thresholds): this value is sent with the request.
     max_tokens       INTEGER NOT NULL DEFAULT 0,
-    -- Which requested field name is the output limit, right format='openai' Effective:
-    --   ''                      = max_tokens(Default, most gateways compatible)
-    --   'max_completion_tokens' = New field;OpenAI Logic Model(o Series/GPT-5)Just admit it.,
-    --                             Fa max_tokens will be unsupported_parameter Reject.
-    -- anthropic(max_tokens Required)With openai-responses(max_output_tokens)Automatic field name not affected by this value.
+    -- Which request field carries the output cap. Only format='openai' uses this:
+    --   ''                      = max_tokens (default, compatible with most gateways)
+    --   'max_completion_tokens' = the newer field. OpenAI reasoning models (o-series/GPT-5) accept only this;
+    --                             sending max_tokens is rejected as unsupported_parameter.
+    -- anthropic (max_tokens required) and openai-responses (max_output_tokens) choose their own field names and ignore this value.
     max_tokens_field TEXT NOT NULL DEFAULT '',
     -- Custom session header: for each request for a name that is not empty HTTP head, head value=Current running session id
     -- (chat session/worker Intention).For some presses session-id Header prompt cache/Gateway for sticky routing.''=Do not send.
@@ -410,55 +411,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_llm_one_default ON llm_profiles(is_default)
 DROP TRIGGER IF EXISTS trg_llm_upd ON llm_profiles;
 CREATE TRIGGER trg_llm_upd BEFORE UPDATE ON llm_profiles
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
--- Polling order/Excludes tags; back-up library. Default 0 / false = All configurations involved in the interview.
+-- Failover order and exclusion flag; backfill for old databases. Default 0 / false means every profile joins the pool.
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS priority     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS pool_exclude BOOLEAN NOT NULL DEFAULT false;
--- Fluid switches; filling old libraries. Default true = Maintaining current behavior, old configuration undetected upgrade.
+-- Streaming switch; backfill for old databases. Default true keeps the existing streaming behavior, so old profiles upgrade with no change.
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS streaming    BOOLEAN NOT NULL DEFAULT true;
--- Let go! format Constraint to accommodate openai-responses(OpenAI Responses API);Backup Library.
--- Start each execution,Wait.:Delete old ones first. CHECK New with three values CHECK.
+-- Relax the format check to allow openai-responses (OpenAI Responses API); backfill for old databases.
+-- Runs on every startup and is idempotent: drop the old CHECK, then add one that allows all three values.
 ALTER TABLE llm_profiles DROP CONSTRAINT IF EXISTS llm_profiles_format_check;
 ALTER TABLE llm_profiles ADD  CONSTRAINT llm_profiles_format_check
     CHECK (format IN ('openai','anthropic','openai-responses'));
 
--- output caps and their field names;refilling old libraries. Default 0 / '' = Do not send ceilings, follow max_tokens Field name,
--- The old configuration is completely unchanged..
+-- Output caps and their field names; backfill for old databases. Default 0 / '' means do not send a cap and keep the max_tokens field name, so old profiles behave exactly as before.
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS max_tokens       INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS max_tokens_field TEXT    NOT NULL DEFAULT '';
--- Same format:We'll delete it and build it..
+-- Same as format: drop then recreate so every startup is idempotent.
 ALTER TABLE llm_profiles DROP CONSTRAINT IF EXISTS llm_profiles_max_tokens_field_check;
 ALTER TABLE llm_profiles ADD  CONSTRAINT llm_profiles_max_tokens_field_check
     CHECK (max_tokens_field IN ('','max_completion_tokens'));
 ALTER TABLE llm_profiles DROP CONSTRAINT IF EXISTS llm_profiles_max_tokens_check;
 ALTER TABLE llm_profiles ADD  CONSTRAINT llm_profiles_max_tokens_check
     CHECK (max_tokens >= 0);
--- Custom session header; back-up library. Default '' = Do not send, old configuration behaviour remains unchanged.
+-- Custom session header name; backfill for old databases. Default '' means do not send it, so old profiles are unchanged.
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS session_header_key TEXT NOT NULL DEFAULT '';
 
--- Retry Overwrite for Single Configuration (see docs/LLMRetry Design.md).Three pairs.[Number of times + Fixed interval],
--- Semantic harmonization: Number 0=Follow global defaults,-1=Close this layer and try again,>0=using that value; spacing 0=Follow the floor.
--- Default Index Evasion,>0=Change to this fixed millisecond. All Defaults 0,So the old library/Old configuration behavior remains unchanged.
---   connect = Retry establishing connection(SDK doStream:Connection reset/Timeout/429/5xx,Before the stream starts)
---   empty   = Retry with empty response(SDK:Done but nothing. content block,Only openai Format)
---   stream  = Same provider Retry security window (item) task_llm:Discontinuation before undelivered output)
+-- Per-profile retry overrides (see the LLM retry design). Three pairs of attempt count plus fixed interval.
+-- The meaning is the same for each: attempts 0 follows the global default, -1 disables that layer, >0 uses the value.
+-- Interval 0 keeps that layer's default exponential backoff; >0 switches to this fixed number of milliseconds.
+-- Everything defaults to 0, so old databases and old profiles behave exactly as before.
+--   connect = connection retries (SDK doStream: reset, timeout, 429, 5xx, before the stream starts)
+--   empty   = empty-response retries (SDK: finished with no content block; openai format only)
+--   stream  = same-provider safe-window retry (this project's task_llm: replay a drop before any output was delivered)
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_connect_attempts    INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_connect_interval_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_empty_attempts      INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_empty_interval_ms   INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_stream_attempts     INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE llm_profiles ADD COLUMN IF NOT EXISTS retry_stream_interval_ms  INTEGER NOT NULL DEFAULT 0;
--- Same format:Delete it and build it. Lower limit on number -1(Close),The interval cannot be negative.
+-- Same as format: drop then recreate so every startup is idempotent. Attempt counts may be -1 (disabled); intervals cannot be negative.
 ALTER TABLE llm_profiles DROP CONSTRAINT IF EXISTS llm_profiles_retry_check;
 ALTER TABLE llm_profiles ADD  CONSTRAINT llm_profiles_retry_check CHECK (
     retry_connect_attempts >= -1 AND retry_empty_attempts >= -1 AND retry_stream_attempts >= -1
     AND retry_connect_interval_ms >= 0 AND retry_empty_interval_ms >= 0 AND retry_stream_interval_ms >= 0);
 
--- Think Switch Fields thinking_type,From the old single reasoning_effort The semantics are split at once..
--- schema.sql Every startup is executed, so the migration must run only once: only when the column does not exist,
--- Otherwise, each start-up will overwhelm the user's subsequent manual combination. Old reasoning_effort Semantic:
---   'off'                    → Active Close  → thinking_type='disabled',Clear strength
---   'low/medium/high/max'    → Open+Strength → thinking_type='enabled',Intensity retention
---   ''                       → Do not send    → Both are empty.(Default)
+-- thinking_type splits the old single reasoning_effort meaning into a switch plus a strength.
+-- schema.sql runs on every startup, so this migration must run once: backfill only when the column does not exist yet.
+-- Otherwise every startup would overwrite combinations the user set later. Old reasoning_effort meaning:
+--   'off'                    → explicitly off → thinking_type='disabled', strength cleared
+--   'low/medium/high/max'    → on plus strength → thinking_type='enabled', strength kept
+--   ''                       → do not send    → both empty (default)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -473,9 +474,9 @@ BEGIN
     END IF;
 END $$;
 
--- LLM Query melting state: a configuration has failed continuously(Insufficient balance/key Invalid/Current limiting)Then into the cooling period.
--- The inquiry skips it directly. The memory is the same as the memory, and this is where the library is only for rebooting and not for cooling windows.——Only not yet loaded
--- Lines due(open_until > now),Expired natural return"Normal",We'll call in a half-starter..
+-- LLM failover circuit-breaker state. After repeated failures (no balance, invalid key, rate limit) a profile cools down,
+-- and the pool skips it until the window ends. Memory is authoritative. This table exists so a restart does not lose
+-- an open cooldown. Load only rows that have not expired yet (open_until > now). Expired rows are healthy again and wait for the next half-open probe.
 CREATE TABLE IF NOT EXISTS llm_profile_health (
     profile_id  BIGINT PRIMARY KEY REFERENCES llm_profiles(id) ON DELETE CASCADE,
     fails       INTEGER NOT NULL DEFAULT 0,  -- Current number of consecutive failures(Success is zero.)
@@ -538,20 +539,20 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)          WHERE dele
 DROP TRIGGER IF EXISTS trg_tasks_upd ON tasks;
 CREATE TRIGGER trg_tasks_upd BEFORE UPDATE ON tasks
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
--- planner Heart beat trigger interval(second);Fill the old library. Default 300s(5min).See docs/planner-trigger-impl-plan.md
+-- Planner heartbeat interval in seconds; backfill for old databases. Default 300s (5 min). See docs/planner-trigger-impl-plan.md
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS plan_heartbeat_seconds INTEGER NOT NULL DEFAULT 300;
--- Suspended with ceilings;Backup Library.true=Autostart due to line-up of upper limit, waiting for empty slot.
+-- Queued because the concurrency cap was hit; backfill for old databases. true means waiting for a free slot to start automatically.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queued BOOLEAN NOT NULL DEFAULT false;
--- Asset coverage function switch;Backup Library.true(Default)=Calculate/Show test coverage, autoaccumulation range,
--- Give agent Open add_task_scope/list_untested_assets;false=Close All(See task_scope.go).
--- Stock Task Default true Maintaining behaviour;company Association(task_scope kind=company)Not affected by this switch.
+-- Asset-coverage switch; backfill for old databases. true (default) computes and shows test coverage, auto-accumulates scope,
+-- and exposes add_task_scope / list_untested_assets to the agent. false turns all of that off (see task_scope.go).
+-- Existing tasks default to true so behavior is unchanged. Company links (task_scope kind=company) are not affected.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS coverage_enabled BOOLEAN NOT NULL DEFAULT true;
 -- queued_at makes admission FIFO reflect the actual enqueue order rather than the
 -- task creation order. queue_mode distinguishes first bootstrap from resuming an
 -- exploration that already owns goals/history.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS queue_mode TEXT NOT NULL DEFAULT '';
--- Other Organiser;Fill the old library. Empty string=Unnamed,Back to description for front-end presentation.
+-- Optional task name; backfill for old databases. An empty string means unnamed, and the frontend falls back to the description.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES task_categories(id) ON DELETE SET NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMPTZ;
@@ -894,9 +895,9 @@ CREATE TABLE IF NOT EXISTS agent_skill_visibility (
 );
 CREATE INDEX IF NOT EXISTS idx_askv_skill ON agent_skill_visibility(skill_name);
 
--- Skill Call books (see db/skill_usage.go).Once. Skill() Call a line and remember only dimensions without text.
--- Do not set external keys: Task/Keep the statistics after the session has been deleted llm_usage Same thing.),skill It's just...
--- Directory name on filesystem, no corresponding table.
+-- Skill call ledger (see db/skill_usage.go). One row per Skill() call; dimensions only, no body.
+-- No foreign keys on purpose: statistics must survive task or session deletion (same as llm_usage).
+-- A skill is only a directory name on the filesystem and has no table of its own.
 CREATE TABLE IF NOT EXISTS skill_usage (
     id             BIGSERIAL PRIMARY KEY,
     ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1060,14 +1061,14 @@ CREATE TABLE IF NOT EXISTS intercept_pending (
     tool_input      JSONB NOT NULL DEFAULT '{}',
     status          TEXT NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending', 'allowed', 'denied', 'timeout')),
-    -- Grounds for determination:Rules are rules when hit. message;LLM Short reasons given for the model at the bottom of the test(Prefix [Model]).
+    -- Decision reason: the rule message on a rule hit, or the model's short reason on an LLM fallback (prefixed [Model]).
     reason          TEXT NOT NULL DEFAULT '',
     decided_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_intercept_pending_status ON intercept_pending(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_intercept_pending_task   ON intercept_pending(task_id, created_at DESC);
--- Backup Library:reason Column(Issued,- You're gonna have to take it. IF NOT EXISTS).
+-- Backfill for old databases: the reason column (already shipped, so ADD COLUMN needs IF NOT EXISTS).
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT '';
 -- Detail payloads are lazy-loaded; NULL preserves the meaning of legacy history.
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS audit JSONB;
@@ -1076,7 +1077,7 @@ UPDATE intercept_pending SET decision_source=CASE WHEN rule_id IS NOT NULL THEN 
  WHEN reason LIKE '[Model]%' THEN 'model' ELSE 'unknown' END WHERE decision_source='';
 
 -- =====================================================================
--- L. Persistence of loopholes
+-- L. Persisted findings
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS findings (
     id          BIGSERIAL PRIMARY KEY,
@@ -1229,14 +1230,14 @@ ALTER TABLE side_question_sessions ADD COLUMN IF NOT EXISTS memory JSONB NOT NUL
 ALTER TABLE side_question_requests ADD COLUMN IF NOT EXISTS context_info JSONB NOT NULL DEFAULT '{}';
 
 -- =====================================================================
--- Asset interception rules (global blacklist))
--- Independent §K Command interception(intercept_rules):intercept_rules Match Toolname/References,
--- This table matches.[Target assets]——Congruent/Fuzzy domain name·IP·URL and CIDR Network segment.
--- saving rules;specific matching/Interception logic elsewhere..
--- kind Seven.:
---   exact_domain / exact_ip / exact_url  —— Congruent match
---   fuzzy_domain / fuzzy_ip / fuzzy_url  —— Fuzzy matching
---   cidr                                 —— CIDR Network segment
+-- Asset intercept rules (global blocklist)
+-- Separate from section K command interception (intercept_rules), which matches tool name and input text.
+-- This table matches target assets: exact or fuzzy domain, IP, and URL, plus CIDR ranges.
+-- It only stores rules. Matching and blocking live elsewhere.
+-- Seven kinds:
+--   exact_domain / exact_ip / exact_url  -- exact match
+--   fuzzy_domain / fuzzy_ip / fuzzy_url  -- fuzzy match
+--   cidr                                 -- CIDR range
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS asset_intercept_rules (
     id          BIGSERIAL PRIMARY KEY,
@@ -1279,7 +1280,7 @@ CREATE TABLE IF NOT EXISTS task_intercept_rules (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_task_intercept_task ON task_intercept_rules(task_id);
--- Backup Library(This session was built earlier. No. action Column):Gala(With IF NOT EXISTS).
+-- Backfill for old databases (this table was created earlier in the session without an action column): add the column with IF NOT EXISTS.
 ALTER TABLE task_intercept_rules ADD COLUMN IF NOT EXISTS action TEXT NOT NULL DEFAULT 'block';
 DROP TRIGGER IF EXISTS trg_task_intercept_rules_upd ON task_intercept_rules;
 CREATE TRIGGER trg_task_intercept_rules_upd BEFORE UPDATE ON task_intercept_rules
@@ -1323,8 +1324,8 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     --   vulnclass_include/exclude Keyword array(Case Insensitive Substring);include Empty=All
     --   on_status_change   bool,Only realtime The pattern makes sense.
     filter       JSONB NOT NULL DEFAULT '{}',
-    -- Maximum delivery per minute;0=Unlimited. Default 20 I've got it./Microstatic hard limits.
-    -- I'm not gonna lose anything. I'm just gonna postpone the delivery until next. tick.
+    -- Deliveries per minute; 0 means no limit. The default of 20 matches the official DingTalk and WeCom hard caps.
+    -- Over the limit, messages are not dropped; delivery waits for the next tick.
     rate_per_min INTEGER NOT NULL DEFAULT 20,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -1333,42 +1334,42 @@ DROP TRIGGER IF EXISTS trg_notification_channels_upd ON notification_channels;
 CREATE TRIGGER trg_notification_channels_upd BEFORE UPDATE ON notification_channels
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- The facts of the incident. By RecordFindingTx / Change of status services**Concurrent services**Write, Promise[Hole Out]
--- With[Send Task Exists]Atoms Same——There are no successful but unlisted windows where messages are permanently lost.
--- snapshot Deliberate redundancy: a loophole is subsequently renamed/Reclassify/Change the status, the thrust should reflect[When it happened,],
--- and fan-out You don't have to check back on the rendering. findings/tasks/assets Multiple watch.
--- finding Delete events without cascade: with findings Table[Tasks deleted and retained independently]Semantic Convergence.
+-- Event facts. Written in the same transaction as RecordFindingTx or a status change, so "finding stored"
+-- and "push task exists" commit together. There is no window where the commit succeeds, the event is never queued, and the message is lost.
+-- snapshot is redundant on purpose: a finding may later be renamed, reseverity'd, or have its status changed, and the push should show the moment it happened.
+-- Fan-out and rendering then do not have to join findings, tasks, and assets.
+-- Deleting a finding does not cascade-delete events, matching the findings table, which keeps rows after the task is deleted.
 CREATE TABLE IF NOT EXISTS notification_events (
     id         BIGSERIAL PRIMARY KEY,
     -- finding_created | finding_status_changed
     kind       TEXT NOT NULL,
     finding_id BIGINT NOT NULL,
     snapshot   JSONB NOT NULL,
-    -- fan-out Magnetic Tags:dispatcher Select this column to assign events and process them. true.
-    -- Use columns instead of deleting lines so that history can be traced back to events.
+    -- Fan-out idempotency flag. The dispatcher claims events where this is false and sets it true when done.
+    -- A column, not a delete, so delivery history can still point at the event.
     fanned_out BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_notification_events_pending
     ON notification_events(id) WHERE NOT fanned_out;
 
--- Organisation × An enabler = One line..fan-out It's out of business, so the channel.
--- It doesn't make up for history.(With agent_triggers of[It's late. trigger Other Organiser]Semantic Convergence,
--- Avoid a one-time screen history backlog when opening channels).
--- channel_id Declining of cascades: no channel configuration, no history of delivery.
+-- One delivery row is one event times one enabled channel. Fan-out runs outside the finding transaction, so a channel
+-- enabled later does not backfill history (same idea as agent_triggers: a trigger turned on late does not replay history,
+-- which avoids dumping a backlog the moment a channel is enabled).
+-- channel_id cascades on delete: without the channel config, its delivery history cannot be interpreted.
 CREATE TABLE IF NOT EXISTS notification_deliveries (
     id          BIGSERIAL PRIMARY KEY,
     event_id    BIGINT NOT NULL REFERENCES notification_events(id) ON DELETE CASCADE,
     channel_id  BIGINT NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
-    -- pending To be issued / sent Issued / failed It's exhausting.(But re-activate manually.) / skipped Channel disabled or batch cancelled
-    -- pending To be issued / sending Already selected dispatcher Receipts(Lease not due) / sent Issued /
-    -- failed Repeat or permanently fail(But re-activate manually.) / skipped Channel shut down. No value. CHECK,
-    -- With findings.status Same thing. server Verification of the side white list.
+    -- pending waiting / sent delivered / failed retries exhausted (can be resent manually) / skipped channel disabled or batch cancelled
+    -- pending waiting / sending claimed by a dispatcher (lease not expired) / sent delivered /
+    -- failed retries exhausted or permanently failed (can be resent manually) / skipped channel disabled. No CHECK constraint,
+    -- same as findings.status; the server validates the whitelist.
     state       TEXT NOT NULL DEFAULT 'pending',
     attempts    INTEGER NOT NULL DEFAULT 0,
-    -- Co-author[Next pick-up time]With[Duration of the lease]:It'll be a lease when you get it.,
-    -- So[Lease not due]With[Not time to try again]We'll share the same terms.
-    -- lease_until Columns. It's from the collapse of the process. sending The business will be re-repossessed in the next round because the lease expires..
+    -- Both "next time this may be claimed" and "lease expiry". Claiming pushes it into the future, which is the lease,
+    -- so "lease still valid" and "not yet time to retry" share one predicate and no extra lease_until column is needed.
+    -- A sending row left by a crash is claimed again on the next round once the lease expires.
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_error  TEXT NOT NULL DEFAULT '',
     -- digest Mode shared with batch;realtime Constant NULL.Once the whole message is rendered together sent.
