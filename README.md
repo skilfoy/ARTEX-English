@@ -1,14 +1,16 @@
 # ARTEX English
 
-An English-language fork of [Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX), an autonomous security research system with a Go backend, PostgreSQL storage, and a Next.js interface. The original Chinese README is preserved as [README.zh-CN.md](README.zh-CN.md).
+An English-language fork of [Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX), an autonomous security research system with a Go backend, PostgreSQL storage, and a Next.js interface.
 
 The interface contains task planning, agent sessions, findings, asset graphs, traffic evidence, approval records, model configuration, and system settings. The hosted preview uses simulated data. A functioning local installation requires PostgreSQL and an LLM configuration.
 
-This fork translates the interface, preview data, built-in agent prompts, and default agent descriptions. Existing installations keep previously saved prompts until an administrator resets them to the built-in defaults. Some legacy backend messages and developer comments remain in Chinese.
+This fork translates the interface, preview data, built-in agent prompts, backend messages, and documentation. Existing installations keep previously saved prompts until an administrator resets them to the built-in defaults.
 
 [Open the English demo](https://artex-english.vercel.app/function/tasks)
 
 ## Preview and deployment
+
+Full-stack Terraform configurations for AWS, Google Cloud, and Azure are documented in [infra/README.md](infra/README.md). Each configuration builds this fork's Go backend with the frontend embedded and runs it with PostgreSQL. Review the upstream author's usage conditions below before provisioning or using the software.
 
 The `web/` directory supports a frontend-only demo with `NEXT_PUBLIC_MOCK=1`. This mode uses simulated tasks, assets, and findings and does not run the Go backend or make requests to real targets.
 
@@ -36,11 +38,17 @@ Open the address printed by Next.js. The mock preview requires no database or mo
 
 ## Build the English application
 
-The upstream Docker image contains the upstream build. Compile this fork from source to include its English interface.
+The default Docker Compose configuration builds the frontend and backend from this fork's source. Copy the example environment file, set a strong database password, and start the services:
 
-1. Install Go and Node.js versions compatible with `go.mod` and `web/package.json`. Provide a PostgreSQL instance.
-2. Build the static interface and copy it into the directory embedded by the Go server.
-3. Compile the Go binary with the `embedui` build tag.
+```bash
+cp .env.example .env
+# Edit POSTGRES_PASSWORD in .env.
+docker compose up -d --build
+```
+
+Open `http://localhost:8787` to complete administrator setup. Add an LLM provider through the interface or the supported environment variables, including `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+
+For a native build, install the versions of Go and Node.js specified by `go.mod` and `web/package.json`, and provide a PostgreSQL instance. Build the static interface and embed it in the Go binary:
 
 ```bash
 cd web
@@ -54,9 +62,7 @@ cp config.example.json config.json
 ./start.sh
 ```
 
-Set the database connection in `config.json` or `ARTEX_PG_DSN`. Configure a model through the interface or with the supported environment variables, including `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. The default application address is `http://localhost:8787`. The initial setup page creates the administrator password.
-
-`start.sh` manages restarts required by the in-app updater. The updater currently targets upstream releases, which contain upstream builds. Keep the English build by recompiling this fork after upstream updates.
+Set the database connection in `config.json` or `ARTEX_PG_DSN`. `start.sh` manages restarts requested by the in-app updater. The updater checks releases from this fork.
 
 ## Application structure
 
@@ -69,7 +75,7 @@ Set the database connection in `config.json` or `ARTEX_PG_DSN`. Configure a mode
 | `web/` | Next.js interface and simulated preview data |
 | `skills/` | Agent skill instructions |
 
-The backend coordinates a planner and workers around an exploration graph and a shared asset graph. The interface presents tasks, session traces, discoveries, asset coverage, and approval decisions. See the upstream [architecture documentation](https://github.com/Autumn-27/ARTEX#system-technical-architecture) for the full design.
+The backend coordinates a planner and workers around an exploration graph and a shared asset graph. The interface presents tasks, session traces, discoveries, asset coverage, and approval decisions. See the [architecture guide](docs/ARCHITECTURE.md) for the data model and execution flow.
 
 ## Development checks
 
@@ -81,10 +87,12 @@ npx tsc --noEmit
 NEXT_PUBLIC_MOCK=1 npm run build
 ```
 
-For integrated local development, `./dev.sh` starts the Go backend, traffic proxy, and Next.js development server. The upstream README contains additional installation, update, and reverse proxy details.
+For integrated local development, `./dev.sh` starts the Go backend, traffic proxy, and Next.js development server. The [cloud deployment guide](infra/README.md) covers virtual machines, DNS, HTTPS, and operations.
 
 ## License and use conditions
 
-ARTEX is licensed under the [GNU Affero General Public License, version 3](LICENSE). Preserve the license and attribution when distributing modified versions. The upstream author also supplies usage restrictions and disclaimers in the original README and the application's login notice. Review those terms before using or redistributing the software.
+ARTEX is licensed under the [GNU Affero General Public License, version 3](LICENSE). Preserve the license, source disclosure obligations, and attribution when distributing modified versions or offering them over a network.
 
-This fork acknowledges [Autumn-27 and the upstream contributors](https://github.com/Autumn-27/ARTEX/graphs/contributors). Its English text is a translation and adaptation for accessibility. The original Chinese wording remains available in [README.zh-CN.md](README.zh-CN.md).
+The upstream author states that use is restricted to personal study, source code research, and technical verification in a locally isolated environment. The author expressly prohibits scanning, probing, exploiting, or attacking websites, online services, or networked systems, including systems owned by or authorized for the user. The stated restrictions also prohibit actual penetration testing, attack and defense exercises, production use, and unlawful or destructive activity. Users are responsible for applicable legal requirements. The software is provided as is without warranties, and the author disclaims liability for losses arising from its use. The application displays these conditions at login. Consult the [upstream source](https://github.com/Autumn-27/ARTEX/blob/main/README.md) for the author's complete notice.
+
+This fork acknowledges [Autumn-27 and the upstream contributors](https://github.com/Autumn-27/ARTEX/graphs/contributors). Its English text is a translation and adaptation for accessibility. Git history preserves the upstream source and its original wording.

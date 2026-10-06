@@ -7,37 +7,37 @@ import (
 	"fmt"
 )
 
-// weComMarkdownLimit 是企微群机器人 markdown content 的硬上限（字节，非字符）。
-// 这是全部六个渠道里最紧的限制，也是 TruncateBytes 存在的主要原因。
+// weComMarkdownLimit It's a microbots. markdown content Hard limit (bytes, non-charts)).
+// It's the tightest of all six channels. TruncateBytes Main reasons for existence.
 const weComMarkdownLimit = 4096
 
-// weComChannel 实现企业微信群机器人。
+// weComChannel Achieving the Enterprise Wisdom..
 //
-// 平台特性：
-//   - 唯一通过 URL 上的 key 鉴权，不支持加签——所以 webhook 地址本身就是全部凭据。
-//   - markdown content 上限 4096 **字节**，超长整条被拒（不是截断）。中文 3 字节/字，
-//     意味着正文只有一千多字可写，必须客户端截断。
-//   - 限流 20 条/分钟，同样靠客户端限流兜住。
+// Platform Features:
+//   - Only through URL Top key Your Honor, you don't need to sign.——So webhook The address is all in itself..
+//   - markdown content upper limit 4096 **Bytes**,The article was rejected (not cut). Chinese 3 Bytes/Words,
+//     It means the body is written in more than a thousand words, and the client must be cut..
+//   - Current limiting 20 strip/Minutes. Same client limit..
 type weComChannel struct{}
 
 func (weComChannel) Kind() string { return KindWeCom }
 
 func (weComChannel) DefaultRatePerMin() int { return 20 }
 
-// 企业微信只有 Webhook 一处凭据（URL 上的 key），且它不支持加签——
-// 整个地址就是全部凭据，没有别的字段需要掩码。
+// There's only one thing we can do. Webhook A certificate.(URL Top key),And it doesn't support signing.——
+// The whole address is full of evidence. There's no other field to hide..
 func (weComChannel) SecretKeys() []string { return []string{"webhook"} }
 
-// 企微只有 Webhook 一处字段，它既是目的地也是凭据，因此没有「改地址后残留的凭据」可言。
+// Micro just Webhook A field, which is both a destination and evidence, and therefore no[We'll have to change our address.]Words.
 func (weComChannel) DestinationKeys() []string { return []string{"webhook"} }
 
 func (weComChannel) Validate(cfg map[string]any) error {
 	hook := cfgString(cfg, "webhook")
 	if hook == "" {
-		return errors.New("缺少 Webhook 地址")
+		return errors.New("Missing Webhook Address")
 	}
 	if err := validateHTTPURL(hook); err != nil {
-		return fmt.Errorf("Webhook 地址无效: %w", err)
+		return fmt.Errorf("Webhook Address invalid: %w", err)
 	}
 	return nil
 }
@@ -46,8 +46,8 @@ func (c weComChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 	if err := c.Validate(cfg); err != nil {
 		return 0, Permanent(err)
 	}
-	// 汇总批可能很长（50 条 × 每条一行 + 前缀），4096 字节很容易超。
-	// 截断在这里做而不是靠平台报错：被拒意味着这一批全丢，而截断至少送达前若干条。
+	// The aggregate may be long.(50 strip × Every line + Prefix),4096 Bytes are easy to overwrite..
+	// Interception is done here, not through the platform: rejection means total loss, while interruption reaches at least a few previous articles.
 	content, kept := markdownBody(m, weComMarkdownLimit)
 	payload := map[string]any{
 		"msgtype":  "markdown",
@@ -62,17 +62,17 @@ func (c weComChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 		ErrMsg  string `json:"errmsg"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return 0, fmt.Errorf("解析企业微信响应失败: %w (%s)", err, snippet(raw))
+		return 0, fmt.Errorf("Failed to parse micro-credit response: %w (%s)", err, snippet(raw))
 	}
 	if res.ErrCode != 0 {
-		// 45009 是接口调用超过限制——平台的限流窗口会滚动，退避后重试是有效的，
-		// 所以显式归为可重试。走到这里说明客户端 rate_per_min 配得过于激进，
-		// 重试只是兜底，真正的修法是调低该渠道的限流值。
+		// 45009 It's the interface calling beyond the limit.——The platform's restricted window will be rolling and retrying will work.,
+		// So it's obvious that you can try again. Come here and show your client. rate_per_min It's too radical.,
+		// It's just the bottom line. The real fix is to lower the channel. Value.
 		if res.ErrCode == 45009 {
-			return 0, fmt.Errorf("企业微信限流 %d: %s", res.ErrCode, res.ErrMsg)
+			return 0, fmt.Errorf("Enterprise micro-credit flow %d: %s", res.ErrCode, res.ErrMsg)
 		}
-		// 93000 是 webhook key 无效——永久失败，重试不会自愈。
-		return 0, Permanent(fmt.Errorf("企业微信返回错误 %d: %s", res.ErrCode, res.ErrMsg))
+		// 93000 Yes webhook key Invalid——It's a permanent failure..
+		return 0, Permanent(fmt.Errorf("Enterprise Wireback Error %d: %s", res.ErrCode, res.ErrMsg))
 	}
 	return kept, nil
 }

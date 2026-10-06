@@ -316,7 +316,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
                   {pageError ? "Loading failed, click to try again" : `Showed${items.length}bar, scroll down to load more`}
                 </button>
               )}
-              {!loadingMore && !nextCursor && !loading && !error && items.length > 0 && `Showed all${items.length}strip`}
+              {!loadingMore && !nextCursor && !loading && !error && items.length > 0 && `Showing all ${items.length} items`}
               {!loadingMore &&
                 !nextCursor &&
                 (loading || !!error || items.length === 0) &&

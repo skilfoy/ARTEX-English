@@ -1,37 +1,28 @@
-// Package notify 实现漏洞发现的 IM / 邮件推送渠道适配层。
-//
-// 分层：本包是**叶子包**，只依赖标准库。它不认识数据库、不认识 server。渠道配置
-// 以 map[string]any 传入（对应 notification_channels.config 这一 JSONB 列），
-// 待推送内容以 Message 传入。这样拆开的好处是：签名计算、UTF-8 截断、过滤匹配这些
-// 真正容易出错的地方可以脱离 PostgreSQL 单测，宿主只需在 server 侧做编排。
-//
-// 并发约定：Channel 的实现必须**无状态**。同一个 Channel 实例会被多个渠道配置
-// （甚至同一渠道的多个机器人实例）并发复用，所有凭据一律从 cfg 参数传入，
-// 不允许把 webhook URL 之类的东西缓存进实现自身的字段。
+// Package notify renders and delivers finding events through configured channels.
 package notify
 
-// 渠道类型标识。取值同时是 notification_channels.kind 的合法集合，由 server 侧
-// 白名单校验（与 findings.status 同理，不用 DB CHECK，方便后续加渠道）。
+// Channel type identification. The value is the same. notification_channels.kind ♪ Legitimate collection by ♪ server Side
+// White List Validation findings.status Same thing. No need. DB CHECK,Facilitate follow-up channels).
 const (
-	KindDingTalk = "dingtalk" // 钉钉自定义机器人
-	KindFeishu   = "feishu"   // 飞书(含 Lark)自定义机器人
-	KindWeCom    = "wecom"    // 企业微信群机器人
-	KindWebhook  = "webhook"  // 通用 Webhook：自定义方法/头/JSON 模板
+	KindDingTalk = "dingtalk" // Nailed a self-defined robot.
+	KindFeishu   = "feishu"   // Feishu(incl. Lark)Custom Robot
+	KindWeCom    = "wecom"    // Enterprise Wisdom Robot
+	KindWebhook  = "webhook"  // General Webhook:Custom Method/head/JSON Templates
 	KindTelegram = "telegram" // Telegram Bot API
-	KindEmail    = "email"    // SMTP 邮件
+	KindEmail    = "email"    // SMTP Mail
 )
 
-// 事件类型，对应 notification_events.kind。
+// Event type, corresponding notification_events.kind.
 const (
 	EventFindingCreated       = "finding_created"
 	EventFindingStatusChanged = "finding_status_changed"
 )
 
-// InitKind 是 config 里为空的 kind 的兜底值。
+// InitKind Yes config It's empty. kind Bottom value.
 const InitKind = KindDingTalk
 
-// severityRank 把漏洞级别映射成可比较的序数。未知级别返回 0，因此任何
-// min_severity 设置都会把未知级别挡在外面——存疑时不推，避免误报刷屏。
+// severityRank Maps the gap level to a comparable sequence. Unknown level returns 0,♪ So any ♪
+// min_severity The settings keep the unknown out.——Don't push when there's doubt, and don't miss the screen..
 var severityRank = map[string]int{
 	"low":      1,
 	"medium":   2,
@@ -39,54 +30,54 @@ var severityRank = map[string]int{
 	"critical": 4,
 }
 
-// SeverityRank 返回级别的序数；未知级别返回 0。
+// SeverityRank return order of level;unknown level return 0.
 func SeverityRank(severity string) int { return severityRank[severity] }
 
-// SeverityLabel 返回带 emoji 的中文级别名，用于消息标题与卡片配色。
-// 未知级别原样回显，不臆造。
+// SeverityLabel Return Belt emoji Other Organiser.
+// Unknown level resembling, no assumptions.
 func SeverityLabel(severity string) string {
 	switch severity {
 	case "critical":
-		return "🔴 严重"
+		return "🔴 Critical"
 	case "high":
-		return "🟠 高危"
+		return "🟠 High"
 	case "medium":
-		return "🟡 中危"
+		return "🟡 Medium"
 	case "low":
-		return "🔵 低危"
+		return "🔵 Low"
 	default:
 		return severity
 	}
 }
 
-// StatusLabel 把处置状态翻译成中文，用于状态变更消息。
+// StatusLabel Translation of disposal status into Chinese for status change messages.
 func StatusLabel(status string) string {
 	switch status {
 	case "pending":
-		return "待处理"
+		return "Pending"
 	case "in_progress":
-		return "处理中"
+		return "Processing"
 	case "confirmed":
-		return "已确认"
+		return "Confirmed"
 	case "resolved":
-		return "已处理"
+		return "Resolved"
 	case "fixed":
-		return "已修复"
+		return "Fixed"
 	case "false_positive":
-		return "误报"
+		return "False positive"
 	case "ignored":
-		return "忽略"
+		return "Ignored"
 	case "duplicate":
-		return "重复"
+		return "Duplicate"
 	case "risk_accepted":
-		return "风险接受"
+		return "Risk accepted"
 	default:
 		return status
 	}
 }
 
-// AtLeast 判断 severity 是否达到 min 门槛。min 为空表示不设门槛，一律通过。
-// 注意未知 severity 的序数为 0，会被任何非空 min 拒掉（见 severityRank 注释）。
+// AtLeast Decision severity Achieved min threshold.min No threshold for empty expression, all through..
+// Note unknown severity The number of the sequences is 0,♪ Will be anything empty ♪ min Rejected. severityRank Comment).
 func AtLeast(severity, min string) bool {
 	if min == "" {
 		return true

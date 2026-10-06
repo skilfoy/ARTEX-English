@@ -7,7 +7,7 @@
  * "none"           → no saving, resets on reload.
  *
  * Layout-critical prefs (sidebar_variant / sidebar_collapsible)
- * must stay consistent during SSR → so they can’t use localStorage.
+ * must stay consistent during SSR → so they can]t use localStorage.
  * Others are flexible and can use any persistence.
  */
 

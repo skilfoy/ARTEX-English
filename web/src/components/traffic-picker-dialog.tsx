@@ -217,7 +217,7 @@ export function TrafficPickerDialog({
                       {alreadyBound.has(e.id) ? <Badge variant="secondary">Bound</Badge> : null}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">
-                      {new Date(e.ts).toLocaleString("zh-CN")}
+                      {new Date(e.ts).toLocaleString("en-US")}
                     </TableCell>
                     <TableCell>{e.status}</TableCell>
                     <TableCell>
@@ -239,7 +239,7 @@ export function TrafficPickerDialog({
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm">
-              Selected {selected.size} Articles · Total {data?.total ?? 0} strip
+              Selected {selected.size} flows · {data?.total ?? 0} total
             </span>
             <div className="flex items-center gap-2">
               <Button

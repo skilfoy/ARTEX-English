@@ -55,7 +55,7 @@ function AgentGridCard({
   async function del() {
     try {
       await api.deleteAgent(agent.key);
-      toast.success(`Deleted Agent "${agent.name}」`);
+      toast.success(`Deleted Agent "${agent.name}]`);
       onDeleted();
     } catch (e) {
       toast.error("Deletion failed:" + (e as Error).message);
@@ -105,7 +105,7 @@ function AgentGridCard({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Agent「{agent.name}」？</AlertDialogTitle>
+              <AlertDialogTitle>Delete Agent[{agent.name}]?</AlertDialogTitle>
               <AlertDialogDescription>
                 Its prompt words, variables, visibility and tool bindings will also be deleted. This action cannot be undone.
               </AlertDialogDescription>
@@ -132,7 +132,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: (key: string) => void }) 
     setBusy(true);
     try {
       const a = await api.createAgent(key.trim(), name.trim(), description.trim());
-      toast.success(`Agent has been created${a.name}」`);
+      toast.success(`Agent has been created${a.name}]`);
       setOpen(false);
       setKey("");
       setName("");

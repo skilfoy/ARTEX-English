@@ -15,12 +15,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Autumn-27/artex/agent"
-	"github.com/Autumn-27/artex/db"
-	"github.com/Autumn-27/artex/llmrec"
-	"github.com/Autumn-27/artex/sidequestion"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/skilfoy/ARTEX-English/agent"
+	"github.com/skilfoy/ARTEX-English/db"
+	"github.com/skilfoy/ARTEX-English/llmrec"
+	"github.com/skilfoy/ARTEX-English/sidequestion"
 )
 
 type sideRun struct {
@@ -168,7 +168,7 @@ func (s *Server) drainTaskSideQuestions(ctx context.Context, taskID string) erro
 	defer s.side.mu.Unlock()
 	for _, snap := range s.side.pending {
 		if snap.Parent.TaskID == id {
-			return errors.New("旁路上下文尚未保存，请重试")
+			return errors.New("Unsaved sideways, please try again")
 		}
 	}
 	return nil
@@ -193,7 +193,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 		// Validate the persisted reference even if a previous provider is cached.
 		current, exists := s.loadProfileConfig(model.ProfileID)
 		if !exists || sideModel(current, model.ProfileID, model.Name).Identity != model.Identity {
-			return nil, errors.New("模型配置已删除或变化，请先运行主 Agent 更新上下文")
+			return nil, errors.New("Model configuration deleted or changed, start with main Agent Update Context")
 		}
 		p, cfg, ok = s.providerForProfile(model.ProfileID)
 	} else {
@@ -202,7 +202,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 		s.cfgMu.Unlock()
 	}
 	if !ok || p == nil || sideModel(cfg, model.ProfileID, model.Name).Identity != model.Identity {
-		return nil, errors.New("模型配置已删除或变化，请先运行主 Agent 更新上下文")
+		return nil, errors.New("Model configuration deleted or changed, start with main Agent Update Context")
 	}
 	return p, nil
 }
@@ -210,7 +210,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string) (sidequestion.Parent, bool) {
 	p := sidequestion.Parent{}
 	if s.side == nil || s.m.pg == nil {
-		writeErr(w, 503, "旁路服务不可用")
+		writeErr(w, 503, "No bypass service available.")
 		return p, false
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -242,7 +242,7 @@ func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string)
 		return p, false
 	}
 	if pt == nil || s.engine.IsDeleting(t.ID) {
-		writeErr(w, 409, "任务已归档或正在删除")
+		writeErr(w, 409, "Tasks archived or being deleted")
 		return p, false
 	}
 	p.TaskID, p.ExplorationID = id, t.ExpID
@@ -262,7 +262,7 @@ func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string)
 			return p, false
 		}
 		if n.State == "stopped" {
-			writeErr(w, 409, "Worker 已删除")
+			writeErr(w, 409, "Worker Deleted")
 			return p, false
 		}
 		p.IntentID = iid
@@ -349,13 +349,13 @@ func (s *Server) handleSideQuestions(w http.ResponseWriter, r *http.Request, p s
 	}
 	in.Question = strings.TrimSpace(in.Question)
 	if in.Question == "" || len([]rune(in.Question)) > 4000 || !validWorkerMessageRequestID(in.ClientID) {
-		writeErr(w, 400, "问题须为 1–4000 字符，并提供有效请求 ID")
+		writeErr(w, 400, "The question must be: 1–4000 Character and provide valid request ID")
 		return
 	}
 	s.side.commands.Lock()
 	defer s.side.commands.Unlock()
 	if p.TaskID > 0 && s.engine.IsDeleting(strconv.FormatInt(p.TaskID, 10)) {
-		writeErr(w, 409, "任务正在归档或删除")
+		writeErr(w, 409, "Tasks are archived or deleted")
 		return
 	}
 	if existing, err := s.m.pg.ExistingSideRequest(r.Context(), key, in.ClientID); err != nil {
@@ -363,14 +363,14 @@ func (s *Server) handleSideQuestions(w http.ResponseWriter, r *http.Request, p s
 		return
 	} else if existing != nil {
 		if existing.Question != in.Question {
-			writeErr(w, 409, "同一请求 ID 不能用于不同问题")
+			writeErr(w, 409, "Same request ID Not for different issues.")
 			return
 		}
 		writeJSON(w, 200, existing)
 		return
 	}
 	if snap == nil {
-		writeErr(w, 409, "尚无上下文快照，请先运行主 Agent")
+		writeErr(w, 409, "No context snapshot, please run the master first Agent")
 		return
 	}
 	provider, err := s.sideProvider(snap.Model)
@@ -392,7 +392,7 @@ func (s *Server) handleSideQuestions(w http.ResponseWriter, r *http.Request, p s
 		return
 	}
 	if full {
-		writeErr(w, 429, "旁路请求已达并发上限，请稍后重试")
+		writeErr(w, 429, "The bypass request has reached its limit. Please try again later.")
 		return
 	}
 	agentQuestion, ok := s.prepareChatMentionMessage(w, in.Question)
@@ -488,10 +488,10 @@ func (s *Server) runSide(ctx context.Context, cancel context.CancelFunc, e sideq
 	e.Status = "completed"
 	if ctx.Err() != nil {
 		e.Status = "cancelled"
-		e.Error = "回答已停止"
+		e.Error = "Answer has stopped."
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			e.Status = "failed"
-			e.Error = "旁路回答超过 120 秒，已停止"
+			e.Error = "Overruled by the sidewalk. 120 Seconds, stopped"
 		}
 	} else if runErr != nil {
 		e.Status = "failed"

@@ -331,7 +331,7 @@ function AddTaskAssetsSheet({
             disabled={saving || parsedScope.rules.length === 0 || parsedScope.errors.length > 0}
           >
             {saving ? <Spinner data-icon="inline-start" /> : <PlusIcon data-icon="inline-start" />}
-            Register {parsedScope.rules.length > 0 ? parsedScope.rules.length : ""} strip
+            Register {parsedScope.rules.length > 0 ? parsedScope.rules.length : ""} entries
           </Button>
         </SheetFooter>
       </SheetContent>

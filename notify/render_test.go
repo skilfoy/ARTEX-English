@@ -7,28 +7,28 @@ import (
 )
 
 func TestTruncateBytesKeepsValidUTF8(t *testing.T) {
-	// 这是本包最要紧的一条不变量。企微按**字节**限长，中文 3 字节/字，
-	// 任何按字节硬切的实现都会把汉字切成半个，产出非法 UTF-8 而被平台拒收。
-	// 用长度互质的多种中英混排输入去撞每一个可能的切点。
+	// This is the most important variable of this package. Micropress**Bytes**Long, Chinese 3 Bytes/Words,
+	// Any byte hard-cut realization will turn Han into half a piece. UTF-8 They were rejected by the platform..
+	// Use multiple Chinese-British rows of length to hit every possible cut..
 	inputs := []string{
-		"中文测试内容",
-		"混合 mixed 内容 content",
-		"a中b文c测d试e",
-		"🔴🟠🟡🔵", // 4 字节 emoji，切错更明显
-		strings.Repeat("漏洞", 100),
+		"Chinese Test Contents",
+		"Mixed mixed Content content",
+		"aΩbMancMeasuredTrye",
+		"🔴🟠🟡🔵", // 4 Bytes emoji,The error is more obvious.
+		strings.Repeat("Vulnerability", 100),
 	}
 	for _, in := range inputs {
 		for max := 1; max <= len(in)+2; max++ {
 			got := TruncateBytes(in, max)
 			if !utf8.ValidString(got) {
-				t.Fatalf("输入 %q max=%d: 产出非法 UTF-8 %q", in, max, got)
+				t.Fatalf("Input %q max=%d: Illegal output UTF-8 %q", in, max, got)
 			}
 			if len(got) > max {
-				t.Fatalf("输入 %q max=%d: 结果 %d 字节超出上限", in, max, len(got))
+				t.Fatalf("Input %q max=%d: Results %d Bytes in excess of ceiling", in, max, len(got))
 			}
-			// 未被截断时不得改动内容。
+			// No change in content if not interrupted.
 			if len(in) <= max && got != in {
-				t.Fatalf("输入 %q max=%d: 未超限却改动了内容 -> %q", in, max, got)
+				t.Fatalf("Input %q max=%d: I changed the content without exceeding the limit. -> %q", in, max, got)
 			}
 		}
 	}
@@ -37,114 +37,114 @@ func TestTruncateBytesKeepsValidUTF8(t *testing.T) {
 func TestTruncateBytesZeroMeansUnlimited(t *testing.T) {
 	long := strings.Repeat("x", 10000)
 	if got := TruncateBytes(long, 0); got != long {
-		t.Fatal("max=0 应表示不限制")
+		t.Fatal("max=0 It should be unrestricted.")
 	}
 	if got := TruncateBytes(long, -5); got != long {
-		t.Fatal("max<0 应表示不限制")
+		t.Fatal("max<0 It should be unrestricted.")
 	}
 }
 
 func TestTruncateBytesEllipsisBudget(t *testing.T) {
-	// max 小于省略号本身时，不能因为追加省略号而反过来超限。
+	// max When less than the ellipsis itself, the additional ellipsis cannot be exceeded.
 	got := TruncateBytes("abcdefgh", 1)
 	if len(got) > 1 {
-		t.Fatalf("max=1 时结果 %q 长度 %d 超限", got, len(got))
+		t.Fatalf("max=1 Time result %q Length %d Overlimit", got, len(got))
 	}
-	// 正常情况应带省略号。
+	// Normality should have ellipses..
 	if got := TruncateBytes("abcdefgh", 5); !strings.HasSuffix(got, ellipsis) {
-		t.Fatalf("期望带省略号，得到 %q", got)
+		t.Fatalf("Expecting ellipsis, get it. %q", got)
 	}
 }
 
 func TestTruncateRunesCountsCharactersNotBytes(t *testing.T) {
-	// 与 TruncateBytes 的口径差异必须保留：Telegram 按字符限长，
-	// 用字节口径会把中文消息切到只剩三分之一。
-	s := "一二三四五六七八九十"
+	// With TruncateBytes The difference in calibre must be maintained:Telegram Long by Character,
+	// With a byte caliber, the Chinese message is only a third..
+	s := "One, two, three, four, five, six, seven, eight, ninety."
 	got := TruncateRunes(s, 5)
 	if n := utf8.RuneCountInString(got); n != 5 {
-		t.Fatalf("期望 5 个字符，得到 %d 个 (%q)", n, got)
+		t.Fatalf("Expectations 5 Character, get %d pieces (%q)", n, got)
 	}
-	// 同样的字符串按字节口径应明显更短。
+	// The same string should be significantly shorter by bytes.
 	if utf8.RuneCountInString(TruncateBytes(s, 5)) >= 5 {
-		t.Fatal("字节口径不应产出与字符口径相同的字符数")
+		t.Fatal("Byte caliber should not produce the same number of characters as the caliber")
 	}
 }
 
 func TestOneLineCollapsesWhitespace(t *testing.T) {
-	got := OneLine("第一行\n\n第二行\t带制表   多空格", 0)
+	got := OneLine("First line\n\nSecond line\tTables with multispaces", 0)
 	if strings.ContainsAny(got, "\n\t") {
-		t.Fatalf("应折叠所有空白，得到 %q", got)
+		t.Fatalf("Should fold all the blanks, get %q", got)
 	}
 	if strings.Contains(got, "  ") {
-		t.Fatalf("不应保留连续空格，得到 %q", got)
+		t.Fatalf("Should not keep continuous spaces, get %q", got)
 	}
-	// 截断后仍须可读且合法。
-	got = OneLine("一二三四五六七八九十", 4)
+	// It's still readable and legal..
+	got = OneLine("One, two, three, four, five, six, seven, eight, ninety.", 4)
 	if n := utf8.RuneCountInString(got); n != 4 {
-		t.Fatalf("期望 4 字符，得到 %d (%q)", n, got)
+		t.Fatalf("Expectations 4 Character, get %d (%q)", n, got)
 	}
 }
 
 func TestTruncateHTMLNeverCutsTagInHalf(t *testing.T) {
-	// 直接截断 HTML 会切出 `<a href="htt` 这种残片，平台会拒收整条消息。
-	s := `<b>标题</b>正文正文正文<a href="https://example.com/very/long/path">查看详情</a>`
+	// Direct Cut HTML It'll cut out. `<a href="htt` This kind of thing, the platform won't get the whole message..
+	s := `<b>Title</b>Body text<a href="https://example.com/very/long/path">View details</a>`
 	for max := 1; max <= utf8.RuneCountInString(s)+2; max++ {
 		got := TruncateHTML(s, max)
 		if n := utf8.RuneCountInString(got); max > 0 && n > max {
-			t.Fatalf("max=%d: 结果 %d 字符超限", max, n)
+			t.Fatalf("max=%d: Results %d Character limit", max, n)
 		}
-		// 尾部不能有未闭合的 `<`（即最后一段里出现 `<` 却无 `>`）。
+		// There can't be any loose ends. `<`(In the last paragraph. `<` But none. `>`).
 		if lt := strings.LastIndex(got, "<"); lt >= 0 && !strings.Contains(got[lt:], ">") {
-			t.Fatalf("max=%d: 尾部标签被切断 -> %q", max, got)
+			t.Fatalf("max=%d: The tail tag is cut. -> %q", max, got)
 		}
 	}
 }
 
 func TestAssetLineOmitsExcess(t *testing.T) {
 	if got := assetLine(nil, 3); got != "" {
-		t.Fatalf("无资产应返回空串，得到 %q", got)
+		t.Fatalf("No assets should be returned to empty strings. %q", got)
 	}
-	if got := assetLine([]string{"a", "b"}, 3); got != "a、b" {
-		t.Fatalf("未超限应全列，得到 %q", got)
+	if got := assetLine([]string{"a", "b"}, 3); got != "a,b" {
+		t.Fatalf("Not exceeding full line. %q", got)
 	}
-	// 超出上限时必须标注总数，否则读者不知道还有多少资产没列出来。
+	// If the ceiling is exceeded, the total must be indicated, otherwise the reader does not know how many assets remain unlisted..
 	got := assetLine([]string{"a", "b", "c", "d", "e"}, 2)
-	if !strings.Contains(got, "等 5 个") {
-		t.Fatalf("应标注总数 5，得到 %q", got)
+	if !strings.Contains(got, "etc. 5 pieces") {
+		t.Fatalf("Total number to be indicated 5,get %q", got)
 	}
 }
 
 func TestSeverityAndStatusLabels(t *testing.T) {
 	if AtLeast("", "low") {
-		t.Fatal("空级别序数为 0，应被任何门槛挡住")
+		t.Fatal("Empty Order is 0,Should be blocked by any threshold.")
 	}
 	if !AtLeast("critical", "") {
-		t.Fatal("空门槛应放行")
+		t.Fatal("The air threshold should be released.")
 	}
-	if got := StatusLabel("fixed"); got != "已修复" {
-		t.Fatalf("未知状态映射，得到 %q", got)
+	if got := StatusLabel("fixed"); got != "Fixed" {
+		t.Fatalf("Unknown status map, received %q", got)
 	}
-	// 未知状态原样回显，不臆造标签。
+	// Unknown state resembling as it is, no labels assumed.
 	if got := StatusLabel("weird_status"); got != "weird_status" {
-		t.Fatalf("未知状态应原样回显，得到 %q", got)
+		t.Fatalf("Unknown state should be re-stated. %q", got)
 	}
 }
 
-// TestTruncateHTMLNeverCutsEntity 覆盖审计指出的一处遗漏：截断不只要避开
-// 半截标签，还要避开被切断的 HTML 实体。
+// TestTruncateHTMLNeverCutsEntity Override one of the omissions noted by the audit: cut-off is not only avoided
+// It's a semi-label. HTML Entities.
 //
-// `&amp;` 被切成 `&amp` 之后，一个只认实体的解析器可能拒收**整条**消息——
-// 而超长汇总消息本来就常见，代价太大。
+// `&amp;` Cut. `&amp` After that, an entity-only solver might refuse to accept it.**Article as a whole**Message——
+// And it's common to aggregate information for too long..
 func TestTruncateHTMLNeverCutsEntity(t *testing.T) {
 	s := "aaaa&amp;bbbb&lt;cccc&quot;dddd"
 	for max := 1; max <= utf8.RuneCountInString(s)+2; max++ {
 		got := TruncateHTML(s, max)
-		// 尾部不得出现「有 & 但没有对应 ;」的实体残片。
+		// No tails.[Yes & But it doesn't match. ;]It's a physical piece..
 		if amp := strings.LastIndex(got, "&"); amp >= 0 && !strings.Contains(got[amp:], ";") {
-			t.Fatalf("max=%d: 尾部留下实体残片 %q", max, got[amp:])
+			t.Fatalf("max=%d: The tail leaves a physical piece. %q", max, got[amp:])
 		}
 		if strings.Contains(got, "&amp\x00") {
-			t.Fatalf("max=%d: 出现畸形实体", max)
+			t.Fatalf("max=%d: Deformed entity", max)
 		}
 	}
 }

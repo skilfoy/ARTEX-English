@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
 import type { AssetInterceptKind, AssetInterceptRule } from "@/lib/types";
 
-// ---- kind 元信息 ----
+// ---- kind Meta information ----
 
 const KIND_OPTIONS: { value: AssetInterceptKind; label: string; group: string; placeholder: string }[] = [
   { value: "exact_domain", label: "Domain name (congruent)", group: "Congruent match", placeholder: "example.gov.cn" },
@@ -77,7 +77,7 @@ type RuleForm = {
 
 const defaultForm = (): RuleForm => ({ enabled: true, kind: "fuzzy_domain", pattern: "", note: "" });
 
-// 前端轻校验（与后端一致：仅 exact_ip / cidr 做格式校验，其余交后端）。
+// Front-end light verification (consistent with back-end: only exact_ip / cidr Do format verification and hand over the rest to the backend).
 function frontValidate(form: RuleForm): string | null {
   const p = form.pattern.trim();
   if (!p) return "The matching content cannot be empty";
@@ -153,7 +153,7 @@ export default function AssetInterceptPage() {
   }
 
   async function handleDelete(rule: AssetInterceptRule) {
-    if (!window.confirm(`Confirm to delete the asset interception rule "${rule.pattern}」？`)) return;
+    if (!window.confirm(`Confirm to delete the asset interception rule "${rule.pattern}]?`)) return;
     try {
       await api.deleteAssetInterceptRule(rule.id);
       toast.success("Rule deleted");

@@ -51,7 +51,7 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 function fmtTime(ms: number): string {
-  return new Date(ms).toLocaleString("zh-CN", {
+  return new Date(ms).toLocaleString("en-US", {
     year: "2-digit",
     month: "2-digit",
     day: "2-digit",
@@ -130,7 +130,7 @@ export default function WorkspacePage() {
   };
 
   const del = (e: WorkspaceEntry) => {
-    if (!window.confirm(`Confirm deletion${e.dir ? "Table of contents" : "Documents"} “${e.name}”？${e.dir ? "(including all content below)" : ""}`)) return;
+    if (!window.confirm(`Confirm deletion${e.dir ? "Table of contents" : "Documents"} [${e.name}]?${e.dir ? "(including all content below)" : ""}`)) return;
     api
       .workspaceDelete(e.path)
       .then(() => {
@@ -171,7 +171,7 @@ export default function WorkspacePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 头部：面包屑 + 操作 */}
+      {/* Head: Breadcrumbs + Operation */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-1 text-sm">
           <HardDriveIcon className="text-muted-foreground mr-1 size-4 shrink-0" />
@@ -281,7 +281,7 @@ export default function WorkspacePage() {
         </CardContent>
       </Card>
 
-      {/* 文件查看 / 编辑 */}
+      {/* File View / Edit */}
       <Sheet open={edit !== null} onOpenChange={(o) => !o && setEdit(null)}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-2xl">
           {edit && (
@@ -336,7 +336,7 @@ export default function WorkspacePage() {
         </SheetContent>
       </Sheet>
 
-      {/* 新建文件夹 */}
+      {/* Create new folder */}
       <Dialog open={mkdirOpen} onOpenChange={setMkdirOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

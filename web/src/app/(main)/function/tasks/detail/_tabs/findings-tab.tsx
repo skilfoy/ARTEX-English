@@ -74,7 +74,7 @@ function Row({
             <span className="truncate text-xs text-muted-foreground">{f.summary}</span>
           </div>
         </button>
-        <Badge variant="outline">Traffic evidence {f.traffic_count ?? 0} strip</Badge>
+        <Badge variant="outline">{f.traffic_count ?? 0} traffic flows</Badge>
         {f.assets && f.assets.length > 0 && (
           <div className="hidden shrink-0 flex-wrap justify-end gap-1 sm:flex">
             {f.assets.slice(0, 2).map((a) => (
@@ -108,7 +108,7 @@ function Row({
           <StatusBadge domain="finding" value={f.status} dot />
         )}
         <span className="hidden shrink-0 text-xs text-muted-foreground md:block">
-          {new Date(f.ts).toLocaleString("zh-CN")}
+          {new Date(f.ts).toLocaleString("en-US")}
         </span>
         {f.finding_id && (
           <Link
@@ -172,7 +172,7 @@ export function FindingsTab({ taskId }: { taskId: string }) {
     setFindings((cur) => cur.map((x) => (x.id === f.id ? { ...x, status: next } : x)));
     try {
       await api.setFindingStatus(f.finding_id, next);
-      toast.success(`Marked as "${statusMeta("finding", next).label}」`);
+      toast.success(`Marked as "${statusMeta("finding", next).label}]`);
     } catch (e) {
       setFindings((cur) => cur.map((x) => (x.id === f.id ? { ...x, status: prev } : x)));
       toast.error("Update failed:" + (e as Error).message);

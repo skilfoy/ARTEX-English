@@ -38,12 +38,12 @@ export default function SystemSettingsPage() {
   const [pyInterp, setPyInterp] = React.useState("");
   const [workers, setWorkers] = React.useState("3");
   const [savingWorkers, setSavingWorkers] = React.useState(false);
-  // 操作约束注入范围(默认都开)。
+  // Operation constraint injection range(Open by default).
   const [injectPlanner, setInjectPlanner] = React.useState(true);
   const [injectWorker, setInjectWorker] = React.useState(true);
-  // 实验功能:noa 上下文压缩(默认关)。
+  // Experimental features:noa Context compression(Default off).
   const [noaCompaction, setNoaCompaction] = React.useState(false);
-  // 纯前端偏好：不走 /api/settings，直接读写 localStorage。
+  // Pure front-end preference: don't go /api/settings,Direct reading and writing localStorage.
   const sendMode = useChatSendMode();
 
   const apply = React.useCallback((s: Settings) => {
@@ -261,10 +261,10 @@ export default function SystemSettingsPage() {
         <p className="text-muted-foreground text-sm">Global runtime switch</p>
       </div>
 
-      {/* 多列而非 grid：网络搜索卡片比其余高数倍，且高度随所选后端变化（brave/tavily
-          的 key 输入是条件渲染）。grid 会按最高的一张撑满整行、在旁边留下大片空白，
-          多列则自动按内容高度平衡填充。卡片间距靠 mb 而非 gap——多列布局下
-          column-gap 只管列间距，行间距要由子元素自己给。 */}
+      {/* Multiple columns instead of grid:The web search card is several times taller than the rest, and the height changes with the selected backend(brave/tavily
+          of key Input is conditional rendering).grid Will fill the entire row with the highest one, leaving a large blank space next to it,
+          Multiple columns are automatically filled in a balanced manner according to the height of the content. card spacing mb instead of gap——Under multi-column layout
+          column-gap Only the column spacing, the row spacing must be set by the child elements themselves. */}
       <div className="columns-1 gap-4 md:gap-6 lg:columns-2">
         <UpdateCard />
 
@@ -442,7 +442,7 @@ export default function SystemSettingsPage() {
               <b>web_search</b>(Only title/link/abstract is returned, the text is not fetched; fetching is done by WebFetch). web search<b>Not leaving</b>
               Logging agent, independent of traffic capture.
               <br />
-              Source optional <b>DuckDuckGo（ddgs）</b>(No Key required),<b>Brave (free version)</b>(Brave API Key required),{" "}
+              Source optional <b>DuckDuckGo(ddgs)</b>(No Key required),<b>Brave (free version)</b>(Brave API Key required),{" "}
               <b>Tavily</b>(Tavily API Key required) or <b>DeepSeek</b>(Reuse current LLM configuration). When the main switch is turned off, each
               The Agent's network search switch is unavailable.
             </CardDescription>

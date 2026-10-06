@@ -472,7 +472,7 @@ export const assets: Asset[] = [
     params: [{ name: "q", in: "query" }],
     last_seen: T("2026-07-26T02:14:00Z"),
   },
-  // 内网资产（DMZ→内网横向发现）
+  // Intranet assets(DMZ→Intranet horizontal discovery)
   {
     id: 19,
     type: "ip",
@@ -573,9 +573,9 @@ export const assetCounts: Record<string, number> = assets.reduce<Record<string, 
   return m;
 }, {});
 
-// assetRef 把资产 id 变成 finding 上挂的资产引用(label 与后端 coverageNodeLabel
-// 的取值顺序一致:URL > 域名 > IP > 应用名)。「按资产」视图的树就是靠这些引用
-// 把发现挂到资产上的。
+// assetRef Put assets id become finding Listed asset references(label With the backend coverageNodeLabel
+// The value order of:URL > Domain name > IP > Application name).[By assets]The view tree relies on these references
+// Attach discovery to assets.
 function assetRef(id: number): FindingAsset {
   const asset = assets.find((candidate) => candidate.id === id);
   if (!asset) throw new Error(`mock assetRef: unknown asset ${id}`);
@@ -714,7 +714,7 @@ export const findings: Finding[] = [
     task_description: "Payment and order workflows at shop.acme.com",
     ts: T("2026-07-23T15:00:00Z"),
   },
-  // ── 外网→内网纵深链路上的高危发现（active task）──
+  // ── External network→High-risk discovery on deep intranet links(active task)──
   {
     id: "f-11",
     vulnclass: "Hardcoded Credentials",
@@ -818,9 +818,9 @@ export const findings: Finding[] = [
 ];
 
 // ── Exploration graph (active task) ──────────────────────────────────────────
-// 现行模型：根是 fact/state=origin（渲染为「起点」）；payload 为 JSON 字符串，
-// goal 取 text、其余取 summary。结构：根→目标(spawns)→意图(spawns)→事实/漏洞(yields)，
-// 漏洞→目标(proves)，提示→意图(derived_from)。
+// Current model: root is fact/state=origin(Rendered as[Starting point]);payload for JSON String,
+// goal take text,Take the rest summary.Structure: Root→Target(spawns)→Intention(spawns)→fact/Vulnerability(yields),
+// Vulnerability→Target(proves),Tips→Intention(derived_from).
 const P = (o: Record<string, string>) => JSON.stringify(o);
 
 export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
@@ -835,7 +835,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-24T09:12:00Z"),
     },
 
-    // ── 目标（由 goals agent 拆解，随发现逐步加码到内网靶标）──
+    // ── Target (by goals agent Dismantle, and gradually increase the target to the intranet as the discovery is made)──
     {
       id: "g1",
       type: "goal",
@@ -873,7 +873,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-25T20:00:00Z"),
     },
 
-    // ── 第 1 层 · 外网侦察 / 外部漏洞 ──
+    // ── No. 1 Layer · External network reconnaissance / External vulnerabilities ──
     {
       id: "i1",
       type: "intent",
@@ -929,7 +929,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-25T20:20:00Z"),
     },
 
-    // ── 第 2 层 · 突破 DMZ 建立立足点 ──
+    // ── No. 2 Layer · Breakthrough DMZ Establish a foothold ──
     {
       id: "i6",
       type: "intent",
@@ -958,7 +958,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-25T16:00:00Z"),
     },
 
-    // ── 第 3 层 · 内网横向纵深（多层测试）──
+    // ── No. 3 Layer · Intranet horizontal and vertical (multi-layer test)──
     {
       id: "i9",
       type: "intent",
@@ -1005,7 +1005,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-25T23:50:00Z"),
     },
 
-    // ── 事实 ──
+    // ── fact ──
     {
       id: "fa1",
       type: "fact",
@@ -1115,7 +1115,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-25T23:20:00Z"),
     },
 
-    // ── 漏洞 ──
+    // ── Vulnerability ──
     {
       id: "fi1",
       type: "finding",
@@ -1198,7 +1198,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       ts: T("2026-07-26T00:20:00Z"),
     },
 
-    // ── 提示（主 agent 注入）──
+    // ── Prompt(main agent Injection)──
     {
       id: "h1",
       type: "hint",
@@ -1228,12 +1228,12 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     },
   ],
   edges: [
-    // 根 → 目标
+    // root → Target
     { src: "root", dst: "g1", rel: "spawns" },
     { src: "root", dst: "g2", rel: "spawns" },
     { src: "root", dst: "g3", rel: "spawns" },
     { src: "root", dst: "g4", rel: "spawns" },
-    // 目标 → 意图
+    // Target → Intention
     { src: "g1", dst: "i1", rel: "spawns" },
     { src: "g1", dst: "i2", rel: "spawns" },
     { src: "g1", dst: "i3", rel: "spawns" },
@@ -1248,7 +1248,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "g4", dst: "i11", rel: "spawns" },
     { src: "g4", dst: "i12", rel: "spawns" },
     { src: "g4", dst: "i13", rel: "spawns" },
-    // 意图 → 事实 / 漏洞（产出）
+    // Intention → fact / Vulnerability(output)
     { src: "i1", dst: "fa1", rel: "yields" },
     { src: "i4", dst: "fa2", rel: "yields" },
     { src: "i2", dst: "fi1", rel: "yields" },
@@ -1270,7 +1270,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "i12", dst: "fa10", rel: "yields" },
     { src: "i12", dst: "fiKerb", rel: "yields" },
     { src: "i13", dst: "fiDC", rel: "yields" },
-    // 事实 → 新意图（事实驱动的多层递进）
+    // fact → New intention (fact-driven multi-layered progress)
     { src: "fa3", dst: "i7", rel: "derived_from" },
     { src: "fa4", dst: "i8", rel: "derived_from" },
     { src: "fa4", dst: "i9", rel: "derived_from" },
@@ -1279,11 +1279,11 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     { src: "fa7", dst: "i12", rel: "derived_from" },
     { src: "fa9", dst: "i13", rel: "derived_from" },
     { src: "fa10", dst: "i13", rel: "derived_from" },
-    // 提示 → 意图
+    // Tips → Intention
     { src: "h1", dst: "i2", rel: "derived_from" },
     { src: "h2", dst: "i11", rel: "derived_from" },
     { src: "h3", dst: "i10", rel: "derived_from" },
-    // 漏洞 → 证明目标达成
+    // Vulnerability → Prove that the goal has been achieved
     { src: "fi1", dst: "g1", rel: "proves" },
     { src: "fiRce", dst: "g3", rel: "proves" },
     { src: "fiDC", dst: "g4", rel: "proves" },
@@ -1295,13 +1295,13 @@ export const frontier: TaskNode[] = explorationGraph.nodes.filter(
   (n) => n.type === "intent" && (n.state === "open" || n.state === "running"),
 );
 
-// ── Activity（执行过程）─────────────────────────────────────────────────────
-// 会话由 sessions-tab 从「意图」派生（session.id = intent.id），transcript = 匹配
-// intent_id 的活动流。planner=worker "planner"、主 agent=worker "mainagent"。
-// 每个 worker 会话含完整工具执行链（tool_use → tool_result → …→ result）。
+// ── Activity(Execution process)─────────────────────────────────────────────────────
+// Session by sessions-tab from[Intention]Derived(session.id = intent.id),transcript = match
+// intent_id activity flow.planner=worker "planner",Lord agent=worker "mainagent".
+// each worker Session with complete tool execution chain(tool_use → tool_result → …→ result).
 export const activity: Activity[] = [
-  // planner —— 每轮完整决策链：读态势 → 拉 worker 产出对照 → 判目标 → add_intent 派方向
-  // ── 第 0 轮 · 目标拆解与首批意图（2026-07-24 09:12）──
+  // planner —— Complete decision-making chain in each round: read the situation → pull worker Output comparison → Judge target → add_intent Send direction
+  // ── No. 0 Round · Target Breakdown and First Intentions(2026-07-24 09:12)──
   { seq: 1000, worker: "planner", ts: T("2026-07-24T09:12:10Z"), kind: "round", summary: "Round 0 · Target Teardown" },
   {
     seq: 1001,
@@ -1362,7 +1362,7 @@ export const activity: Activity[] = [
       "The first batch of 4 intentions were derived in this round: i1 asset reconnaissance, i2 background password, i4 injection, and i5 API override. g1 goes to i2, g2 goes to i4/i5, and each of the two goals has an independent entrance to advance. Wait for the worker to produce the facts and then increase the weight based on blood.",
   },
 
-  // ── 第 1 轮 · 攻击面加码（2026-07-25 14:12）──
+  // ── No. 1 round · Increased attack surface(2026-07-25 14:12)──
   { seq: 1100, worker: "planner", ts: T("2026-07-25T14:12:00Z"), kind: "round", summary: "Round 1 · Increased attack surface" },
   {
     seq: 1101,
@@ -1422,7 +1422,7 @@ export const activity: Activity[] = [
       "Situation upgrade: source code + hard-coded intranet password + Fastjson RCE form a new breakthrough route. The target layer has been asked to register g3 \"break through the DMZ from the external network and establish a foothold on the internal network\" and send i6 (fingerprint/CVE association) and i7 (trigger RCE). The DMZ privilege escalation step relies on the shell, which will be recorded in the to-do list for the next round of dispatch.",
   },
 
-  // ── 第 2 轮 · 立足点已建，转内网（2026-07-25 20:25）──
+  // ── No. 2 Round · The foothold has been established, transfer to the intranet(2026-07-25 20:25)──
   {
     seq: 1200,
     worker: "planner",
@@ -1505,7 +1505,7 @@ export const activity: Activity[] = [
       "g3 is achieved, the attack surface is transferred from the external network to the internal network. Please register g4 \"intranet horizontal, capture the internal target domain controller DC01\", send i9 (host discovery) + i10/i11/i12 three parallel horizontal lines. Credential reuse is directly anchored on faCreds - the passwords leaked from the external network source code are fed horizontally to the internal network.",
   },
 
-  // ── 第 3 轮 · 靶标达成复盘（2026-07-26 00:25）──
+  // ── No. 3 Round · Target achieved review(2026-07-26 00:25)──
   { seq: 1300, worker: "planner", ts: T("2026-07-26T00:25:00Z"), kind: "round", summary: "Round 3 · Target achieved review" },
   {
     seq: 1301,
@@ -1563,7 +1563,7 @@ export const activity: Activity[] = [
       "g4 ends, the internal and external network links are fully opened (external network RCE → DMZ → internal network → domain control). Compare the uncovered directions one by one: g2 \"reading user sensitive data\" still lacks a finishing touch, but the existing i3 (backend user interface) + i5 (API IDOR) have covered this direction and are all running. There is no [uncovered new direction that is fundamentally different] in this round - 0 new intentions according to the principle of restraint, waiting for i3/i5 to be produced.",
   },
 
-  // ── 第 4 轮 · 后台达成，收敛 g2（2026-07-26 03:55）──
+  // ── No. 4 Round · Backstage reached, convergence g2(2026-07-26 03:55)──
   {
     seq: 1400,
     worker: "planner",
@@ -1636,7 +1636,7 @@ export const activity: Activity[] = [
       "g1 achieved (3 met in 4/4: g1/g3/g4). g2 strictly adheres to quantitative acceptance - just entering the backend does not count, batch user data must be obtained before stamping; i3/i5 has been mentioned as priority 9 and refined into data acquisition intentions, and the entire task can be completed after the worker returns.",
   },
 
-  // work#1 · i1 子域枚举与端口扫描（done）
+  // work#1 · i1 Subdomain enumeration and port scanning(done)
   {
     seq: 10,
     worker: "work#1",
@@ -1721,7 +1721,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 9000,
   },
 
-  // work#2 · i2 后台默认口令（done，证明 g1）
+  // work#2 · i2 Backend default password(done,Proof g1)
   {
     seq: 20,
     worker: "work#2",
@@ -1826,7 +1826,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 7200,
   },
 
-  // work#4 · i4 SQL 注入（done）
+  // work#4 · i4 SQL Injection(done)
   {
     seq: 40,
     worker: "work#4",
@@ -1911,7 +1911,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 11000,
   },
 
-  // work#5 · i5 IDOR（running）
+  // work#5 · i5 IDOR(running)
   {
     seq: 50,
     worker: "work#5",
@@ -1991,7 +1991,7 @@ export const activity: Activity[] = [
     summary: "Traversing the ID range in batches to evaluate the size of the data that can be exceeded (not exported yet to avoid triggering interception rules).",
   },
 
-  // work#3 · i3 后台用户接口枚举（running）
+  // work#3 · i3 Backend user interface enumeration(running)
   {
     seq: 60,
     worker: "work#3",
@@ -2030,7 +2030,7 @@ export const activity: Activity[] = [
     summary: "Confirm that there is a batch user data reading entrance; the export action hits the destructive/leakage rule, and has been submitted for interception approval and is waiting for release.",
   },
 
-  // workG · ig .git 源码泄露与硬编码凭据（done）
+  // workG · ig .git Source code leakage and hard-coded credentials(done)
   {
     seq: 310,
     worker: "workG",
@@ -2115,7 +2115,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 8000,
   },
 
-  // work#6 · i6 shop 指纹与 CVE 关联（done）
+  // work#6 · i6 shop Fingerprints and CVE Association(done)
   {
     seq: 320,
     worker: "work#6",
@@ -2180,7 +2180,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 6000,
   },
 
-  // work#7 · i7 反序列化 RCE 拿反弹 shell（done，证明 g3）
+  // work#7 · i7 Deserialization RCE Take the rebound shell(done,Proof g3)
   {
     seq: 330,
     worker: "work#7",
@@ -2276,7 +2276,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 12000,
   },
 
-  // work#8 · i8 立足点提权（done）
+  // work#8 · i8 Foothold to enhance authority(done)
   {
     seq: 340,
     worker: "work#8",
@@ -2350,7 +2350,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 7000,
   },
 
-  // work#9 · i9 内网主机发现（done）
+  // work#9 · i9 Intranet host discovery(done)
   {
     seq: 350,
     worker: "work#9",
@@ -2393,7 +2393,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 8000,
   },
 
-  // work#10 · i10 内网凭据复用（running）
+  // work#10 · i10 Reuse of intranet credentials(running)
   {
     seq: 360,
     worker: "work#10",
@@ -2432,7 +2432,7 @@ export const activity: Activity[] = [
     summary: "FS01 has been captured, enumerating shared directories looking for more credentials and sensitive files...",
   },
 
-  // work#11 · i11 Jenkins 未授权 RCE（done）
+  // work#11 · i11 Jenkins Unauthorized RCE(done)
   {
     seq: 370,
     worker: "work#11",
@@ -2527,7 +2527,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 9500,
   },
 
-  // work#12 · i12 Kerberoasting（done）
+  // work#12 · i12 Kerberoasting(done)
   {
     seq: 380,
     worker: "work#12",
@@ -2601,7 +2601,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 10000,
   },
 
-  // work#13 · i13 拿下域控 DC01（done，证明 g4）
+  // work#13 · i13 Get domain control DC01(done,Proof g4)
   {
     seq: 390,
     worker: "work#13",
@@ -2696,7 +2696,7 @@ export const activity: Activity[] = [
     cache_write_tokens: 14000,
   },
 
-  // 主 agent（人在环路对话）
+  // Lord agent(People talking in the loop)
   { seq: 70, worker: "mainagent", ts: T("2026-07-26T03:18:00Z"), kind: "user", summary: "Where to start in the background?" },
   {
     seq: 71,
@@ -3013,7 +3013,7 @@ export const llmProfiles: LLMProfile[] = [
     is_default: true,
     priority: 0,
     pool_exclude: false,
-    // anthropic 的字段名固定，故 max_tokens_field 恒为空。
+    // anthropic The field names of are fixed, so max_tokens_field Always empty.
     max_tokens: 0,
     max_tokens_field: "",
   },
@@ -3032,7 +3032,7 @@ export const llmProfiles: LLMProfile[] = [
     is_default: false,
     priority: 10,
     pool_exclude: false,
-    // openai 格式 + 推理模型：上限走 max_completion_tokens。
+    // openai Format + Inference model: upper limit max_completion_tokens.
     max_tokens: 8192,
     max_tokens_field: "max_completion_tokens",
   },
@@ -3333,8 +3333,8 @@ export const settings: Settings = {
   noa_compaction: false,
 };
 
-// ── LLM 轮询（故障转移）──────────────────────────────────────────────────────
-// demo：激活配置正常，备用配置刚因余额不足熔断，正在冷却。
+// ── LLM Polling (failover)──────────────────────────────────────────────────────
+// demo:The active configuration is normal, but the standby configuration has just been blown due to insufficient balance and is cooling down..
 export const llmPool: LLMPoolStatus = {
   enabled: true,
   bind_fallback: false,
@@ -3787,7 +3787,7 @@ export const conversationMessages: Record<number, Activity[]> = {
   ],
 };
 
-// ── 资产测试覆盖度（/tasks/{id}/coverage）──
+// ── Asset test coverage(/tasks/{id}/coverage)──
 export const coverage = {
   enabled: true,
   scope_rows: 4,
@@ -3802,7 +3802,7 @@ export const coverage = {
   ],
 };
 
-// ── 资产覆盖图（/tasks/{id}/coverage-graph）──
+// ── Asset coverage map(/tasks/{id}/coverage-graph)──
 export const coverageGraph = {
   nodes: [
     { key: "c:1", kind: "company", label: "Acme Corp", tested: false, in_scope: false, company_id: 1 },
@@ -3930,8 +3930,8 @@ export const coverageGraph = {
   ],
 };
 
-// ── 资产在本任务关联的意图/事实/发现（/tasks/{id}/asset-refs）──
-// 播报板 demo:探索节点 → 其锚定资产。真实后端读 exploration_anchors,mock 里静态给几条。
+// ── The intent of the asset associated with this task/fact/Discover(/tasks/{id}/asset-refs)──
+// Announcement board demo:Explore nodes → Its anchor assets. real backend read exploration_anchors,mock Here are a few static ones..
 const NODE_ASSETS: Record<string, number[]> = {
   fi1: [3],
   fi2: [2, 4],
@@ -3961,7 +3961,7 @@ export function assetRefsFor(_assetId: number) {
   };
 }
 
-// ── 工作空间文件管理器（/workspace/*，demo：静态示例树）──
+// ── Workspace File Manager(/workspace/*,demo:Static example tree)──
 const WS_TREE: Record<string, { name: string; dir: boolean; size: number; content?: string }[]> = {
   "": [
     { name: "t-001", dir: true, size: 0 },
@@ -4024,7 +4024,7 @@ export function workspaceRead(path: string) {
   return { path: key, size: f?.size ?? 0, binary: false, content: f?.content ?? "" };
 }
 
-// ── 工具执行历史（/commands）──
+// ── Tool execution history(/commands)──
 export const commandRecords = [
   {
     id: 1,
@@ -4078,7 +4078,7 @@ export const commandRecords = [
   },
 ];
 
-// ── LLM 录制（/llm/records、/llm/records/{id}）──
+// ── LLM Recording(/llm/records,/llm/records/{id})──
 export const llmRecords = [
   {
     id: 1,
@@ -4174,7 +4174,7 @@ export function llmRecordDetail(id: number, records = llmRecords) {
       null,
       2,
     ),
-    // HTTP 原文：请求含被归一化视图丢弃的完整工具 schema，响应为原始 SSE 帧。
+    // HTTP Original: Request complete tool including discarded by normalized view schema,Response is raw SSE frame.
     raw_request: JSON.stringify({
       model: item.model,
       max_tokens: 8192,

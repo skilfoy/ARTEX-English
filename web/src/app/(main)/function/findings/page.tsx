@@ -67,14 +67,14 @@ import {
 
 const FINDING_LIST_PREFERENCE_KEY = "artex_finding_list_preferences";
 
-// 列表视图:flat = 跨任务平铺大表(默认);grouped = 按任务分组折叠;
-// asset = 左侧资产树 + 右侧该子树下的发现。
+// List view:flat = Cross-task flat table(Default);grouped = Collapse by task group;
+// asset = Asset tree on the left + Discovery under the sub-tree on the right.
 type FindingView = "flat" | "grouped" | "asset";
 
 const FINDING_VIEWS: FindingView[] = ["flat", "grouped", "asset"];
 
-// 资产树的一次性快照。与另外两个视图不同,资产视图不轮询:进入视图、改筛选、
-// 或本页改动了发现之后才重新查询。
+// A one-time snapshot of the asset tree. Different from the other two views,Asset view does not poll:Enter the view and change the filter,
+// Or search again after discovering that this page has been changed..
 interface AssetTreeState {
   nodes: FindingAssetNode[];
   findingTotal: number;
@@ -93,7 +93,7 @@ const EMPTY_ASSET_TREE: AssetTreeState = {
   loading: false,
 };
 
-// 分组视图里每个已展开任务组自带一份分页状态,彼此独立。
+// Each expanded task group in the group view comes with its own paging status,Independent of each other.
 interface GroupFindingsState {
   items: Finding[];
   total: number;
@@ -103,7 +103,7 @@ interface GroupFindingsState {
   loading: boolean;
 }
 
-// 平铺视图的页码单独放 state(而非塞进快照),筛选一变就能连带重置并触发重新加载。
+// Page numbers in tiled view are placed separately state(Instead of cramming in snapshots),When the filter changes, it can be reset and trigger a reload..
 interface FlatFindingsState {
   items: Finding[];
   total: number;
@@ -166,7 +166,7 @@ export default function FindingsPage() {
   const activeFilterFingerprint = React.useRef(filterFingerprint);
   activeFilterFingerprint.current = filterFingerprint;
 
-  // 一个轻量请求覆盖所有行/视图，避免逐行拉取完整复测历史；等待上一轮完成再轮询。
+  // One lightweight request covers all rows/View, avoid pulling the complete retest history line by line; wait for the previous round to complete before polling.
   React.useEffect(() => {
     let disposed = false;
     let failed = false;
@@ -234,7 +234,7 @@ export default function FindingsPage() {
     return () => window.clearTimeout(timer);
   }, [search]);
 
-  // setFindings 同时改写两个视图缓存里的同一条发现,切换视图不会看到过期状态。
+  // setFindings Overwrite the same finding in two view caches at the same time,You will not see the expired status when switching views.
   const setFindings = React.useCallback((update: (current: Finding[]) => Finding[]) => {
     setFlat((current) => ({ ...current, items: update(current.items) }));
     setGroupFindings((current) => {
@@ -246,9 +246,9 @@ export default function FindingsPage() {
     });
   }, []);
 
-  // 勾选导出:按 finding_id(独立表 id)记选中项,跨页保留。
+  // Check Export:Press finding_id(Independent table id)Mark the selected options,Reserved across pages.
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
-  // 导出弹窗状态:范围(当前筛选/全部/选中) × 格式(md 单文件/md 分文件 zip/csv/json)。
+  // Export pop-up window status:Range(Current filter/All/Selected) × Format(md Single file/md Divide files zip/csv/json).
   const [exportOpen, setExportOpen] = React.useState(false);
   const [exportScope, setExportScope] = React.useState<"filtered" | "all" | "selected">("filtered");
   const [exportFormat, setExportFormat] = React.useState<"md-single" | "md-zip" | "csv" | "json">("md-single");
@@ -274,7 +274,7 @@ export default function FindingsPage() {
     });
   }, []);
 
-  // 打开导出弹窗时,若有勾选项则默认范围切到「选中」,否则「当前筛选」。
+  // When opening the export pop-up window,If there is a check option, the default range will be cut to[Selected],Otherwise[Current filter].
   function openExport() {
     setExportScope(selectedIds.size > 0 ? "selected" : "filtered");
     setExportOpen(true);
@@ -311,10 +311,10 @@ export default function FindingsPage() {
   groupFindingsRef.current = groupFindings;
   visibleGroupKeysRef.current = new Set(groups.map(findingGroupKey));
 
-  // 资产视图右侧列表 = 平铺列表 + 选中子树的筛选,所以两个视图共用一份列表状态。
+  // List on the right side of the asset view = Tile list + Filtering of selected subtrees,So the two views share a list state.
   const activeAssetScope = view === "asset" ? assetScope : null;
 
-  // loadFlat 拉取平铺视图的当前页;task 筛选交给后端,与分组视图共用同一批筛选条件。
+  // loadFlat Pull the current page of the tile view;task Leave screening to the backend,Sharing the same batch of filter conditions with the group view.
   const loadFlat = React.useCallback(async () => {
     const requestFilter = filterFingerprint;
     if (activeFilterFingerprint.current !== requestFilter) return;
@@ -341,8 +341,8 @@ export default function FindingsPage() {
     }
   }, [activeAssetScope, filterFingerprint, flatPage, flatPageSize, severity, status, vulnclass, task, query, sort]);
 
-  // loadAssetTree 取整棵资产树。树不随选中节点变化(否则选一下就塌成一条链),
-  // 所以这里不带 assetScope。
+  // loadAssetTree Get the entire asset tree. The tree does not change with the selected node(Otherwise, if you choose it, it will collapse into a chain.),
+  // So it's not included here assetScope.
   const loadAssetTree = React.useCallback(async () => {
     const requestFilter = filterFingerprint;
     if (activeFilterFingerprint.current !== requestFilter) return;
@@ -473,17 +473,17 @@ export default function FindingsPage() {
     [expandedGroups, groupFindings, loadGroup],
   );
 
-  // 行内改动后刷新当前视图:平铺视图重拉当前页,分组视图刷组头 + 该发现所在的组。
+  // Refresh the current view after inline changes:Tile view redraws the current page,Brush group header in group view + The group the discovery is in.
   const refreshAfterMutation = React.useCallback(
     (finding: Finding, removed = false) => {
       if (view === "asset") {
-        // 资产视图不轮询,所以改完要顺带把树的计数也重新算一次。
+        // Asset view does not poll,So after making the change, the tree count must also be recalculated..
         void loadFlat();
         void loadAssetTree();
         return;
       }
       if (view === "flat") {
-        // 删空最后一页时,页码由越界修正 effect 回退并连带重新加载。
+        // When deleting the last page,Page number corrected by out of bounds effect Rewind with reload.
         void loadFlat();
         return;
       }
@@ -508,31 +508,31 @@ export default function FindingsPage() {
     setGroupFindings({});
     setFlatPage(1);
     setFlat(EMPTY_FLAT_STATE);
-    // 筛选变了树也会变,原先选中的节点可能已经不在树里,退回「全部资产」。
+    // If the filter changes, the tree will also change.,The originally selected node may no longer be in the tree,Return[All assets].
     setAssetScope(null);
     setAssetTree(EMPTY_ASSET_TREE);
   }, [filterFingerprint]);
 
-  // 换资产节点等于换了一份结果集,回到第一页。
+  // Changing asset nodes is equivalent to changing a result set,Back to the first page.
   React.useEffect(() => {
     void assetScope;
     setFlatPage(1);
   }, [assetScope]);
 
-  // 资产树只在进入视图 / 筛选变化时查一次(以及本页改动发现后由
-  // refreshAfterMutation 主动重拉),不做轮询。
+  // The asset tree is only in view / Check once when filtering changes(And changes to this page were discovered by
+  // refreshAfterMutation Active re-pull),No polling.
   React.useEffect(() => {
     if (!preferencesHydrated || view !== "asset") return;
-    void activeRetestFingerprint; // 复测结束可能改变状态筛选下的资产计数。
+    void activeRetestFingerprint; // At the end of the retest, the asset count under status screening may change.
     void loadAssetTree();
   }, [activeRetestFingerprint, loadAssetTree, preferencesHydrated, view]);
 
-  // 只轮询当前视图:平铺视图刷当前页,分组视图刷组头与每个已展开的组(其分页彼此独立)。
-  // 资产视图只查一次(见下面的 return),它的左树是导航结构,没必要每 5 秒重算。
-  // 等偏好水合后再发首个请求,否则会先按默认视图/筛选白拉一次。
+  // Poll only the current view:Tile view brushes the current page,Group view brushes the group header with each expanded group(The pages are independent of each other).
+  // The asset view is only checked once(See below return),Its left tree is the navigation structure,No need to 5 Second recalculation.
+  // Wait until preference is hydrated before making first request,Otherwise, the default view will be pressed first/Screen and pull once.
   React.useEffect(() => {
     if (!preferencesHydrated) return;
-    void activeRetestFingerprint; // 包括不定时轮询的资产视图，也在复测结束后刷新处置状态。
+    void activeRetestFingerprint; // Includes asset views that are polled from time to time, and the disposal status is also refreshed after the retest..
     const refresh = () => {
       if (view === "flat" || view === "asset") {
         if (!flatStateRef.current.loading) void loadFlat();
@@ -607,7 +607,7 @@ export default function FindingsPage() {
       setFindings((cur) => cur.map((x) => (isSameFinding(x, f) ? { ...x, status: next } : x)));
       try {
         await api.setFindingStatus(f.finding_id, next);
-        toast.success(`Marked as "${statusMeta("finding", next).label}」`);
+        toast.success(`Marked as "${statusMeta("finding", next).label}]`);
         // refresh stat cards (pending count) and drop the row if it no longer matches the status filter
         api
           .findingStats()
@@ -629,16 +629,16 @@ export default function FindingsPage() {
     [refreshAfterMutation, setFindings, status],
   );
 
-  // 行内展开的详细报告缓存按全局稳定行键存。report 是大段 Markdown,列表查询不带它,
-  // 故展开时才按 finding_id 单独拉取一次;done 且文本为空 = 该漏洞暂无报告。
+  // Detailed report cache for in-row expansion is stored by global stable row key.report It's a big paragraph Markdown,List query does not take it,
+  // So click to expand finding_id Pull once;done And the text is empty = This vulnerability has not been reported yet.
   const [reports, setReports] = React.useState<Record<string, FindingReport>>({});
 
-  // 行内可编辑缓冲:当前展开行的名称/类别/严重等级,展开时用该行数据初始化,收起清空。
-  // 单行展开,故一份缓冲即可。
+  // Inline editable buffer:The name of the currently expanded row/Category/Severity level,Initialize with this row of data when expanding,Close and clear.
+  // Single line expansion,So just one buffer is enough.
   const [edit, setEdit] = React.useState<FindingEdit | null>(null);
   const [saving, setSaving] = React.useState(false);
 
-  // toggle 展开/收起一行;新展开时初始化编辑缓冲,并(尚未取过时)按 finding_id 拉一次报告缓存。
+  // toggle Expand/Collapse a line;Initialize the edit buffer when newly expanded,and(Not yet withdrawn)Press finding_id Pull the report cache once.
   const toggleRow = React.useCallback(
     (f: Finding) => {
       const key = findingRowKey(f);
@@ -660,7 +660,7 @@ export default function FindingsPage() {
     [expanded, reports],
   );
 
-  // saveEdit 保存当前展开行的名称/类别/严重等级,回写本地列表并刷新统计(类别下拉/严重计数可能变)。
+  // saveEdit Save the name of the currently expanded row/Category/Severity level,Write back the local list and refresh statistics(Category drop-down/Severe count may change).
   const saveEdit = React.useCallback(
     async (f: Finding) => {
       if (!f.finding_id || !edit) return;
@@ -695,7 +695,7 @@ export default function FindingsPage() {
     [edit, refreshAfterMutation, setFindings],
   );
 
-  // deleteFinding 删除一个漏洞(需二次确认):删成功后从列表移除、收起行、刷新统计。
+  // deleteFinding Remove a vulnerability(Requires second confirmation):After successful deletion, remove from the list, close the row, and refresh statistics.
   const deleteFinding = React.useCallback(
     async (f: Finding) => {
       if (!f.finding_id) return;
@@ -760,8 +760,8 @@ export default function FindingsPage() {
     { label: "Low risk", value: stats.low, tone: "text-slate-500", icon: InfoIcon },
   ];
 
-  // 导出弹窗里「当前筛选」的条数:两个视图的筛选一致,只是统计口径来源不同。
-  // 平铺与资产视图共用 flat 列表状态,分组视图的口径来自组接口的 finding_total。
+  // Export pop-up window[Current filter]number of items:The filtering of the two views is consistent,Only the sources of statistical caliber are different.
+  // Tiles are shared with asset views flat List status,The caliber of the group view comes from the group interface finding_total.
   const filteredTotal = view === "grouped" ? total : flat.total;
   const assetPath = React.useMemo(
     () => (view === "asset" ? assetPathOf(assetTree.nodes, assetScope) : []),
@@ -786,7 +786,7 @@ export default function FindingsPage() {
     onDelete: deleteFinding,
   };
 
-  // 平铺视图与资产视图右侧是同一张表 + 同一份分页,只是筛选条件不同。
+  // The right side of the tile view and the asset view is the same table + Same pagination,Only the filtering conditions are different.
   const flatListCard = (
     <Card className="gap-0 py-0">
       <CardContent className="px-0">
@@ -1049,7 +1049,7 @@ export default function FindingsPage() {
                             {group.task_id === null
                               ? "Not associated/task deleted"
                               : group.task_name
-                                ? `${group.task_name}(Task #${group.task_id}）`
+                                ? `${group.task_name}(Task #${group.task_id})`
                                 : `Task #${group.task_id}`}
                           </CardTitle>
                           <CardDescription className="truncate" title={group.task_description}>
@@ -1213,8 +1213,7 @@ export default function FindingsPage() {
               <span className="text-xs text-muted-foreground">Export range</span>
               <RadioGroup value={exportScope} onValueChange={(v) => setExportScope(v as typeof exportScope)}>
                 <label htmlFor="export-scope-filtered" className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem id="export-scope-filtered" value="filtered" /> Export current filter results (total {filteredTotal}{" "}
-                  strip)
+                  <RadioGroupItem id="export-scope-filtered" value="filtered" /> Export current filter results ({filteredTotal} findings)
                 </label>
                 <label htmlFor="export-scope-all" className="flex items-center gap-2 text-sm">
                   <RadioGroupItem id="export-scope-all" value="all" /> Export all
@@ -1224,7 +1223,7 @@ export default function FindingsPage() {
                   className={cn("flex items-center gap-2 text-sm", selectedIds.size === 0 && "text-muted-foreground")}
                 >
                   <RadioGroupItem id="export-scope-selected" value="selected" disabled={selectedIds.size === 0} />
-                  Export checked {selectedIds.size} strip
+                  Export {selectedIds.size} selected findings
                 </label>
               </RadioGroup>
             </div>
@@ -1242,7 +1241,7 @@ export default function FindingsPage() {
                   <RadioGroupItem id="export-format-csv" value="csv" /> CSV table (.csv)
                 </label>
                 <label htmlFor="export-format-json" className="flex items-center gap-2 text-sm">
-                  <RadioGroupItem id="export-format-json" value="json" /> JSON（.json）
+                  <RadioGroupItem id="export-format-json" value="json" /> JSON(.json)
                 </label>
               </RadioGroup>
             </div>

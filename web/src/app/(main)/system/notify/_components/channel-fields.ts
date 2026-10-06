@@ -1,9 +1,9 @@
-// 渠道字段表与配置值的解析工具。
+// Parsing tool for channel field tables and configuration values.
 //
-// 与页面拆开是因为这一份是**数据**而不是视图：它描述每种渠道有哪些字段、
-// 各自该用什么控件，以及表单文本到配置值（JSON）的双向转换。
-// 单独放一个文件后，新增渠道只需要动这里，页面本身不必改。
-// 渠道类型的展示名与简介。放在前端是因为它只影响文案，后端不需要知道。
+// Separated from the page because this one is**Data**Instead of a view: it describes what fields are there for each channel,
+// What controls should be used, and form text to configuration values(JSON)bidirectional conversion of.
+// After placing a separate file, you only need to move here to add a new channel, and the page itself does not need to be changed..
+// The display name and introduction of the channel type. It is placed on the front end because it only affects the copywriting and the back end does not need to know.
 export const KIND_LABEL: Record<string, string> = {
   dingtalk: "DingTalk",
   feishu: "Feishu",
@@ -13,14 +13,14 @@ export const KIND_LABEL: Record<string, string> = {
   email: "Mail",
 };
 
-// 各渠道的配置字段定义。
+// Configuration field definitions for each channel.
 //
-// 这里刻意保留一份前端字段表，而不是让后端下发 schema：后端只负责
-// Validate（必填/格式），UI 需要的是布局与控件类型，两者关注的不是同一件事。
-// 唯一的耦合点是 secret_keys —— 哪些字段该渲染成密码框由后端给出，
-// 因为只有渠道实现自己清楚哪些值算凭据（企业微信的整个 Webhook 就是凭据，
-// 而钉钉的只是其中一个 secret）。新增渠道时这里少一个条目只会让表单变空白，
-// 不会静默出错（下面的 hasFields 会提示）。
+// A front-end field table is deliberately kept here instead of being distributed by the back-end. schema:The backend is only responsible for
+// Validate(Required/Format),UI What is needed is layout and control type, the two are not concerned with the same thing.
+// The only coupling point is secret_keys —— Which fields should be rendered into password boxes are given by the backend,
+// Because only the channel realizes that it knows which values are counted as credentials (the entire enterprise WeChat Webhook It's the credentials,
+// And Dingding is only one of them secret).When adding a new channel, missing one entry here will only make the form blank.,
+// Does not error silently (below hasFields will prompt).
 export type FieldKind = "text" | "password" | "number" | "select" | "textarea" | "switch" | "kv" | "list";
 export interface FieldDef {
   key: string;
@@ -152,7 +152,7 @@ export const emptyForm = (kind: string): ChannelForm => ({
   onStatusChange: false,
 });
 
-// parseKV 解析「每行 KEY=VALUE」的文本域。
+// parseKV Analysis[per line KEY=VALUE]text field.
 export function parseKV(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const line of text.split("\n")) {
@@ -163,19 +163,19 @@ export function parseKV(text: string): Record<string, string> {
   }
   return out;
 }
-// parseIDs 解析逗号/空白分隔的 id 列表。
+// parseIDs Parsing commas/White space separated id List.
 export function parseIDs(text: string): number[] {
   return text
-    .split(/[\s,，]+/)
+    .split(/[\s,,]+/)
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s) => Number(s))
     .filter((n) => Number.isFinite(n) && n > 0);
 }
-// parseKeywords 解析行/逗号分隔的关键词列表（漏洞类型名可能含空格，所以按行或逗号切）。
+// parseKeywords Parse line/Comma-separated keyword list (the vulnerability type name may contain spaces, so cut by line or comma).
 export function parseKeywords(text: string): string[] {
   return text
-    .split(/[\n,，]+/)
+    .split(/[\n,,]+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }

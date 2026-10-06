@@ -14,18 +14,18 @@ func noaWarn(session string) func(string) {
 	return func(msg string) { log.Printf("[noa] %s: %s", session, msg) }
 }
 
-// noa 是 norma v0.4.0 引入的「模型驱动上下文压缩」机制,作为平台实验功能由用户在
-// 系统设置中开关。它与内置 compaction 互斥:noaadapter.Enable 是唯一入口,一次挂上
-// 上下文接管器(Compactor)、Compress 工具与三段常驻提示词,不调用 Enable 即为关闭
-// (内置 compaction 照常工作)。开关由每个 agent 注入的 noaEnabledFn 解析,每 run 读
-// 一次,故切换只影响之后启动的 run,无需重建 agent。
+// noa Yes norma v0.4.0 Introduction[Model driven context compression]Mechanisms,As a platform experiment feature, user-driven
+// system settings. It's with the interior. compaction Crust.:noaadapter.Enable The only way in.,Hang up once.
+// Context receiver(Compactor),Compress Tools & Three Permanent Notes,Do Not Call Enable Close
+// (Built-in compaction Work as usual.).Switches by each agent Injecting. noaEnabledFn Analysis,each run Read
+// Once.,So switch only to start after run,No need to rebuild. agent.
 
-// enableNoa 在解析器报告开启时把 noa 接入 opts。archiveRoot 是压缩原文的持久化基目录
-// (取全局 workDir,各 agent 统一落在 <workDir>/noa 下,不随任务/意图目录分散),sessionID
-// 命名其下的归档子目录(全局唯一,故同一基目录内不冲突)。
+// enableNoa When the parser report opens noa Access opts.archiveRoot It's a condensed sustainable base directory.
+// (Take Global workDir,Each agent Unanimous <workDir>/noa Down,Do not follow the mission/Intentional directory dispersed),sessionID
+// Naming its lower archive subdirectories(One in the world.,So there's no conflict in the same base directory.).
 //
-// noa 是实验功能:接入失败不得中断真实任务。发生错误时经 onWarn 上报并回退内置压缩。
-// 启用成功时清掉 opts.Compaction,避免 agentcore 因「两个上下文管理器同时设置」告警。
+// noa It's an experimental function.:Access failure must not interrupt the real task. When an error occurs onWarn Report and reverse internal compression.
+// Clear when enabled opts.Compaction,Avoid agentcore Because[Both context manager settings]Police!.
 func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessionID string, onWarn func(string)) {
 	if enabled == nil || !enabled() {
 		return
@@ -39,10 +39,10 @@ func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessio
 		OnWarn:         onWarn,
 	}); err != nil {
 		if onWarn != nil {
-			onWarn("noa 压缩启用失败,回退内置压缩:" + err.Error())
+			onWarn("noa Compression enabled failed,Revert internal compression:" + err.Error())
 		}
 		return
 	}
-	// Compactor 覆盖 Compaction,但两者并存时 agentcore 每次会告警;明确清掉。
+	// Compactor override Compaction,But when they're together, agentcore Every time, they call the police.;Clear..
 	opts.Compaction = nil
 }

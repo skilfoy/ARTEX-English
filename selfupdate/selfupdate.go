@@ -1,23 +1,23 @@
-// Package selfupdate implements ARTEX 的页面一键更新：从 GitHub Release 拉取新版
-// 二进制、校验、暂存，并在下次启动时原子换装。
+// Package selfupdate implements ARTEX . Page 1 update from: GitHub Release Draw new editions
+// Binary, validation, temporary storage and atom replacement at next startup.
 //
-// 整体分工（见 start.sh / start.bat）：
+// Overall division of labour (see start.sh / start.bat):
 //
-//	启动脚本  = 傻瓜守护循环，只负责"进程退出后按退出码决定是否再拉起"
-//	本包      = 全部易错逻辑（下载 / SHA256 校验 / 冒烟 / 换装 / 失败回滚）
+//	Start Script  = Fools guard the loop, only responsible."After process exits, decide whether to pull again by exit code"
+//	This bag.      = All error-prone logic (downloading) / SHA256 Verification / Smoke. / Change up / Failed Rollback)
 //
-// 之所以把换装放在 Go 而不是脚本里，是因为 sha256 校验和冒烟测试在 sh 和 bat 上
-// 要写两套（sha256sum / shasum / certutil），而这恰恰是最不能出错的一环——换上一个
-// 跑不起来的二进制，守护进程会忠实地反复拉起它，用户只能上机器手工救。
+// It's because of the change. Go Not in the script because... sha256 Checking and smoking tests. sh and bat on
+// Two sets to write.(sha256sum / shasum / certutil),And that's exactly what makes the most of mistakes.——Change one.
+// The binary that can't run, the dæmon will pull it up faithfully and repeatedly. Help!.
 //
-// 一次完整升级经过三次进程启动：
+// One complete upgrade was initiated by three processes:
 //
-//	① 旧版 server 收到 /api/update/apply → 下载校验 → 暂存 artex.new → exit 75
-//	② 脚本重新拉起旧版 → Bootstrap 发现 artex.new → 校验+冒烟 → 换装 → exit 75
-//	③ 脚本重新拉起，此时已是新版 → Bootstrap 记一次尝试 → 启动成功后清除标记
+//	① Old version server Received /api/update/apply → Download Verification → Pending artex.new → exit 75
+//	② Scripts to reboot old versions → Bootstrap Discover artex.new → Verification+Smoke. → Change up → exit 75
+//	③ Scripts are back up. It's new. → Bootstrap One try. → Clear tag after start successful
 //
-// 任何一步失败都退回旧版：② 校验不过就删掉暂存件继续跑旧版；③ 连续 3 次没活到
-// 清除标记（起不来就崩）则自动把 artex.old 换回去。
+// Any failure returns the old version.:② If you can't verify, delete the temporarys and keep running the old ones.;③ Continuous 3 He didn't make it.
+// Clear the markers, and automatically put it. artex.old Change it back..
 package selfupdate
 
 import (
@@ -29,41 +29,41 @@ import (
 	"strings"
 )
 
-// ExitRestart 是"请守护进程重新拉起我"的退出码（EX_TEMPFAIL）。启动脚本看到它
-// 就立刻重跑，不计入崩溃退避。0 表示用户正常停止（脚本退出循环），其余均视为崩溃。
+// ExitRestart Yes"Please protect me."Exit code(EX_TEMPFAIL).Start the script and see it.
+// We'll run again, not counting the crash..0 This means that the user stops normally (script exits cycle), the rest is considered to be collapse.
 const ExitRestart = 75
 
-// maxAttempts 是换装后允许的启动尝试次数。新版每次启动都会把计数 +1，活过
-// settleDelay 则清除标记；连崩 maxAttempts 次说明新版根本起不来，自动回滚。
+// maxAttempts is the number of start-up attempts allowed after reloading. The new edition counts every time it starts. +1,Live.
+// settleDelay clears the markings; crashes maxAttempts The new edition doesn't come up..
 const maxAttempts = 3
 
-// Paths 是一次升级涉及的全部文件，统一挂在**可执行文件所在目录**下。
-// 刻意不用 CWD：服务化运行时工作目录可能是 / 或任意路径，用 CWD 会让暂存件落到
-// 别处，换装逻辑直接失效。
+// Paths It's all the files involved in a single upgrade.**Directory of Executable Files**Down.
+// I don't want to. CWD:The server runtime directory may be / Or any path, with CWD I'll let the temporary deposit come down.
+// Somewhere else, the reloading logic simply lapses..
 type Paths struct {
-	Dir     string // 可执行文件所在目录
-	Current string // 当前运行的二进制        artex      / artex.exe
-	New     string // 暂存的新版本            artex.new  / artex.new.exe
-	Sum     string // 新版本的 sha256（hex）  artex.new.sha256 / artex.new.exe.sha256
-	Old     string // 换装前备份的旧版本      artex.old  / artex.old.exe
-	Marker  string // 升级状态标记            artex.upgrade.json
+	Dir     string // Directory of Executable Files
+	Current string // Current running binary        artex      / artex.exe
+	New     string // Saved New Version            artex.new  / artex.new.exe
+	Sum     string // New version sha256(hex)  artex.new.sha256 / artex.new.exe.sha256
+	Old     string // Change old version of the backup before loading      artex.old  / artex.old.exe
+	Marker  string // Upgrade Status Marker            artex.upgrade.json
 }
 
-// ResolvePaths 按当前可执行文件推导全部升级路径。
+// ResolvePaths Path all upgrades to the current executable.
 //
-// Windows 上 .new/.old 也必须带 .exe 后缀，否则冒烟测试和换装后的执行都会失败，
-// 所以先把后缀摘掉再拼，两个平台的命名才对称。
+// Windows on .new/.old It has to be. .exe The suffix, or the smoke test and the refitting will fail.,
+// So take off the suffix and spell it. The name of the two platforms is symmetrical..
 func ResolvePaths() (Paths, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return Paths{}, fmt.Errorf("定位可执行文件: %w", err)
+		return Paths{}, fmt.Errorf("Position Executable: %w", err)
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
 	dir := filepath.Dir(exe)
 	name := filepath.Base(exe)
-	ext := filepath.Ext(name) // Windows 上是 ".exe"，Unix 上通常为空
+	ext := filepath.Ext(name) // Windows Top ".exe",Unix It's usually empty.
 	stem := strings.TrimSuffix(name, ext)
 
 	join := func(suffix string) string { return filepath.Join(dir, stem+suffix+ext) }
@@ -77,11 +77,11 @@ func ResolvePaths() (Paths, error) {
 	}, nil
 }
 
-// marker 记录一次换装的进度，用来在新版起不来时触发自动回滚。
+// marker Record the progress of a change of clothes to trigger automatic rollback when the new edition does not come.
 type marker struct {
-	From     string `json:"from"`     // 升级前的版本
-	To       string `json:"to"`       // 目标版本
-	Attempts int    `json:"attempts"` // 换装后已尝试启动的次数
+	From     string `json:"from"`     // Pre-upgrade version
+	To       string `json:"to"`       // Target Version
+	Attempts int    `json:"attempts"` // Number of attempts to start after reloading
 	StagedAt int64  `json:"staged_at"`
 }
 
@@ -105,17 +105,17 @@ func writeMarker(path string, m marker) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-// cleanStaged 清掉暂存件。换装成功、校验失败、用户取消都走它，避免残留的
-// artex.new 在下次启动时被重新尝试。
+// cleanStaged Other Organiser The reload was successful, the check failed, the user canceled it, and the rest was avoided.
+// artex.new Try again at next startup.
 func cleanStaged(p Paths) {
 	_ = os.Remove(p.New)
 	_ = os.Remove(p.Sum)
 }
 
-// CompareVersions 比较两个版本号，返回 -1/0/1（a<b / a==b / a>b）。
-// ok=false 表示至少一边不是可比较的版本号（例如本地开发构建的 "dev" 或
-// git describe 产出的 "0.3.7-2-gabc1234-dirty"），此时调用方应禁用一键更新，
-// 否则会把开发中的构建"升级"成正式版、覆盖掉未提交的改动。
+// CompareVersions Compare two versions, return -1/0/1(a<b / a==b / a>b).
+// ok=false Means that at least one side is not a comparable version number (e.g. locally developed builder) "dev" or
+// git describe Outputs "0.3.7-2-gabc1234-dirty"),The caller should disable one key update at this time,
+// Or we'll put the building under development."Upgrade"Formalize, cover unsubmitted changes.
 func CompareVersions(a, b string) (int, bool) {
 	av, aok := parseVersion(a)
 	bv, bok := parseVersion(b)
@@ -133,11 +133,11 @@ func CompareVersions(a, b string) (int, bool) {
 	return 0, true
 }
 
-// parseVersion 解析 "v0.3.7" / "0.3.7" 形式的版本号为 [3]int。
+// parseVersion Analysis "v0.3.7" / "0.3.7" Version number in form [3]int.
 //
-// 只接受纯净的三段式：build.sh 在非 tag 构建时用 git describe 产出
-// "0.3.7-2-gabc1234" 这类带后缀的版本，它们必须被判为不可比较，而不是被当成
-// 0.3.7 —— 否则开发构建会被误判为"已是最新"或被正式版覆盖。
+// Only a pure three-part pattern is accepted:build.sh In Africa tag Use for construction git describe output
+// "0.3.7-2-gabc1234" These suffixed versions must be judged non-comparison rather than as
+// 0.3.7 —— Otherwise, the construction will be miscalculated."It's the latest."Or covered by official editions.
 func parseVersion(s string) ([3]int, bool) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "v")
@@ -159,9 +159,9 @@ func parseVersion(s string) ([3]int, bool) {
 	return out, true
 }
 
-// InDocker 报告进程是否跑在容器里。Docker 下换装写的是容器可写层，
-// `docker compose up -d` 重建容器会退回镜像自带的版本——这是预期行为
-// （那时用户本来就在拉新镜像），但前端要能据此把话说清楚。
+// InDocker Is the reporting process in the container?.Docker The next reload is written on the packaging.,
+// `docker compose up -d` Rebuild the container will return the version of the mirror itself.——It's an expected act.
+// (But the front end needs to be clear..
 func InDocker() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true

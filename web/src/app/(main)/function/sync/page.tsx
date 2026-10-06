@@ -87,7 +87,7 @@ function ScopeSentryPanel() {
   );
 }
 
-// ── 数据源状态卡 ─────────────────────────────────────────────────────────────
+// ── Data source status card ─────────────────────────────────────────────────────────────
 
 function DataSourceCard({
   status,
@@ -213,7 +213,7 @@ function StatusBadge({ status, loading }: { status: SSStatus | null; loading: bo
   );
 }
 
-// ── 同步工作区（项目 / 任务维度）────────────────────────────────────────────────
+// ── Sync Workspace (Project / Task dimensions)────────────────────────────────────────────────
 
 function SyncWorkbench() {
   const [dimension, setDimension] = React.useState<Dimension>("project");
@@ -279,7 +279,7 @@ function SyncWorkbench() {
       });
       setResult(r);
       const total = Object.values(r.synced ?? {}).reduce((a, b) => a + b, 0);
-      toast.success(`Synchronization completed and stored in the database together${total}Article assets`);
+      toast.success(`Synchronization completed; ${total} assets saved`);
     } catch (e) {
       toast.error(`Synchronization failed:${(e as Error).message}`);
     } finally {
@@ -340,7 +340,7 @@ function SyncWorkbench() {
         <CardTitle className="text-base">Select data synchronization</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* 维度切换 */}
+        {/* Dimension switching */}
         <Tabs
           value={dimension}
           onValueChange={(v) => {
@@ -354,7 +354,7 @@ function SyncWorkbench() {
           </TabsList>
         </Tabs>
 
-        {/* 资产类型 + 选项 */}
+        {/* Asset type + Options */}
         <div className="flex flex-wrap items-center gap-4">
           <span className="font-medium text-sm">Synchronized assets:</span>
           {ASSET_TYPES.map((t) => (
@@ -375,7 +375,7 @@ function SyncWorkbench() {
           )}
         </div>
 
-        {/* 搜索 + 操作 */}
+        {/* Search + Operation */}
         <div className="flex items-center gap-2">
           <div className="relative max-w-xs flex-1">
             <SearchIcon className="absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -402,7 +402,7 @@ function SyncWorkbench() {
           </Button>
         </div>
 
-        {/* 列表 */}
+        {/* List */}
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -428,7 +428,7 @@ function SyncWorkbench() {
           </Table>
         </div>
 
-        {/* 分页 */}
+        {/* Page */}
         <div className="flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
             Previous page
@@ -444,7 +444,7 @@ function SyncWorkbench() {
           </Button>
         </div>
 
-        {/* 结果 */}
+        {/* Results */}
         {result && <SyncResult result={result} />}
       </CardContent>
     </Card>
@@ -464,7 +464,7 @@ function SyncResult({ result }: { result: Awaited<ReturnType<typeof api.ssSync>>
         ))}
       </div>
       {result.companies && result.companies.length > 0 && (
-        <p className="text-muted-foreground">New/update enterprise:{result.companies.join("、")}</p>
+        <p className="text-muted-foreground">New/update enterprise:{result.companies.join(",")}</p>
       )}
       {result.warnings && result.warnings.length > 0 && (
         <ul className="list-inside list-disc text-amber-600 dark:text-amber-500">

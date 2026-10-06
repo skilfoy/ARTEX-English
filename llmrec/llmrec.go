@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Autumn-27/artex/db"
 	"github.com/Autumn-27/norma/llm"
 	"github.com/Autumn-27/norma/transcript"
+	"github.com/skilfoy/ARTEX-English/db"
 )
 
 type taskIDContextKey struct{}
@@ -66,9 +66,9 @@ type Recorder struct {
 	pg    *db.DB
 	model string // model name (from config, not in CompletionRequest)
 	prof  string // LLM profile name (from llm_profiles)
-	// thinkingType / reasoningEffort 是配置级思考参数(思考开关 / 思考强度)。它们在
-	// norma 的 buildBody() 里从 provider 配置注入真正的 HTTP body,不出现在
-	// CompletionRequest 上,故 Recorder 需在此单独带一份,序列化时写进录制。
+	// thinkingType / reasoningEffort It's a configuration reflection parameter.(Think switch / Thinking intensity).They're...
+	// norma of buildBody() Ree. provider Configure into real HTTP body,Not here.
+	// CompletionRequest on,So Recorder We'll have to bring one here.,Write in Sequencing.
 	thinkingType    string
 	reasoningEffort string
 	enabled         func() bool // reports whether recording is currently on; nil = always record
@@ -358,9 +358,9 @@ func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 		"messages":   req.Messages,
 		"max_tokens": req.MaxTokens,
 	}
-	// 记录本次调用实际发出的思考参数。type 采用「有效值」：每请求覆盖 req.Thinking
-	// 优先于配置级 thinkingType(与 norma buildBody 的判定一致，如 compaction 摘要会
-	// 强制 disabled)；effort 无每请求覆盖，直接取配置值。两者皆空则不写 thinking 字段。
+	// Record the actual thought parameters of this call.type Adoption[Valid value]:Overwrite per Request req.Thinking
+	// Priority over configuration level thinkingType(With norma buildBody The determination is consistent, e.g. compaction Summary meeting
+	// Force disabled);effort No request overwhelms, take the configuration value directly. Neither is written. thinking Field.
 	effType := r.thinkingType
 	if req.Thinking != "" {
 		effType = req.Thinking

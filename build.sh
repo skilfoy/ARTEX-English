@@ -29,19 +29,19 @@ die() { printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-用法：
-  ./build.sh                         编译当前系统当前架构
-  ./build.sh --target linux/amd64   编译一个指定目标
-  ./build.sh --release               编译并打包全部支持的目标
+Usage:
+  ./build.sh                         Compile the current architecture of the current system
+  ./build.sh --target linux/amd64   Compile a specified target
+  ./build.sh --release               Compile and package all supported targets
 
-选项：
-  --release              构建 Linux、macOS、Windows 的 amd64/arm64 目标并生成 zip
-  --target OS/ARCH       设置单个目标，例如 windows/amd64
-  --upx                  强制使用 UPX 压缩二进制（可能影响部分 Linux 环境兼容性）
-  --no-compress          不使用 UPX，仅使用 Go linker 裁剪并压缩 zip
-  --help                 显示帮助
+Options:
+  --release              Build Linux,macOS,Windows of amd64/arm64 Target and Generate zip
+  --target OS/ARCH       Set a single target, for example windows/amd64
+  --upx                  Force Use UPX Compressed binary (perfect part) Linux Environmental compatibility)
+  --no-compress          Do Not Use UPX,Use only Go linker Crop and Compress zip
+  --help                 Show Help
 
-多目标列表可通过 ARTEX_TARGETS 覆盖，例如：
+Multi-Target List ARTEX_TARGETS Overwrite, e.g.:
   ARTEX_TARGETS=linux/amd64,windows/amd64 ./build.sh --release
 EOF
 }
@@ -59,7 +59,7 @@ while [ "$#" -gt 0 ]; do
       shift
       ;;
     --target)
-      [ "$#" -ge 2 ] || die "--target 需要 OS/ARCH 参数"
+      [ "$#" -ge 2 ] || die "--target Need OS/ARCH Parameter"
       target_arg="$2"
       case "$target_arg" in
         */*)
@@ -67,7 +67,7 @@ while [ "$#" -gt 0 ]; do
           ARTEX_TARGET_ARCH="${target_arg##*/}"
           ARTEX_TARGETS="$target_arg"
           ;;
-        *) die "目标必须是 OS/ARCH，例如 linux/amd64" ;;
+        *) die "The goal must be OS/ARCH,For example linux/amd64" ;;
       esac
       shift 2
       ;;
@@ -83,11 +83,11 @@ while [ "$#" -gt 0 ]; do
       usage
       exit 0
       ;;
-    *) die "未知参数：$1（使用 --help 查看用法）" ;;
+    *) die "Unknown parameter:$1(Use --help View Usage)" ;;
   esac
 done
 
-command -v go >/dev/null 2>&1 || die "未检测到 Go（项目需要 Go 1.26 或更高版本）"
+command -v go >/dev/null 2>&1 || die "Not detected Go(Project requirements Go 1.26 Or higher version)"
 
 ARTEX_GOSUMDB="${ARTEX_GOSUMDB:-sum.golang.org}"
 if [ -z "${ARTEX_BUILD_VERSION:-}" ]; then
@@ -112,16 +112,16 @@ else
 fi
 
 if [ "${ARTEX_SKIP_FRONTEND:-0}" = "1" ]; then
-  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 但 server/webui/dist 不存在"
+  [ -d server/webui/dist ] || die "ARTEX_SKIP_FRONTEND=1 But... server/webui/dist does not exist"
 else
-  command -v npm >/dev/null 2>&1 || die "未检测到 npm（前端静态构建需要 Node.js/npm）"
-  command -v rsync >/dev/null 2>&1 || die "未检测到 rsync"
-  info "构建前端静态资源"
+  command -v npm >/dev/null 2>&1 || die "Not detected npm(Front-end static construction needs Node.js/npm)"
+  command -v rsync >/dev/null 2>&1 || die "Not detected rsync"
+  info "Build frontend static resource"
   if [ "${ARTEX_SKIP_NPM_CI:-0}" != "1" ]; then
     (cd web && npm ci)
   fi
   (cd web && npm run build:static)
-  info "同步前端资源到 server/webui/dist"
+  info "Sync front-end resources to server/webui/dist"
   mkdir -p server/webui/dist
   rsync -a --delete web/out/ server/webui/dist/
 fi
@@ -131,18 +131,18 @@ compress_binary() {
   goos="$2"
   case "$ARTEX_COMPRESS" in
     0|off|false|none)
-      info "跳过 UPX：$binary"
+      info "Skip UPX:$binary"
       return 0
       ;;
     auto|required|true|1) ;;
-    *) die "ARTEX_COMPRESS 必须是 off、auto 或 required" ;;
+    *) die "ARTEX_COMPRESS Must be. off,auto or required" ;;
   esac
 
   if ! command -v upx >/dev/null 2>&1; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "ARTEX_COMPRESS=required 但未检测到 upx"
+      die "ARTEX_COMPRESS=required But not detected upx"
     fi
-    warn "未检测到 upx，保留 linker 压缩结果：$binary"
+    warn "Not detected upx,Reservations linker Compression result:$binary"
     return 0
   fi
 
@@ -152,13 +152,13 @@ compress_binary() {
   # shellcheck disable=SC2086
   if ! upx $upx_args -- "$binary"; then
     if [ "$ARTEX_COMPRESS" = "required" ]; then
-      die "UPX 压缩失败：$binary"
+      die "UPX Compression Failed:$binary"
     fi
-    warn "UPX 不支持该目标格式，保留未压缩二进制：$binary"
+    warn "UPX Do not support this target format, keep uncompressed binary:$binary"
     return 0
   fi
   after=$(wc -c < "$binary" | tr -d ' ')
-  ok "UPX 压缩完成：$binary (${before} -> ${after} bytes)"
+  ok "UPX Compression complete.:$binary (${before} -> ${after} bytes)"
 }
 
 package_binary() {
@@ -169,12 +169,12 @@ package_binary() {
   package_root="${ARTEX_PACKAGE_DIR}/${package_name}"
   archive="${ARTEX_PACKAGE_DIR}/${package_name}.zip"
 
-  command -v zip >/dev/null 2>&1 || die "打包需要 zip"
+  command -v zip >/dev/null 2>&1 || die "Packing. zip"
   rm -rf "$package_root" "$archive"
   mkdir -p "$package_root"
   cp "$binary" "$package_root/"
-  # 守护启动脚本是正式入口：页面上的一键更新要靠它在进程退出后重新拉起，
-  # 直接跑 artex 本体的话更新完就再也起不来了。按目标系统只带对应的那一份。
+  # The Guardian Start Script is the official entrance: a key update on the page depends on it re-pushing after process exit Rise,
+  # Just run. artex It'll never get up again after it's been updated. Only the one with the target system..
   if [ "$goos" = "windows" ]; then
     cp start.bat "$package_root/"
   else
@@ -186,20 +186,20 @@ package_binary() {
   if [ -f README.md ]; then cp README.md "$package_root/"; fi
   (cd "$ARTEX_PACKAGE_DIR" && zip -q -r -9 "$(basename "$archive")" "$(basename "$package_root")")
   rm -rf "$package_root"
-  ok "Release 压缩包：$archive"
+  ok "Release Compressed package:$archive"
 }
 
 build_target() {
   target="$1"
   case "$target" in
     */*) ;;
-    *) die "无效目标：$target（必须是 OS/ARCH）" ;;
+    *) die "Invalid Target:$target(Must be. OS/ARCH)" ;;
   esac
   goos="${target%%/*}"
   goarch="${target##*/}"
   case "$goos" in
     linux|darwin|windows) ;;
-    *) die "不支持的系统：$goos（支持 linux、darwin、windows）" ;;
+    *) die "System not supported:$goos(Support linux,darwin,windows)" ;;
   esac
 
   binary_name="artex"
@@ -211,7 +211,7 @@ build_target() {
   fi
   mkdir -p "$(dirname "$output")"
 
-  info "编译 ${goos}/${goarch}，版本 ${ARTEX_BUILD_VERSION}"
+  info "Compile ${goos}/${goarch},version ${ARTEX_BUILD_VERSION}"
   GOSUMDB="$ARTEX_GOSUMDB" \
   CGO_ENABLED=0 \
   GOOS="$goos" \
@@ -226,7 +226,7 @@ build_target() {
   compress_binary "$output" "$goos"
   if command -v file >/dev/null 2>&1; then file "$output"; fi
   if [ "$ARTEX_PACKAGE" = "1" ]; then package_binary "$output" "$goos" "$goarch"; fi
-  ok "编译完成：$output"
+  ok "Compiled:$output"
 }
 
 write_checksums() {
@@ -237,10 +237,10 @@ write_checksums() {
   elif command -v shasum >/dev/null 2>&1; then
     (cd "$ARTEX_PACKAGE_DIR" && for archive in *.zip; do shasum -a 256 "$archive"; done > "$(basename "$checksum_file")")
   else
-    warn "未检测到 sha256sum 或 shasum，跳过 SHA256SUMS"
+    warn "Not detected sha256sum or shasum,Skip SHA256SUMS"
     return 0
   fi
-  ok "校验文件：$checksum_file"
+  ok "Verify File:$checksum_file"
 }
 
 mkdir -p "$ARTEX_OUTPUT_DIR"
@@ -250,7 +250,7 @@ old_ifs="$IFS"
 IFS=','
 read -r -a targets <<< "$ARTEX_TARGETS"
 IFS="$old_ifs"
-[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS 不能为空"
+[ "${#targets[@]}" -gt 0 ] || die "ARTEX_TARGETS Cannot be empty"
 for target in "${targets[@]}"; do
   target="${target//[[:space:]]/}"
   [ -n "$target" ] || continue
@@ -259,5 +259,5 @@ done
 
 if [ "$ARTEX_PACKAGE" = "1" ]; then
   write_checksums
-  info "Release 包已生成于：$ARTEX_PACKAGE_DIR"
+  info "Release Package generated from:$ARTEX_PACKAGE_DIR"
 fi

@@ -52,6 +52,15 @@ func BaseDir() string {
 	return dir
 }
 
+// KeyDir keeps the JWT signing key outside the browsable application data tree.
+// Container deployments can mount this directory as persistent private state.
+func KeyDir() string {
+	if dir := strings.TrimSpace(os.Getenv("ARTEX_KEY_DIR")); dir != "" {
+		return dir
+	}
+	return BaseDir()
+}
+
 // isGoRunDir reports whether dir is where `go run` parked its executable: under
 // the system temp dir (cache miss), or anywhere inside a Go build cache
 // (…/go-build/…, the cache-hit case — NOT under os.TempDir(), which is why the
@@ -136,16 +145,16 @@ func SkillDir() string {
 // DSN came from (for startup logging).
 func PostgresDSN() (dsn, source string, err error) {
 	if v := strings.TrimSpace(os.Getenv("ARTEX_PG_DSN")); v != "" {
-		return v, "环境变量 ARTEX_PG_DSN", nil
+		return v, "Environmental variables ARTEX_PG_DSN", nil
 	}
 	db := Load().Database
 	if d := strings.TrimSpace(db.DSN); d != "" {
-		return d, "配置文件 " + Path() + " (database.dsn)", nil
+		return d, "Profile " + Path() + " (database.dsn)", nil
 	}
 	if db.Host != "" || db.DBName != "" || db.User != "" {
-		return db.buildDSN(), "配置文件 " + Path() + " (database 字段)", nil
+		return db.buildDSN(), "Profile " + Path() + " (database Field)", nil
 	}
-	return "", "", fmt.Errorf("未找到数据库配置：环境变量 ARTEX_PG_DSN 未设置，且配置文件 %s 未提供 database（dsn 或 host/user/dbname）。请创建该配置文件或设置环境变量后重试", Path())
+	return "", "", fmt.Errorf("Database configuration not found: environment variable ARTEX_PG_DSN Unset and profile %s Not provided database(dsn or host/user/dbname).Please try again after creating the profile or setting the environment variable", Path())
 }
 
 func (d Database) buildDSN() string {

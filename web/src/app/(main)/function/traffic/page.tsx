@@ -47,7 +47,7 @@ import type { TrafficDetail, TrafficExchange, TrafficHost, TrafficResp } from "@
 import { cn } from "@/lib/utils";
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("en-US", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -249,7 +249,7 @@ export default function TrafficPage() {
     [hosts, hostCountSortDirection],
   );
 
-  // "清空" for the unfiltered purge, "删除" for the host-scoped ones — the dialog's
+  // "Clear" for the unfiltered purge, "Delete" for the host-scoped ones — the dialog's
   // title and its confirm button both follow from which is in play.
   const deleteVerb = deleteMode === "all" ? "Clear" : "Delete";
   const deleteTitle = deleteMode
@@ -369,7 +369,7 @@ export default function TrafficPage() {
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-8">
               <ListChecksIcon className="size-3.5" />
-              {selectedHosts.length > 0 ? `Select target (${selectedHosts.length}）` : "Select target…"}
+              {selectedHosts.length > 0 ? `Select target (${selectedHosts.length})` : "Select target…"}
             </Button>
           </PopoverTrigger>
           <PopoverContent
@@ -447,7 +447,7 @@ export default function TrafficPage() {
                   setPickerOpen(false);
                 }}
               >
-                Delete selected ({selectedHosts.length}）
+                Delete selected ({selectedHosts.length})
               </Button>
             </div>
           </PopoverContent>
@@ -467,7 +467,7 @@ export default function TrafficPage() {
           Delete the target
         </Button>
         {/* Outline rather than a second destructive button: this one ignores every
-            filter, so it must not look one mis-click away from "删除该目标". */}
+            filter, so it must not look one mis-click away from "Delete the target". */}
         <Button
           variant="outline"
           size="sm"
@@ -796,7 +796,7 @@ export default function TrafficPage() {
                 <>
                   Will be permanently deleted <span className="font-semibold tabular-nums">{selectedHosts.length}</span> goals(
                   <span className="font-mono">
-                    {selectedHosts.slice(0, 3).join("、")}
+                    {selectedHosts.slice(0, 3).join(",")}
                     {selectedHosts.length > 3 ? "…" : ""}
                   </span>
                   ) All traffic records (including request/response original text), this operation cannot be undone.

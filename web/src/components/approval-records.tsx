@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 function fmtTime(value?: string) {
   if (!value) return "—";
-  return new Date(value).toLocaleString("zh-CN", {
+  return new Date(value).toLocaleString("en-US", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -109,7 +109,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function MatchCell({ row, showReason = true }: { row: InterceptApprovalRow; showReason?: boolean }) {
-  const reason = row.reason?.replace(/^\[模型\]\s*/, "");
+  const reason = row.reason?.replace(/^\[Model\]\s*/, "");
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {source(row) === "model" ? (
@@ -370,7 +370,7 @@ export function ApprovalDetail({
             <MatchCell row={current} showReason={false} />
           </div>
           <p className="whitespace-pre-wrap break-words text-sm leading-7 [overflow-wrap:anywhere]">
-            {current.reason?.replace(/^\[模型\]\s*/, "") || "No reason for approval recorded"}
+            {current.reason?.replace(/^\[Model\]\s*/, "") || "No reason for approval recorded"}
           </p>
           {audit?.decision_reason ? <p className="text-sm">{audit.decision_reason}</p> : null}
           {audit?.effective_action ? <p className="text-sm">Final action:{actionLabels[audit.effective_action]}</p> : null}
@@ -483,8 +483,8 @@ export function ApprovalDetail({
                 </Collapsible>
               ) : null}
               <CodeBlock
-                label={`${initialLabel}：${actionLabels[audit.initial_action] ?? audit.initial_action}`}
-                text={audit.initial_reason.replace(/^\[模型\]\s*/, "")}
+                label={`${initialLabel}:${actionLabels[audit.initial_action] ?? audit.initial_action}`}
+                text={audit.initial_reason.replace(/^\[Model\]\s*/, "")}
               />
               <CodeBlock
                 label="Execution output"
@@ -860,14 +860,14 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
         <section className="overflow-hidden rounded-xl border">
           <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3 font-medium text-sm">
             <ShieldAlertIcon className="size-4" />
-            Pending ({pending.length}）<span className="text-muted-foreground text-xs">Allow or deny after expansion</span>
+            Pending ({pending.length})<span className="text-muted-foreground text-xs">Allow or deny after expansion</span>
           </div>
           <ApprovalTable rows={pending} busy={deciding} decide={decide} revision={revision} label="Pending approval" />
         </section>
       ) : null}
       <section className="overflow-hidden rounded-xl border">
         <div className="border-b px-4 py-3 font-medium text-sm">
-          {filtered ? "Filter results" : "All records"}（{total}）
+          {filtered ? "Filter results" : "All records"}({total})
         </div>
         {loading ? (
           <div className="flex flex-col gap-3 p-4">

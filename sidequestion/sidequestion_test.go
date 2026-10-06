@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Autumn-27/artex/llmpool"
 	"github.com/Autumn-27/norma/harness"
 	"github.com/Autumn-27/norma/llm"
+	"github.com/skilfoy/ARTEX-English/llmpool"
 )
 
 type fakeProvider struct {
@@ -177,7 +177,7 @@ func TestServiceNoToolsAndUsageOnFailure(t *testing.T) {
 			before := fixture()
 			req, _ := CloneRequest(before)
 			out, err := (SideQuestionService{p}).Answer(t.Context(), req, streaming, nil)
-			if err != nil || calls != 1 || !out.ToolUse || !strings.Contains(out.Text, "不能执行工具") || out.Usage.InputTokens != 11 {
+			if err != nil || calls != 1 || !out.ToolUse || !strings.Contains(out.Text, "Cannot execute tool") || out.Usage.InputTokens != 11 {
 				t.Fatalf("answer %+v calls=%d err=%v", out, calls, err)
 			}
 			if !reflect.DeepEqual(before, req) {

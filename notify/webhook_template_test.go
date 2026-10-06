@@ -8,21 +8,21 @@ import (
 	"testing"
 )
 
-// 本文件锁住通用 Webhook 模板的**能力边界**。
+// This document locks Universal Webhook Template**Capacity boundaries**.
 //
-// 这是全包唯一「用户提供的字符串会被当代码求值」的地方，所以要明确它能做什么、
-// 不能做什么，并用测试把这些性质固定下来——否则将来有人顺手给模板上下文加个
-// 方法、或在 FuncMap 里加个 readFile，能力面就静默扩大了，而 diff 看起来
-// 只是一个无害的小函数。
+// It's the only one.[The string provided by the user is used as a code for value]The place, so make it clear what it can do.,
+// We can't do anything, and we'll fix it with tests.——Otherwise, someone's going to add one to the template.
+// Method, or FuncMap Riga. readFile,The power level has expanded. diff Looks like...
+// It's just a harmless little function..
 
-// TestTemplateContextHasNoMethods 是最重要的一条。
+// TestTemplateContextHasNoMethods It's the most important one..
 //
-// text/template 会调用导出方法（{{.Foo}} 既能取字段也能调方法）。所以模板上下文
-// 只要能接触到**任何**带导出方法的类型，就等于把那些方法暴露给了模板作者。
-// 本功能的上下文刻意全是纯数据（只有导出字段、零方法）。
+// text/template You can call the export method.({{.Foo}} You can both take fields and adjust methods. So the template context
+// As long as you can reach it.**Any**The type that takes out the methods is the same as exposing them to the author of the template..
+// The context of this function is deliberately pure data (export fields only, zero methods)).
 //
-// 若这条失败：说明有人给 webhookTemplateData / webhookItem 加了方法。
-// 在决定放行之前，先想清楚那个方法能不能被模板用来读取不希望暴露的东西。
+// If this fails: webhookTemplateData / webhookItem I added the method..
+// Before you decide to let it go, figure out if that method can be used to read things you don't want to expose..
 func TestTemplateContextHasNoMethods(t *testing.T) {
 	for _, v := range []any{webhookTemplateData{}, webhookItem{}} {
 		typ := reflect.TypeOf(v)
@@ -31,16 +31,16 @@ func TestTemplateContextHasNoMethods(t *testing.T) {
 			for i := 0; i < n; i++ {
 				names = append(names, typ.Method(i).Name)
 			}
-			t.Fatalf("%s 暴露了 %d 个方法（%s）：text/template 可以调用它们，"+
-				"等于把这些方法的能力开放给了模板作者", typ.Name(), n, strings.Join(names, ", "))
+			t.Fatalf("%s It's exposed. %d Method(%s):text/template We can call them.,"+
+				"It's like opening up these methods to the author.", typ.Name(), n, strings.Join(names, ", "))
 		}
 	}
 }
 
-// TestTemplateFuncsAreMinimal 锁住暴露给模板的函数集合。
+// TestTemplateFuncsAreMinimal Lock a set of functions exposed to templates.
 //
-// FuncMap 里每多一个函数就多一项能力。当前只有 json / jsons，作用是把值序列化
-// 成 JSON 片段——不能读文件、不能发请求、不能执行命令。
+// FuncMap Each of these functions has an additional ability. Currently only json / jsons,The effect is to sequence values.
+// Done. JSON fragment——No documents, no requests, no orders..
 func TestTemplateFuncsAreMinimal(t *testing.T) {
 	var got []string
 	for name := range webhookTemplateFuncs {
@@ -49,58 +49,58 @@ func TestTemplateFuncsAreMinimal(t *testing.T) {
 	sort.Strings(got)
 	want := []string{"json", "jsons"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("模板函数集合变了：得到 %v，期望 %v。新增函数前请确认它不会扩大能力面"+
-			"（不能读写文件、不能发起网络请求、不能执行命令）", got, want)
+		t.Fatalf("Template functions have changed: Got %v,Expectations %v.Make sure it doesn't expand before adding a function Noodles."+
+			"(Unable to read and write files, not to launch network requests, not to execute orders)", got, want)
 	}
 }
 
-// TestTemplateCannotReachUnknownData 覆盖模板里的越界访问：
-// 访问不存在的东西必须失败，而不是回显点什么；且失败信息不得带出内部数据。
+// TestTemplateCannotReachUnknownData Overwrite cross-border access in the template:
+// Access to what does not exist must fail, not highlight something; and failure information must not take out internal data.
 func TestTemplateCannotReachUnknownData(t *testing.T) {
 	_, err := renderWebhookBody(`{"x": {{.Environment}}, "y": {{.Env}}}`, singleMsg())
 	if err == nil {
-		t.Fatal("访问不存在的字段应报错")
+		t.Fatal("Error should be reported when accessing non-existent fields")
 	}
-	// 错误里不能出现模板上下文里的真实内容（漏洞标题/摘要）。
-	for _, leak := range []string{"SQL注入", "参数 id"} {
+	// Could not close temporary folder: %s/Abstract).
+	for _, leak := range []string{"SQLInjection", "Parameter id"} {
 		if strings.Contains(err.Error(), leak) {
-			t.Errorf("模板错误泄露了消息内容 %q: %v", leak, err)
+			t.Errorf("Template error leaked message %q: %v", leak, err)
 		}
 	}
 }
 
-// TestTemplateRenderFailsPermanently 模板写错属于配置错误，重试不会自愈。
-// 若被判成可重试，一条坏模板会让每次投递都白跑三轮退避。
+// TestTemplateRenderFailsPermanently Template error is a configuration error and retrying does not heal itself.
+// If you're convicted of retrying, a bad template will allow every delivery to run three times in vain..
 func TestTemplateRenderFailsPermanently(t *testing.T) {
 	cfg := map[string]any{
 		"url":           "https://example.com/hook",
 		"body_template": `{{.Items.`,
 	}
 	if err := (webhookChannel{}).Validate(cfg); err == nil {
-		t.Fatal("模板语法错误应在保存时就被拦下")
+		t.Fatal("Template syntax error should be stopped while saving")
 	}
-	// 即便绕过校验直接投递，也必须判永久失败而不是反复重试。
+	// Even if you bypass the verification direct delivery, you have to judge permanent failure rather than repeated attempts..
 	_, err := (webhookChannel{}).Send(context.Background(), cfg, singleMsg())
 	if err == nil || !IsPermanent(err) {
-		t.Fatalf("坏模板应判永久失败，得到 %v", err)
+		t.Fatalf("Bad template should be permanently defeated. Got it. %v", err)
 	}
 }
 
-// TestTemplateCanOnlyProduceJSON 覆盖「模板渲染结果必须是合法 JSON」这条约束。
-// 它顺带挡住了「用模板生成纯文本去触发别的协议」这类用法。
+// TestTemplateCanOnlyProduceJSON override[Template rendering must be valid JSON]This is a constraint..
+// It's blocked.[Generate plain text with templates to trigger other protocols]Use of this kind.
 func TestTemplateCanOnlyProduceJSON(t *testing.T) {
-	// 合法模板能过。
+	// Legitimate templates pass.
 	ok := map[string]any{"url": "https://example.com/hook", "body_template": `{"t":{{json .Title}}}`}
 	if err := (webhookChannel{}).Validate(ok); err != nil {
-		t.Fatalf("合法模板应通过校验: %v", err)
+		t.Fatalf("Legitimate templates should be verified: %v", err)
 	}
-	// 渲染出非 JSON 时必须拒绝（而不是原样发出去）。
+	// Rendering Africa JSON It has to be rejected (not sent as it is).).
 	bad := map[string]any{"url": "http://127.0.0.1:1/hook", "body_template": `not json {{.Count}}`}
 	_, err := (webhookChannel{}).Send(context.Background(), bad, singleMsg())
 	if err == nil || !IsPermanent(err) {
-		t.Fatalf("渲染出非 JSON 应判永久失败，得到 %v", err)
+		t.Fatalf("Rendering Africa JSON You're going to lose forever. %v", err)
 	}
-	if !strings.Contains(err.Error(), "合法 JSON") {
-		t.Errorf("错误信息应说明是 JSON 问题，得到 %v", err)
+	if !strings.Contains(err.Error(), "valid JSON") {
+		t.Errorf("The wrong message should say yes. JSON Problem. Got it. %v", err)
 	}
 }

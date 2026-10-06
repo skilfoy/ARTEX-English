@@ -6,22 +6,22 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Autumn-27/artex/db"
+	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// 总览「约束管理」的人工 CRUD 接口 + 注入范围开关的解析。操作约束(allow/deny)与 agent 侧的
-// set_constraints 工具写同一张 task_constraints 表;这里是人类在 UI 上直接增删改。约束仅是
-// 提示上下文——增删改后【不】通知 planner,下一轮规划自然读库生效(按产品决策)。每个变更 handler
-// 都走 beginTaskOperation/decInflight,避免与任务删除竞态(与目标/意图 CRUD 一致)。
+// Overview[Regulation]Manpower CRUD Interface + Injecting range switch resolution. Operating constraints(allow/deny)With agent Side.
+// set_constraints Tool Write Same task_constraints Table;It's human. UI Add or delete directly above. 'Constraint is only
+// Tip Context——Add & Delete[No]Notice planner,Next round of planning natural reading libraries is effective.(By product).Every change handler
+// Let's go. beginTaskOperation/decInflight,Avoids removing competition with the task(Objectives/Intention CRUD Consistent).
 
-// 注入范围开关的 settings key,默认都开(GetBool 第二参数 = true)。
+// Injecting range switches. settings key,Open by default(GetBool Second parameter = true).
 const (
 	settingConstraintsInjectPlanner = "constraints_inject_planner"
 	settingConstraintsInjectWorker  = "constraints_inject_worker"
 )
 
-// constraintInjectPlanner / constraintInjectWorker 报告是否把操作约束注入对应 agent 的
-// 系统提示(默认开)。作为 resolver 传给 planner/worker,每轮读 → 改开关即时生效。
+// constraintInjectPlanner / constraintInjectWorker Report whether or not to inject operational constraints agent of
+// System prompt(On by default).As resolver Pass. planner/worker,Rounded → Switches are effective immediately..
 func (s *Server) constraintInjectPlanner() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectPlanner, true)
 }
@@ -30,7 +30,7 @@ func (s *Server) constraintInjectWorker() bool {
 	return s.m.pg.GetBool(settingConstraintsInjectWorker, true)
 }
 
-// listConstraints 返回本任务的全部操作约束(allow 在前、deny 在后)。
+// listConstraints Returns all operational constraints of this task(allow In front,deny Behind).
 func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -45,7 +45,7 @@ func (s *Server) listConstraints(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"constraints": constraintDTOs(rows)})
 }
 
-// addConstraint 人工新增一条操作约束(kind=allow|deny)。不通知 planner。
+// addConstraint Add an operational constraint to manual(kind=allow|deny).Not notified planner.
 func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -53,7 +53,7 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除,无法新增约束")
+		writeErr(w, 409, "Task is being deleted; constraints cannot be changed")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -68,12 +68,12 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(body.Text)
 	if text == "" {
-		writeErr(w, 400, "约束内容不能为空")
+		writeErr(w, 400, "Constraint cannot be empty")
 		return
 	}
 	kind := normalizeConstraintKind(body.Kind)
 	if kind == "" {
-		writeErr(w, 400, "kind 必须是 allow 或 deny")
+		writeErr(w, 400, "kind Must be. allow or deny")
 		return
 	}
 	id, err := t.Store.AddConstraint(kind, text, "human")
@@ -84,7 +84,7 @@ func (s *Server) addConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(id, 10), Kind: kind, Text: text, Origin: "human"})
 }
 
-// editConstraint 人工修改一条约束(kind + text)。不通知 planner。
+// editConstraint Manually modify a constraint(kind + text).Not notified planner.
 func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -92,7 +92,7 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除,无法修改约束")
+		writeErr(w, 409, "Task is being deleted; constraints cannot be changed")
 		return
 	}
 	defer s.engine.decInflight(t.ID)
@@ -112,12 +112,12 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	}
 	text := strings.TrimSpace(body.Text)
 	if text == "" {
-		writeErr(w, 400, "约束内容不能为空")
+		writeErr(w, 400, "Constraint cannot be empty")
 		return
 	}
 	kind := normalizeConstraintKind(body.Kind)
 	if kind == "" {
-		writeErr(w, 400, "kind 必须是 allow 或 deny")
+		writeErr(w, 400, "kind Must be. allow or deny")
 		return
 	}
 	if err := t.Store.UpdateConstraint(cid, kind, text); err != nil {
@@ -127,7 +127,7 @@ func (s *Server) editConstraint(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, ConstraintDTO{ID: strconv.FormatInt(cid, 10), Kind: kind, Text: text})
 }
 
-// deleteConstraint 人工删除一条约束。不通知 planner。
+// deleteConstraint Manually remove a constraint. Not notified planner.
 func (s *Server) deleteConstraint(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.m.Task(r.PathValue("id"))
 	if !ok {
@@ -135,7 +135,7 @@ func (s *Server) deleteConstraint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.engine.beginTaskOperation(t.ID) {
-		writeErr(w, 409, "任务正在删除,无法删除约束")
+		writeErr(w, 409, "Task is being deleted; constraint cannot be removed")
 		return
 	}
 	defer s.engine.decInflight(t.ID)

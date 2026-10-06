@@ -44,7 +44,7 @@ interface TemplateDraft {
   interceptRules: AssetInterceptRuleInput[];
 }
 
-// TemplateSeed 是「另存为模板」时从创建表单带入的初值。
+// TemplateSeed Yes[Save as template]The initial value brought in from the creation form.
 type TemplateSeed = Pick<TemplateDraft, "description" | "goal" | "categoryID" | "interceptRules">;
 
 interface TaskTemplateManagerProps {
@@ -321,7 +321,7 @@ function TaskTemplateManager({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete template "{draft.name || "Unnamed template"}」？</AlertDialogTitle>
+            <AlertDialogTitle>Delete template "{draft.name || "Unnamed template"}]?</AlertDialogTitle>
             <AlertDialogDescription>Tasks already created by this template will not be affected.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -511,7 +511,7 @@ export function TaskTemplateControls({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Use templates{pendingTemplate?.name}」？</AlertDialogTitle>
+            <AlertDialogTitle>Use templates{pendingTemplate?.name}]?</AlertDialogTitle>
             <AlertDialogDescription>The currently filled description and goal will be overwritten by the template content.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

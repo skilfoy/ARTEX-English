@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "build:static": "NEXT_EXPORT=1 next build",
+    "build": "next build --webpack",
+    "build:static": "NEXT_EXPORT=1 next build --webpack",
     "start": "next start",
     "lint": "biome lint",
     "format": "biome format --write",

@@ -156,7 +156,7 @@ export default function MCPPage() {
               url: form.url.trim(),
               command: "",
               args: [] as string[],
-              env: parseEnv(form.env), // 远程模式下 env 即请求头
+              env: parseEnv(form.env), // In remote mode env That is, the request header
               insecure: form.insecure,
             }
           : {
@@ -221,7 +221,7 @@ export default function MCPPage() {
     const on = (visibility[serverId] ?? []).includes(agentId);
     try {
       await api.toggleVisibility(agentId, "mcp", serverId, !on);
-      toast.success(`${on ? "Cancel" : "Granted"}「${agentName}"visible`);
+      toast.success(`${on ? "Cancel" : "Granted"}[${agentName}"visible`);
       load();
     } catch (e) {
       toast.error("Operation failed:" + (e as Error).message);
@@ -450,7 +450,7 @@ export default function MCPPage() {
               <TabsList>
                 <TabsTrigger value="config">Configuration</TabsTrigger>
                 <TabsTrigger value="tools">
-                  Tool list{tools.length ? `（${tools.length}）` : ""}
+                  Tool list{tools.length ? `(${tools.length})` : ""}
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="config" className="min-h-0 flex-1 overflow-y-auto">

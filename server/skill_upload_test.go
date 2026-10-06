@@ -18,11 +18,11 @@ import (
 )
 
 func TestValidSkillName(t *testing.T) {
-	ok := []string{"web-recon", "a", "nuclei2", "中文技能", "端口扫描-x", "日本語スキル"}
+	ok := []string{"web-recon", "a", "nuclei2", "\u4e2d\u6587\u6280\u80fd", "\u7aef\u53e3\u626b\u63cf-x", "\u65e5\u672c\u8a9eスキル"}
 	bad := []string{
-		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "中文 技能",
-		"dot.name", "a/b", `a\b`, "..", ".", "中文/技能", "sk\x00ill", "中‮文",
-		strings.Repeat("a", 65), "1abc", "中文技能!",
+		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "\u4e2d\u6587 \u6280\u80fd",
+		"dot.name", "a/b", `a\b`, "..", ".", "\u4e2d\u6587/\u6280\u80fd", "sk\x00ill", "\u4e2d‮\u6587",
+		strings.Repeat("a", 65), "1abc", "\u4e2d\u6587\u6280\u80fd!",
 	}
 	for _, n := range ok {
 		if !validSkillName(n) {
@@ -38,12 +38,12 @@ func TestValidSkillName(t *testing.T) {
 
 func TestSkillRelPath(t *testing.T) {
 	ok := map[string]string{
-		"SKILL.md":           "SKILL.md",
-		"scripts/run.py":     "scripts/run.py",
-		"参考/中文说明.md":         "参考/中文说明.md",
-		"references/a b.txt": "references/a b.txt",
-		"./SKILL.md":         "SKILL.md",
-		"assets/图片-1_v2.png": "assets/图片-1_v2.png",
+		"SKILL.md":       "SKILL.md",
+		"scripts/run.py": "scripts/run.py",
+		"\u53c2\u8003/\u4e2d\u6587\u8bf4\u660e.md": "\u53c2\u8003/\u4e2d\u6587\u8bf4\u660e.md",
+		"references/a b.txt":                       "references/a b.txt",
+		"./SKILL.md":                               "SKILL.md",
+		"assets/\u56fe\u7247-1_v2.png":             "assets/\u56fe\u7247-1_v2.png",
 	}
 	for in, want := range ok {
 		got, msg := skillRelPath(in)
@@ -53,8 +53,8 @@ func TestSkillRelPath(t *testing.T) {
 	}
 	bad := []string{
 		"", "../etc/passwd", "a/../../b", "/abs/path", "a//b", `..\..\x`,
-		"%2e%2e/x", "a\x00b", "中文 名.md", "中‮文.md", "a#b.md", "a?b.md",
-		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // 裸 GBK 字节：非法 UTF-8
+		"%2e%2e/x", "a\x00b", "\u4e2d\u6587 \u540d.md", "\u4e2d‮\u6587.md", "a#b.md", "a?b.md",
+		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // \u88f8 GBK \u5b57\u8282：\u975e\u6cd5 UTF-8
 		strings.Repeat("a", maxSkillPathLen+1),
 	}
 	for _, in := range bad {
@@ -73,7 +73,7 @@ type zipFile struct {
 	name    string
 	body    string
 	method  uint16
-	nonUTF8 bool // write the name bytes as-is (GBK 包)
+	nonUTF8 bool // write the name bytes as-is (GBK \u5305)
 }
 
 func buildZip(t *testing.T, files ...zipFile) []byte {
@@ -81,8 +81,8 @@ func buildZip(t *testing.T, files ...zipFile) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	zw.RegisterCompressor(zipMethodZstd, zstd.ZipCompressor())
-	// Deflate64 没有纯 Go 编码器；这里原样写入，只是为了给条目打上 method 9 的标记 ——
-	// 断言的是「方法不支持时给什么提示」，不会真去解压它。
+	// Deflate64 \u6ca1\u6709\u7eaf Go \u7f16\u7801\u5668；\u8fd9\u91cc\u539f\u6837\u5199\u5165，\u53ea\u662f\u4e3a\u4e86\u7ed9\u6761\u76ee\u6253\u4e0a method 9 \u7684\u6807\u8bb0 ——
+	// \u65ad\u8a00\u7684\u662f「\u65b9\u6cd5\u4e0d\u652f\u6301\u65f6\u7ed9\u4ec0\u4e48\u63d0\u793a」，\u4e0d\u4f1a\u771f\u53bb\u89e3\u538b\u5b83。
 	zw.RegisterCompressor(zipMethodDeflate64, func(w io.Writer) (io.WriteCloser, error) {
 		return nopWriteCloser{w}, nil
 	})
@@ -126,32 +126,32 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 	return rr, out
 }
 
-const zhSkillMD = "---\nname: 中文技能\ndescription: 测试\n---\n正文\n"
+const zhSkillMD = "---\nname: \u4e2d\u6587\u6280\u80fd\ndescription: \u6d4b\u8bd5\n---\n\u6b63\u6587\n"
 
-// A zstd-compressed archive (WinZip 的可选压缩方式) used to blow up with
+// A zstd-compressed archive (WinZip \u7684\u53ef\u9009\u538b\u7f29\u65b9\u5f0f) used to blow up with
 // "zip: unsupported compression"; it now installs like any Deflate archive.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: "中文技能/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
-		zipFile{name: "中文技能/参考/说明 文档.md", body: "参考", method: zipMethodZstd},
-		zipFile{name: "中文技能/scripts/run.py", body: "print(1)", method: zip.Deflate},
+		zipFile{name: "\u4e2d\u6587\u6280\u80fd/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
+		zipFile{name: "\u4e2d\u6587\u6280\u80fd/\u53c2\u8003/\u8bf4\u660e \u6587\u6863.md", body: "\u53c2\u8003", method: zipMethodZstd},
+		zipFile{name: "\u4e2d\u6587\u6280\u80fd/scripts/run.py", body: "print(1)", method: zip.Deflate},
 	)
-	rr, out := uploadZip(t, dir, "中文技能.zip", data)
+	rr, out := uploadZip(t, dir, "\u4e2d\u6587\u6280\u80fd.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "\u4e2d\u6587\u6280\u80fd" {
+		t.Fatalf("name = %v, want \u4e2d\u6587\u6280\u80fd", out["name"])
 	}
-	for _, rel := range []string{"SKILL.md", "参考/说明 文档.md", "scripts/run.py"} {
-		if _, err := os.Stat(filepath.Join(dir, "中文技能", rel)); err != nil {
+	for _, rel := range []string{"SKILL.md", "\u53c2\u8003/\u8bf4\u660e \u6587\u6863.md", "scripts/run.py"} {
+		if _, err := os.Stat(filepath.Join(dir, "\u4e2d\u6587\u6280\u80fd", rel)); err != nil {
 			t.Errorf("missing extracted file %q: %v", rel, err)
 		}
 	}
 }
 
-// GBK-named entries (7-Zip / 资源管理器 on Chinese Windows) must be decoded rather
+// GBK-named entries (7-Zip / \u8d44\u6e90\u7ba1\u7406\u5668 on Chinese Windows) must be decoded rather
 // than rejected as invalid UTF-8 paths.
 func TestUploadSkillGBKNames(t *testing.T) {
 	gbk := func(s string) string {
@@ -163,17 +163,17 @@ func TestUploadSkillGBKNames(t *testing.T) {
 	}
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: gbk("中文技能/SKILL.md"), body: zhSkillMD, method: zip.Deflate, nonUTF8: true},
-		zipFile{name: gbk("中文技能/参考资料.md"), body: "内容", method: zip.Deflate, nonUTF8: true},
+		zipFile{name: gbk("\u4e2d\u6587\u6280\u80fd/SKILL.md"), body: zhSkillMD, method: zip.Deflate, nonUTF8: true},
+		zipFile{name: gbk("\u4e2d\u6587\u6280\u80fd/\u53c2\u8003\u8d44\u6599.md"), body: "\u5185\u5bb9", method: zip.Deflate, nonUTF8: true},
 	)
 	rr, out := uploadZip(t, dir, "skill.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "\u4e2d\u6587\u6280\u80fd" {
+		t.Fatalf("name = %v, want \u4e2d\u6587\u6280\u80fd", out["name"])
 	}
-	if _, err := os.Stat(filepath.Join(dir, "中文技能", "参考资料.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "\u4e2d\u6587\u6280\u80fd", "\u53c2\u8003\u8d44\u6599.md")); err != nil {
 		t.Errorf("GBK-named entry not extracted: %v", err)
 	}
 }
@@ -189,8 +189,8 @@ func TestUploadSkillUnsupportedMethod(t *testing.T) {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
 	msg, _ := out["error"].(string)
-	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "不支持的压缩方式") {
-		t.Fatalf("error = %q, want a Chinese message naming Deflate64", msg)
+	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "unsupported compression method") {
+		t.Fatalf("error = %q, want an English error naming Deflate64", msg)
 	}
 }
 
@@ -210,8 +210,8 @@ func TestUploadSkillEncrypted(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "已加密") {
-		t.Fatalf("error = %q, want 加密 hint", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "Encrypted archive") {
+		t.Fatalf("error = %q, want an encryption hint", msg)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "非法路径") {
-		t.Fatalf("error = %q, want 非法路径", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "Invalid Path") {
+		t.Fatalf("error = %q, want an invalid path error", msg)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("upload left files behind: %v", entries)
@@ -235,8 +235,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 }
 
 func TestSkillNameFromFrontmatterQuoted(t *testing.T) {
-	got := skillNameFromFrontmatter([]byte("---\nname: \"中文技能\"\ndescription: x\n---\n"))
-	if got != "中文技能" {
-		t.Fatalf("name = %q, want 中文技能", got)
+	got := skillNameFromFrontmatter([]byte("---\nname: \"\u4e2d\u6587\u6280\u80fd\"\ndescription: x\n---\n"))
+	if got != "\u4e2d\u6587\u6280\u80fd" {
+		t.Fatalf("name = %q, want \u4e2d\u6587\u6280\u80fd", got)
 	}
 }

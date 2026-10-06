@@ -131,7 +131,7 @@ function groupByAgent(conversations: Conversation[], agentByKey: Map<string, Age
   return [...groups.values()];
 }
 
-// LiveBadge is the small pulsing "实时" chip reused from the task's main-agent
+// LiveBadge is the small pulsing "Real time" chip reused from the task's main-agent
 // console — shown while a turn is streaming.
 function LiveBadge() {
   return (
@@ -169,7 +169,7 @@ function Composer({
   running?: boolean;
   onStop?: () => void;
   stopDisabled?: boolean;
-  // 方式1 文件上传:传了 onPickFiles 才显示回形针按钮 + 附件 chip 预览。
+  // Way1 File upload:Passed onPickFiles Only show the paper clip button + Attachments chip Preview.
   attachments?: ChatAttachment[];
   onPickFiles?: (files: File[]) => void;
   onRemoveAttachment?: (path: string) => void;
@@ -178,7 +178,7 @@ function Composer({
 }) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const atts = attachments ?? [];
-  // 发送键位由系统设置决定（localStorage），默认 Enter 发送。
+  // The sending key is determined by the system settings(localStorage),Default Enter Send.
   const sendMode = useChatSendMode();
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (!shouldSubmitOnKey(e, sendMode)) return;
@@ -222,8 +222,8 @@ function Composer({
               multiple
               className="hidden"
               onChange={(e) => {
-                // FileList 与 input 元素活绑定:必须先快照成数组,再清空 value,
-                // 否则异步的 onPickFiles(比如草稿态要先建会话)恢复执行时会拿到空列表。
+                // FileList With input Element live binding:Must be snapshotted into an array first,Clear again value,
+                // Otherwise asynchronous onPickFiles(For example, if you want to create a draft state, you need to create a session first.)When resuming execution, you will get an empty list.
                 const picked = Array.from(e.target.files ?? []);
                 e.target.value = ""; // allow re-picking the same file
                 if (picked.length > 0) onPickFiles(picked);
@@ -294,7 +294,7 @@ function LLMProfileRow({
   const [open, setOpen] = React.useState(false);
   const activeDefault = profiles.find((p) => p.is_default);
   const current = selected != null ? profiles.find((p) => Number(p.id) === selected) : null;
-  const label = current ? current.name : `Default${activeDefault ? `（${activeDefault.name}）` : ""}`;
+  const label = current ? current.name : `Default${activeDefault ? `(${activeDefault.name})` : ""}`;
 
   return (
     <div className="flex min-w-0 shrink-0 items-center gap-1 px-1 pt-0.5 pb-1">
@@ -327,7 +327,7 @@ function LLMProfileRow({
               selected == null && "bg-accent",
             )}
           >
-            <span className="text-sm">Default{activeDefault ? `（${activeDefault.name}）` : ""}</span>
+            <span className="text-sm">Default{activeDefault ? `(${activeDefault.name})` : ""}</span>
             {activeDefault && (
               <span className="text-muted-foreground text-[11px]">
                 {activeDefault.format} · {activeDefault.model}
@@ -500,7 +500,7 @@ function ChatView({
   const [input, setInput] = React.useState(initial?.input ?? "");
   const [sending, setSending] = React.useState(false);
   const [stopping, setStopping] = React.useState(false);
-  // 方式1 文件上传:已上传的附件(落到 sessions/conv-<id>/uploads/),随下条消息一起发。
+  // Way1 File upload:Uploaded attachments(fall sessions/conv-<id>/uploads/),Send with next message.
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>(initial?.attachments ?? []);
   const [uploading, setUploading] = React.useState(false);
   const cursorRef = React.useRef(0); // newest loaded id — incremental-tail anchor
@@ -687,7 +687,7 @@ function ChatView({
     let li = 0,
       lo = 0,
       lcr = 0;
-    let turns = 0; // agent 循环轮次 = 模型调用次数（每次一条 kind='usage'）
+    let turns = 0; // agent Cycle rounds = Number of model calls (one each time kind='usage')
     for (const a of messages) {
       if (a.kind === "result") {
         i += a.input_tokens ?? 0;
@@ -897,7 +897,7 @@ const ConversationItem = React.memo(function ConversationItem({
         <Checkbox
           checked={selectedForDelete}
           onCheckedChange={(checked) => onSelectedForDeleteChange(conv.id, checked === true)}
-          aria-label={`Choose conversation "${conv.title || "New conversation"}」`}
+          aria-label={`Choose conversation "${conv.title || "New conversation"}]`}
           className="ml-1 shrink-0"
         />
       )}
@@ -946,7 +946,7 @@ const ConversationItem = React.memo(function ConversationItem({
               </>
             )}
             <span className="shrink-0">
-              {new Date(conv.created_at).toLocaleDateString("zh-CN", {
+              {new Date(conv.created_at).toLocaleDateString("en-US", {
                 month: "numeric",
                 day: "numeric",
                 hour: "2-digit",
@@ -963,7 +963,7 @@ const ConversationItem = React.memo(function ConversationItem({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground shrink-0"
-            aria-label={`Manage Dialogue「${conv.title || "New conversation"}」`}
+            aria-label={`Manage Dialogue[${conv.title || "New conversation"}]`}
           >
             <MoreHorizontalIcon />
           </Button>
@@ -991,7 +991,7 @@ const ConversationItem = React.memo(function ConversationItem({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete conversation "{conv.title || "New conversation"}」？</AlertDialogTitle>
+            <AlertDialogTitle>Delete conversation "{conv.title || "New conversation"}]?</AlertDialogTitle>
             <AlertDialogDescription>This operation is irreversible.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1022,7 +1022,7 @@ function AgentGroupHeader({
       type="button"
       onClick={() => onToggle(group.key)}
       aria-expanded={!collapsed}
-      title={collapsed ? `Expand "${group.name}」` : `Collapse "${group.name}」`}
+      title={collapsed ? `Expand "${group.name}]` : `Collapse "${group.name}]`}
       className={cn(
         "sticky top-0 z-10 flex min-w-0 items-center gap-1.5 rounded-md bg-card px-1.5 py-1 text-left font-medium text-[11px] transition-colors hover:bg-accent/50",
         collapsed && hasActive ? "text-foreground" : "text-muted-foreground",
@@ -1064,7 +1064,7 @@ export default function ChatPage() {
   const [renameText, setRenameText] = React.useState("");
   const [selectedConversationIds, setSelectedConversationIds] = React.useState<Set<number>>(() => new Set());
   // selectionMode gates the multi-select UI: off by default (clean list, no
-  // checkboxes); the header "多选" button turns it on, "完成" turns it off and
+  // checkboxes); the header "Multiple selection" button turns it on, "Complete" turns it off and
   // clears the selection.
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
@@ -1198,7 +1198,7 @@ export default function ChatPage() {
     [visibleConversations, agentByKey],
   );
   // conversation agents: custom agents + conversational built-ins (role=assistant,
-  // e.g. Auto / 渗透测试). The orchestration built-ins (goals/planner/mainagent/worker)
+  // e.g. Auto / Penetration Testing). The orchestration built-ins (goals/planner/mainagent/worker)
   // are task-specific and stay hidden from the chat page.
   const chatAgents = React.useMemo(() => agents.filter((a) => !a.builtin || a.role === "assistant"), [agents]);
   const agentFilterOptions = React.useMemo(() => {
@@ -1211,7 +1211,7 @@ export default function ChatPage() {
     if (agentFilter !== null) keys.add(agentFilter);
     return [...keys]
       .map((key) => ({ key, name: agentByKey.get(key)?.name || key, count: counts.get(key) ?? 0 }))
-      .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+      .sort((a, b) => a.name.localeCompare(b.name, "en-US"));
   }, [convs, chatAgents, agentByKey, agentFilter]);
   const conversationCountLabel =
     agentFilter === null ? `Total${convs.length}indivual` : `${filteredConversations.length} / ${convs.length}indivual`;
@@ -1295,8 +1295,8 @@ export default function ChatPage() {
       if (failed.length > 0) {
         const details = failed
           .slice(0, 3)
-          .map((item) => `#${item.id}（${item.error}）`)
-          .join("；");
+          .map((item) => `#${item.id}(${item.error})`)
+          .join(";");
         toast.error(`${failed.length}Conversation deletion failed:${details}${failed.length > 3 ? "wait" : ""}`);
       }
       setBulkDeleteOpen(false);
@@ -1371,7 +1371,7 @@ export default function ChatPage() {
                   <SelectItem value="all">All Agents</SelectItem>
                   {agentFilterOptions.map((agent) => (
                     <SelectItem key={agent.key} value={`agent:${agent.key}`}>
-                      {agent.name}（{agent.count}）
+                      {agent.name}({agent.count})
                     </SelectItem>
                   ))}
                 </SelectGroup>

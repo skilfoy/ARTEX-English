@@ -37,7 +37,7 @@ import {
 import { api } from "@/lib/api";
 import type { Agent, Tool } from "@/lib/types";
 
-// Traffic tools are host tools gated by the global 流量捕获 switch: bindable, but
+// Traffic tools are host tools gated by the global Traffic capture switch: bindable, but
 // only usable when capture is on. Keep in sync with traffic.SeedToolMetas.
 const TRAFFIC_TOOL_KEYS = new Set(["traffic_search", "traffic_get"]);
 
@@ -154,7 +154,7 @@ function ToolEditor({
   onSaved: () => void;
   onClose: () => void;
 }) {
-  // traffic tools can't be bound/enabled until the global 流量捕获 switch is on.
+  // traffic tools can't be bound/enabled until the global Traffic capture switch is on.
   const trafficGated = TRAFFIC_TOOL_KEYS.has(tool.key) && !captureOn;
   const [description, setDescription] = React.useState(tool.description);
   const [bound, setBound] = React.useState<string[]>(tool.agents);
@@ -176,7 +176,7 @@ function ToolEditor({
         agents: bound,
         enabled,
       });
-      toast.success(`Saved tool "${tool.key}」`);
+      toast.success(`Saved tool "${tool.key}]`);
       onSaved();
       onClose();
     } catch (e) {
@@ -456,7 +456,7 @@ export default function ToolsPage() {
                   <CardTitle>Custom tools</CardTitle>
                   <CardDescription>
                     {query.trim()
-                      ? `shell/command/script/http，${customTools.length} / ${allCustomCount}matches, click card to edit`
+                      ? `shell/command/script/http,${customTools.length} / ${allCustomCount}matches, click card to edit`
                       : `shell(bash statement)/command(command)/script(Python)/http(API), total${allCustomCount}, click on the card to edit`}
                   </CardDescription>
                 </div>
@@ -519,7 +519,7 @@ export default function ToolsPage() {
   );
 }
 
-// ---- 自定义工具编辑器 ----
+// ---- Custom tool editor ----
 
 type ExecState = {
   command: string;
@@ -711,7 +711,7 @@ function CustomToolDialog({
 
           {kind === "command" && (
             <div className="grid gap-1.5">
-              <Label className="text-xs">Command template (placeholder {"{param}"}, such as nmap -p {"{ports}"} {"{target}"}）</Label>
+              <Label className="text-xs">Command template (placeholder {"{param}"}, such as nmap -p {"{ports}"} {"{target}"})</Label>
               <Textarea className="font-mono text-xs" rows={2} value={ex.command}
                 onChange={(e) => setEx({ ...ex, command: e.target.value })} />
             </div>
@@ -732,17 +732,17 @@ function CustomToolDialog({
                   <Input className="w-24" value={ex.method} onChange={(e) => setEx({ ...ex, method: e.target.value })} />
                 </div>
                 <div className="grid flex-1 gap-1.5">
-                  <Label className="text-xs">URL (may contain {"{param}"}）</Label>
+                  <Label className="text-xs">URL (may contain {"{param}"})</Label>
                   <Input className="font-mono text-xs" value={ex.url} onChange={(e) => setEx({ ...ex, url: e.target.value })} />
                 </div>
               </div>
               <div className="grid gap-1.5">
-                <Label className="text-xs">Headers (JSON, can contain {"{param}"}）</Label>
+                <Label className="text-xs">Headers (JSON, can contain {"{param}"})</Label>
                 <Textarea className="font-mono text-xs" rows={2} value={ex.headers}
                   placeholder={'{"Authorization": "Bearer {token}"}'} onChange={(e) => setEx({ ...ex, headers: e.target.value })} />
               </div>
               <div className="grid gap-1.5">
-                <Label className="text-xs">Body (can contain {"{param}"}）</Label>
+                <Label className="text-xs">Body (can contain {"{param}"})</Label>
                 <Textarea className="font-mono text-xs" rows={2} value={ex.body} onChange={(e) => setEx({ ...ex, body: e.target.value })} />
               </div>
               <div className="flex items-center gap-4">

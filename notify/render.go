@@ -7,14 +7,14 @@ import (
 
 const ellipsis = "…"
 
-// TruncateBytes 把 s 截断到不超过 max 字节，保证结果是合法 UTF-8 且不切断字符。
+// TruncateBytes handle s No more than that. max Bytes, make sure it's legal. UTF-8 without cutting off characters.
 //
-// 为什么必须按字符边界切：企微群机器人的 markdown 有 4096 **字节**硬上限（不是
-// 字符数），而中文一个字 3 字节。直接按字节切片会把一个汉字切成两半，产出非法
-// UTF-8——平台侧要么整条拒收，要么显示成乱码方块。这里的做法是先从预算位置
-// 往前回退到最近的 rune 起始字节（utf8.RuneStart 判定续字节 0b10xxxxxx）。
+// Why do you have to cut by character? markdown Yes 4096 **Bytes**Hard ceiling (no)
+// Number of characters) and one word in Chinese 3 bytes. Direct bytes cut a Han in half. It's illegal.
+// UTF-8——The side of the platform either refuses to receive the whole piece or displays a piece of muddle. Here's the way to start with the budget position.
+// Back to the nearest. rune Start bytes(utf8.RuneStart Deciding bytes 0b10xxxxxx).
 //
-// max<=0 表示不限制。截断后追加省略号，除非 max 小到装不下省略号。
+// max<=0 Express unrestricted. Additional ellipses after break unless max Small enough to fit the ellipsis..
 func TruncateBytes(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
@@ -22,7 +22,7 @@ func TruncateBytes(s string, max int) string {
 	budget := max - len(ellipsis)
 	suffix := ellipsis
 	if budget < 0 {
-		// max 比省略号还短：放弃省略号，纯截断，避免结果反而超出 max。
+		// max Shorter than the ellipsis: drop the ellipsis, cut it out, avoid the result being more than max.
 		budget = max
 		suffix = ""
 	}
@@ -33,20 +33,20 @@ func TruncateBytes(s string, max int) string {
 	return s[:cut] + suffix
 }
 
-// OneLine 把多行文本压成单行：折叠所有空白，再按字符数截断。
-// 用于 IM 消息的标题行——摘要里常有换行，直接塞进表格/标题会撑坏排版。
-// max<=0 表示不限制长度。
+// OneLine Thrust multi-line text into one line: fold all blanks, then cut by character number.
+// for IM Message Title Line——There's always a change of line in the summary, and it's plugged into the form./The title will break the layout..
+// max<=0 Means unlimited length.
 func OneLine(s string, max int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	return TruncateRunes(s, max)
 }
 
-// TruncateRunes 把 s 截断到不超过 max 个字符（而非字节），超出时追加省略号。
-// max<=0 表示不限制。
+// TruncateRunes handle s No more than that. max Characters (rather than bytes), add ellipses when exceeded.
+// max<=0 Means unlimited.
 //
-// 与 TruncateBytes 的区别在于平台口径：企微按字节限长，Telegram 按字符数限长。
-// 用错口径不会报错，只会让消息被切得远比预期短（中文 1 字 = 3 字节，
-// 按字节切 4096 只剩约 1365 字），所以两个函数都必须保留、按渠道选用。
+// With TruncateBytes The difference is the platform caliber: microbytes. Long,Telegram Long by character.
+// Use the wrong caliber is not a miscalculation. 1 Words = 3 Bytes,
+// Bytes 4096 There's only one thing left. 1365 word) so both functions must be preserved and selected by channel.
 func TruncateRunes(s string, max int) string {
 	if max <= 0 {
 		return s
@@ -61,46 +61,46 @@ func TruncateRunes(s string, max int) string {
 	return string(runes[:max-1]) + ellipsis
 }
 
-// TruncateHTML 按字符数截断 HTML 片段，并保证不产生半截标签。
+// TruncateHTML Interrupt by character number HTML Snippets and guarantees not to produce semi-labels.
 //
-// 直接对 HTML 做字符截断会切出 `<a href="htt` 这种残缺标签，平台解析器要么
-// 报错拒收整条、要么把后续正文当成属性值吞掉。这里的做法是：先按字符截断，
-// 再检查尾部是否有未闭合的 `<`，有就退到它之前。
+// Right. HTML The character cut will cut out `<a href="htt` This missing label, platform solver or...
+// Wrongly rejected the whole article or swallowed the subsequent text as an attribute. Here's the thing: cut it off by character.,
+// Check if there's any unclosed tail. `<`,If you have one, back it up..
 //
-// 不做标签配平（补全 </b> 之类）：Telegram 的 HTML 解析器会自动闭合未闭合标签，
-// 而自己实现配平要处理属性里的引号、注释、自闭合标签，复杂度与收益不成比例。
+// No tag leveling (completion) </b> Or something.):Telegram of HTML The solver automatically closes unclosed labels,
+// And to achieve self-balancing is to deal with quotes, notes, self-conclusion labels in properties that are disproportionate to the benefits..
 func TruncateHTML(s string, max int) string {
 	if max <= 0 || len([]rune(s)) <= max {
 		return s
 	}
 	cut := TruncateRunes(s, max)
-	// 尾部若是 `<` 开头的残片（最后出现 `<` 之后没有 `>`），退回 `<` 之前。
+	// If the tail is... `<` The beginning debris. `<` Not since. `>`),Return `<` Before.
 	if lt := strings.LastIndex(cut, "<"); lt >= 0 && !strings.Contains(cut[lt:], ">") {
 		cut = cut[:lt]
 	}
-	// 尾部若是被切断的 HTML 实体（如 `&amp;` 被切成 `&amp`），同样要退回去。
-	// 实体残片在一个只认实体的解析器里可能让**整条消息**被拒收——一条超过
-	// 长度上限的汇总消息本来就常见，不值得为此丢掉整条通知。
+	// If the tail is cut, HTML Entities (e.g., `&amp;` Cut. `&amp`),I'm going back too..
+	// Physical debris may be in an entity-only solver**The whole message.**Rejected——One more.
+	// It's not worth losing the entire notice..
 	if amp := strings.LastIndex(cut, "&"); amp >= 0 && !strings.Contains(cut[amp:], ";") {
 		cut = cut[:amp]
 	}
 	return cut
 }
 
-// packItemCount 计算在预算内能**完整**放下多少条，供汇总消息按整条打包。
+// packItemCount Calculate within budget**Complete**How many of them are down for wrapping up the whole message?.
 //
-// 为什么要按整条而不是渲染完整篇再截断：截断会让后半截条目凭空消失，
-// 而它们的投递记录仍会被标记为已送达——消息里看不出来、投递历史里也看不出来，
-// 漏洞就这么没了。按整条打包后，装不下的条目留在库里成为下一批，
-// 调用方拿到的 kept 就是本条消息真正送达的条数。
+// Why cut the whole article instead of rendering the whole text: Cutting it off will make the second half disappear.,
+// And their delivery records will still be marked as delivered.——I can't tell from the news. I can't tell from the past.,
+// The loophole is gone. When the whole box is packed, the unfilled entry remains next in the library. Batch,
+// The caller got it. kept It's the number of articles that actually deliver this message..
 //
-// 参数：maxSize<=0 表示不限制；reserve 是给消息头部/尾部预留的量；
-// size 负责计量（各平台口径不同：企微/钉钉按字节，Telegram 按字符数——
-// 用错口径不会报错，只会让中文消息被压到远小于上限）；
-// render 把第 idx 条渲染成它的实际文本——长度因内容而异，不能靠估算。
+// Parameter:maxSize<=0 Means unlimited;reserve It's for the head./The amount left in the tail;
+// size Responsible for measurement (different platforms: micro-enterprises)/Nail by Bytes,Telegram By character——
+// Use the wrong caliber is not a miscalculation.);
+// render Put the no. idx The bar is rendered into its actual text——The length varies from content to content..
 //
-// 至少返回 1（只要还有条目）。单条极端超长时也要发出这一条、由调用方的
-// 最终截断兜底，否则一条超长漏洞会把整批永久卡在原地。
+// Return at least 1(As long as there are entries. It's the one to send out when it's extremely long.
+// Eventually cut the hole, or a super-long loophole will lock the whole batch in place..
 func packItemCount(items []Item, maxSize, reserve int, footer string, size func(string) int, render func(Item, int) string) int {
 	if maxSize <= 0 {
 		return len(items)
@@ -119,24 +119,24 @@ func packItemCount(items []Item, maxSize, reserve int, footer string, size func(
 	return len(items)
 }
 
-// byteSize / runeSize 是 packItemCount 的两种计量口径，命名出来避免调用处
-// 出现裸的 func(s string) int 闭包，否则很难一眼看出用的是哪种口径。
+// byteSize / runeSize Yes packItemCount Two calibrations. Name them.
+// Naked. func(s string) int Close it, or it's hard to see what caliber it uses..
 func byteSize(s string) int { return len(s) }
 func runeSize(s string) int { return utf8.RuneCountInString(s) }
 
-// assetLine 把资产列表渲染成一行展示文本，超过 limit 个时省略其余并标注总数。
-// 一个漏洞可能锚定几十个资产，全列出来会挤爆消息。
+// assetLine Render the asset list as a line of display text, more than limit Delete the rest and indicate the total.
+// A loophole could anchor dozens of assets, all listed for breaking news..
 func assetLine(assets []string, limit int) string {
 	if len(assets) == 0 {
 		return ""
 	}
 	if limit <= 0 || len(assets) <= limit {
-		return strings.Join(assets, "、")
+		return strings.Join(assets, ",")
 	}
-	return strings.Join(assets[:limit], "、") + " 等 " + itoa(len(assets)) + " 个"
+	return strings.Join(assets[:limit], ",") + " etc. " + itoa(len(assets)) + " pieces"
 }
 
-// itoa 是 strconv.Itoa 的短别名，仅用于拼接展示文本，避免到处 import strconv。
+// itoa Yes strconv.Itoa The short aliases are used only to spell out text and avoid going around. import strconv.
 func itoa(n int) string {
 	if n == 0 {
 		return "0"

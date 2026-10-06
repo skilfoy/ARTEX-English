@@ -135,7 +135,7 @@ export function LinkTrafficDialog({
             Previous page
           </Button>
           <span className="text-xs">
-            No. {page} Pages · Total {data?.total ?? 0} strip
+            Page {page} · {data?.total ?? 0} total flows
           </span>
           <Button
             variant="outline"

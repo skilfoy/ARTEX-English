@@ -49,7 +49,7 @@ import { api } from "@/lib/api";
 import type { LLMRecordItem, LLMRecordDetail, LLMTask } from "@/lib/types";
 
 function fmtTime(ts: string) {
-  return new Date(ts).toLocaleString("zh-CN", {
+  return new Date(ts).toLocaleString("en-US", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -76,7 +76,7 @@ function tryFormatJSON(s: string): string {
   }
 }
 
-// 复制当前框内文本的小按钮。复制成功后短暂显示对勾。text 为空/仅占位符时禁用。
+// Small button to copy the text in the current box. A check mark will appear briefly after the copy is successful..text Empty/Disabled when placeholder only.
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,14 +88,14 @@ function CopyButton({ text }: { text: string }) {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // navigator.clipboard 在非安全上下文(如 http 局域网)不可用，回退到 execCommand。
+      // navigator.clipboard In non-security context(As http LAN)Unavailable, fall back to execCommand.
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand("copy"); } catch { /* 忽略：不支持则静默 */ }
+      try { document.execCommand("copy"); } catch { /* Ignore: Silent if not supported */ }
       document.body.removeChild(ta);
     }
     setCopied(true);
@@ -139,15 +139,15 @@ export default function LLMRecordsPage() {
   const [selected, setSelected] = React.useState<LLMRecordItem | null>(null);
   const [detail, setDetail] = React.useState<LLMRecordDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
-  // 归一化视图 / HTTP 原文视图。原文是排查 provider 侧问题的唯一依据：归一化视图
-  // 不含工具 schema，响应里也没有 tool_use 块。
+  // Normalized view / HTTP Original view. The original text is a troubleshooting provider The only basis for side problems: normalized view
+  // Tools not included schema,Not in the response either tool_use block.
   const [rawView, setRawView] = React.useState(false);
 
   const hasRaw = !!(detail?.raw_request || detail?.raw_response);
-  // 开关保持用户选择，但切到一条无原文的旧记录时自动落回解析视图，而不是显示空白。
+  // The switch keeps the user's selection, but when switching to an old record without the original text, it automatically falls back to the analysis view instead of displaying blank space..
   const showRaw = rawView && hasRaw;
-  // 原文请求体是 JSON，pretty-print 只改排版不改语义，便于阅读；原文响应是 SSE
-  // 帧，tryFormatJSON 解析失败会原样返回，故两边共用一个函数即可。
+  // The original request body is JSON,pretty-print Only change the formatting but not the semantics, making it easier to read; the original response is SSE
+  // frame,tryFormatJSON If the parsing fails, it will be returned as is, so both sides can share a function..
   const reqText = showRaw
     ? detail?.raw_request && tryFormatJSON(detail.raw_request)
     : detail?.request_body && tryFormatJSON(detail.request_body);
@@ -295,7 +295,7 @@ export default function LLMRecordsPage() {
               tasks.map((t) => (
                 <SelectItem key={t.task_id} value={t.task_id}>
                   <span className="font-mono">#{t.task_id}</span>
-                  <span className="ml-2 text-muted-foreground">（{t.count}）</span>
+                  <span className="ml-2 text-muted-foreground">({t.count})</span>
                 </SelectItem>
               ))
             )}
@@ -485,8 +485,8 @@ export default function LLMRecordsPage() {
               ) : (
                 <Badge variant="destructive" className="text-xs">Error</Badge>
               )}
-              {/* 原文视图开关。旧记录没有原文，此时禁用而非静默回退，避免看着像
-                  「原文与解析一致」。 */}
+              {/* Original text view switch. The old record does not have the original text. At this time, it is disabled rather than silently rolled back to avoid looking like
+                  [The original text is consistent with the analysis]. */}
               <Button
                 variant={showRaw ? "secondary" : "ghost"}
                 size="sm"
@@ -555,7 +555,7 @@ export default function LLMRecordsPage() {
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete task「{pickedTask}"All LLM dialogues?</AlertDialogTitle>
+            <AlertDialogTitle>Delete task[{pickedTask}"All LLM dialogues?</AlertDialogTitle>
             <AlertDialogDescription>
               All LLM call records of this task (including the original request/response text) will be permanently deleted, and this operation is irreversible.
             </AlertDialogDescription>

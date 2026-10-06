@@ -32,10 +32,10 @@ import { ConfigField, FilterSummary } from "./_components/channel-form";
 import { DeliveryList } from "./_components/delivery-list";
 import { formatBacklog, StatTile } from "./_components/stat-tile";
 
-// 本页只负责编排：加载数据、维护表单状态、调用接口。
-// 字段定义与解析在 _components/channel-fields.ts，控件与过滤摘要在
-// _components/channel-form.tsx，投递记录在 _components/delivery-list.tsx——
-// 拆开是因为它们各自能被单独读懂，而挤在一个文件里时这个页面接近 1100 行。
+// This page is only responsible for orchestration: loading data, maintaining form status, and calling interfaces.
+// Field definition and analysis in _components/channel-fields.ts,Control and filter summary in
+// _components/channel-form.tsx,Delivery record at _components/delivery-list.tsx——
+// Split because each of them can be read separately, but when squeezed into one file, this page is close to 1100 row.
 export default function NotifyPage() {
   const [meta, setMeta] = React.useState<NotificationMeta | null>(null);
   const [channels, setChannels] = React.useState<NotificationChannel[]>([]);
@@ -60,8 +60,8 @@ export default function NotifyPage() {
         setDigestMin(m.digest_interval_min);
       })
       .catch((e) => toast.error("Failed to read push configuration:" + (e as Error).message));
-    // 渠道列表加载失败要报出来：静默失败会显示成「一个渠道都没有」，
-    // 用户会以为配置丢了，比直接报错更让人慌。
+    // If the channel list fails to load, it will be reported: Silent failure will be displayed as[Not a single channel],
+    // Users will think that the configuration is lost, which is more alarming than reporting an error directly..
     api
       .notifyChannels()
       .then(setChannels)
@@ -86,7 +86,7 @@ export default function NotifyPage() {
 
   function openEdit(ch: NotificationChannel) {
     setEditing(ch);
-    // filter 在后端是 Go 结构体，永远序列化成对象（不会是 null），所以不需要兜底。
+    // filter In the backend it is Go Structure, always serialized into objects (will not be null),So there is no need to tell the truth.
     const f = ch.filter;
     setForm({
       name: ch.name,
@@ -94,8 +94,8 @@ export default function NotifyPage() {
       mode: ch.mode,
       enabled: ch.enabled,
       ratePerMin: String(ch.rate_per_min),
-      // 后端回显的 config 里凭据是掩码值；原样放进表单，提交时原样送回，
-      // 后端据此保留库中原值。
+      // Backend echo config The credentials here are mask values; put them into the form as they are and send them back as they are when submitting.,
+      // The backend retains the original value in the library accordingly.
       config: { ...ch.config },
       minSeverity: f.min_severity ?? "",
       includeText: (f.vulnclass_include ?? []).join("\n"),
@@ -107,17 +107,17 @@ export default function NotifyPage() {
     setOpen(true);
   }
 
-  // buildConfig 把表单状态转成渠道 config。
+  // buildConfig Convert form status to channel config.
   //
-  // 唯一的规则，两类值：
-  //   - 掩码值（"__masked__..."）原样送回 → 后端解读为「这个字段没改，保留库中原值」
-  //   - 其余一律按用户输入提交，空串即「清空该字段」
+  // The only rule, two types of values:
+  //   - Mask value("__masked__...")Send it back as is → The backend is interpreted as[This field has not been changed and the original value in the library is retained.]
+  //   - The rest will be submitted according to user input, and the empty string is[Clear this field]
   //
-  // 之所以不特殊照顾凭据字段（比如「凭据留空就跳过」），是因为那会让用户**无法清除**
-  // 一个设错的密钥——界面上没有任何操作能表达「我要把它删掉」。现在的规则下，
-  // 清空输入框就等于清空该字段，语义唯一且用户可控。
-  // 掩码值不会出现在输入框里（见 ConfigField），所以「框里有字」永远等于
-  // 「用户主动填的」。
+  // The reason why no special care is taken for credential fields (such as[Skip if credentials are left blank]),Because that would allow users**Cannot clear**
+  // A wrongly set key——There is no operation to express on the interface[I want to delete it].Under current rules,
+  // Clearing the input box is equivalent to clearing the field. The semantics are unique and user-controllable..
+  // The mask value will not appear in the input box (see ConfigField),So[There are words in the box]Always equal to
+  // [Filled in by the user actively].
   function buildConfig(): Record<string, unknown> {
     const defs = CHANNEL_FIELDS[form.kind] ?? [];
     const out: Record<string, unknown> = {};
@@ -142,7 +142,7 @@ export default function NotifyPage() {
       }
       if (d.kind === "list") {
         out[d.key] = String(raw ?? "")
-          .split(/[\s,，]+/)
+          .split(/[\s,,]+/)
           .map((s) => s.trim())
           .filter(Boolean);
         continue;
@@ -203,7 +203,7 @@ export default function NotifyPage() {
       const r = await api.notifyTestChannel(editing.id);
       toast.success(`Test message sent (${r.latency_ms}ms), please go to the group to confirm`);
     } catch (e) {
-      // 后端把渠道返回的原始错误如实回传，这是排查配置的唯一线索，原样展示。
+      // The backend returns the original error returned by the channel truthfully. This is the only clue to troubleshoot the configuration. Display it as it is..
       toast.error("Test failed:" + (e as Error).message, { duration: 12000 });
     } finally {
       setTesting(false);
@@ -273,8 +273,8 @@ export default function NotifyPage() {
           </p>
         </div>
         {meta && (
-          // 用 div 而不是 label：Switch 自带 aria-label，外面再套一层 label
-          // 既关联不到任何原生控件，又会让点击文字看起来应该能切换。
+          // Use div instead of label:Switch Bring your own aria-label,Put another layer on the outside label
+          // It can't be associated with any native controls, and it makes clicking text look like it should be able to switch..
           <div className="flex shrink-0 items-center gap-2 text-sm">
             <span className="text-muted-foreground">Master switch</span>
             <Switch
@@ -296,7 +296,7 @@ export default function NotifyPage() {
           <StatTile
             label="Longest backlog"
             value={formatBacklog(meta.stats.backlog_age_ms)}
-            // 积压年龄比积压条数有用得多：积压 3 条可以是从 3 秒到 3 小时。
+            // Backlog age is much more useful than backlog number: Backlog 3 Articles can be from 3 Seconds to arrive 3 hours.
             hint={meta.stats.backlog_age_ms > 5 * 60_000 ? "The push may be stuck" : undefined}
             tone={meta.stats.backlog_age_ms > 5 * 60_000 ? "red" : undefined}
           />
@@ -366,10 +366,10 @@ export default function NotifyPage() {
                   <div className="flex items-center gap-2">
                     <BellIcon className="text-muted-foreground size-4 shrink-0" />
                     <CardTitle className="truncate text-base">{ch.name}</CardTitle>
-                    {/* 卡片整体可点（进入编辑），所以这两个控件必须各自吞掉冒泡，
-                        否则开关/删除会顺带触发编辑。把 stopPropagation 挂在控件自己
-                        身上，而不是套一层 div：套 div 会造出一个「看起来可交互但没有
-                        角色」的静态元素，既触发 a11y 告警，语义上也说不通。 */}
+                    {/* The entire card can be clicked (to enter editing), so these two controls must swallow the bubbles separately.,
+                        else switch/Deleting will trigger editing incidentally. put stopPropagation Hang on the control itself
+                        Wear it on your body instead of a layer div:set div will create a[Looks interactive but isn't
+                        Character]static elements that both trigger a11y Alarm, it doesn't make sense semantically. */}
                     <div className="ml-auto flex items-center gap-2">
                       <Switch
                         checked={ch.enabled}
@@ -383,8 +383,8 @@ export default function NotifyPage() {
                         aria-label="Delete"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // void 显式丢弃 Promise：removeChannel 自己 catch 并 toast，
-                          // 这里不需要 await（onClick 不是 async）。
+                          // void Explicitly discard Promise:removeChannel self catch and toast,
+                          // Not needed here await(onClick No async).
                           void removeChannel(ch);
                         }}
                       >
@@ -428,7 +428,7 @@ export default function NotifyPage() {
                 <Select
                   value={form.kind}
                   onValueChange={(v) => {
-                    // 换类型等于换一套凭据字段，不能把旧配置合并进来。
+                    // Changing the type is equivalent to changing a set of credential fields, and the old configuration cannot be merged..
                     setF({ kind: v, config: {} });
                   }}
                   disabled={!!editing}

@@ -41,20 +41,20 @@ import type {
   TaskScopeRow,
 } from "@/lib/types";
 
-// 紧凑格式化 token 数（12345 → 12.3k，2000000 → 2M）。
+// Compact format token Number(12345 → 12.3k,2000000 → 2M).
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1) + "M";
   if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k";
   return String(n);
 }
 
-// 缓存命中率 = 缓存读 / 输入（InputTokens 已含 cache_read 子集，故比值在 0–100%）。
+// Cache hit rate = Cache read / Input(InputTokens Included cache_read subset, so the ratio is 0–100%).
 function cacheHitRate(cacheRead: number, input: number): string {
   if (input <= 0) return "—";
   return Math.round((cacheRead / input) * 100) + "%";
 }
 
-// 测试范围一条的显示值：域名 / 网段 / 公司。
+// The display value of one item in the test range: domain name / Network segment / Company.
 function scopeValue(row: TaskScopeRow): string {
   if (row.value) return row.value;
   if (row.domain) return row.domain;
@@ -116,17 +116,17 @@ export function OverviewTab({ taskId }: { taskId: string }) {
     pct: number | null;
     by_type: { type: string; total: number; tested: number }[];
   } | null>(null);
-  // 正在重跑的意图 id（含 "__all__" 表示批量），用于禁用按钮 + 转圈。
+  // The intention of running again id(incl. "__all__" means batch), used to disable the button + Turn around.
   const [rerunning, setRerunning] = React.useState<Set<string>>(new Set());
-  // 测试范围列表 + 新增表单状态。
+  // Test range list + Add form status.
   const [scope, setScope] = React.useState<TaskScopeRow[]>([]);
   const [scopeKind, setScopeKind] = React.useState<TaskScopeRow["kind"]>("root_domain");
   const [scopeValueInput, setScopeValueInput] = React.useState("");
   const [scopeBusy, setScopeBusy] = React.useState(false);
   const [scopeErr, setScopeErr] = React.useState("");
-  // 按模型的 token 用量（来自常开的 llm_usage 计量账本，逐次精确）。
+  // By model token Dosage (from normally open llm_usage Measurement ledger, accurate every time).
   const [modelTokens, setModelTokens] = React.useState<ModelTokenStat[]>([]);
-  // 目标管理：目标列表 + 新增表单 + 行内编辑状态。
+  // Goal Management: Goal List + New form + Inline editing status.
   const [goals, setGoals] = React.useState<TaskGoal[]>([]);
   const [goalText, setGoalText] = React.useState("");
   const [goalVuln, setGoalVuln] = React.useState("");
@@ -135,7 +135,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const [editingGoalId, setEditingGoalId] = React.useState<string | null>(null);
   const [editText, setEditText] = React.useState("");
   const [editVuln, setEditVuln] = React.useState("");
-  // 约束管理：约束列表 + 新增表单 + 行内编辑状态。
+  // Constraint Management: Constraint List + New form + Inline editing status.
   const [constraints, setConstraints] = React.useState<TaskConstraint[]>([]);
   const [conText, setConText] = React.useState("");
   const [conKind, setConKind] = React.useState<TaskConstraint["kind"]>("deny");
@@ -150,7 +150,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       const resp = await api.tokensByModel(taskId);
       setModelTokens(resp.models);
     } catch {
-      // 忽略：无 PG 时接口报错，卡片自然为空
+      // Ignore: None PG When the interface reports an error, the card is naturally empty.
     }
   }, [taskId]);
 
@@ -159,7 +159,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       const resp = await api.taskScope(taskId);
       setScope(resp.scope);
     } catch {
-      // 忽略：无 asset store 时接口 503，范围卡片自然为空
+      // Ignore: None asset store time interface 503,The range card is naturally empty
     }
   }, [taskId]);
 
@@ -168,7 +168,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       const resp = await api.taskGoals(taskId);
       setGoals(resp.goals);
     } catch {
-      // 忽略：瞬时错误，下次轮询重试
+      // Ignore: Transient error, try again next polling
     }
   }, [taskId]);
 
@@ -222,7 +222,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
     try {
       await api.deleteGoal(taskId, g.id);
     } catch {
-      await loadGoals(); // 删除失败：重新拉取还原
+      await loadGoals(); // Deletion failed: pull and restore again
     }
   };
 
@@ -231,7 +231,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       const resp = await api.taskConstraints(taskId);
       setConstraints(resp.constraints);
     } catch {
-      // 忽略：瞬时错误，下次轮询重试
+      // Ignore: Transient error, try again next polling
     }
   }, [taskId]);
 
@@ -284,7 +284,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
     try {
       await api.deleteConstraint(taskId, c.id);
     } catch {
-      await loadConstraints(); // 删除失败：重新拉取还原
+      await loadConstraints(); // Deletion failed: pull and restore again
     }
   };
 
@@ -309,7 +309,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
     try {
       await api.deleteTaskScope(taskId, row.id);
     } catch {
-      await loadScope(); // 删除失败：重新拉取还原
+      await loadScope(); // Deletion failed: pull and restore again
     }
   };
 
@@ -321,20 +321,20 @@ export function OverviewTab({ taskId }: { taskId: string }) {
       return next;
     });
 
-  // 重跑单条：置回 open（乐观更新本地 state，3s 轮询兜底），worker 会重新认领、从头再跑。
+  // Rerun single line: reset open(Optimistic Update Local state,3s Polling for details),worker Will claim it again and run again from the beginning.
   const rerunOne = async (id: string) => {
     markRerun(id, true);
     try {
       await api.rerunIntent(taskId, id);
       setIntents((prev) => prev.map((i) => (i.id === id ? { ...i, state: "open" } : i)));
     } catch {
-      // 失败忽略：下次轮询仍显示 blocked，用户可再点
+      // Failed to ignore: still displayed next time polling blocked,Users can click again
     } finally {
       markRerun(id, false);
     }
   };
 
-  // 批量重跑本任务全部 blocked。
+  // Rerun all tasks in batches blocked.
   const rerunAll = async () => {
     markRerun("__all__", true);
     try {
@@ -417,7 +417,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
   const blocked = intents.filter((i) => i.state === "blocked");
   const taskFindings = findings.filter((f) => f.task_id === taskId);
   const goalsPct = task?.goals_total ? Math.round(((task.goals_met ?? 0) / task.goals_total) * 100) : 0;
-  // token 合计（跨全部模型），用于卡片头部总览。
+  // token Total (across all models), used for card header overview.
   const tokenTotals = modelTokens.reduce(
     (acc, m) => {
       acc.input += m.input_tokens;
@@ -432,7 +432,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 原始任务描述与目标(创建时填写的),置顶便于随时回看。 */}
+      {/* Original mission description and goals(Filled in when creating),Pick it to the top for easy review at any time. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -450,19 +450,19 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           </div>
         </CardContent>
       </Card>
-      {/* 目标管理：查看/新增/修改/删除本任务的探索目标。新增与修改会通知规划者并复活任务，
-          删除仅通知规划者（不复活）。目标 = 最终可交付/可核验的结果，不是攻击步骤或侦察动作。 */}
+      {/* Goal Management: View/New/Modify/Delete the exploration target of this mission. New additions and modifications will be notified to the planner and the task will be resurrected,
+          Deletion notifies planner only (not revived). target = finally deliverable/Verifiable results, not attack steps or reconnaissance actions. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ListChecksIcon className="size-4 text-primary" /> Goal management
             <span className="text-muted-foreground text-xs font-normal">
-              (ultimately verifiable goals, total {goals.length} Article; new additions/modifications will notify the planner and resurrect the task)
+              (ultimately verifiable goals, {goals.length} total; new additions/modifications will notify the planner and resurrect the task)
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {/* 新增表单 */}
+          {/* New form */}
           <div className="flex flex-wrap items-center gap-2">
             <Input
               className="h-7 min-w-56 flex-1 text-sm"
@@ -489,7 +489,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </Button>
             {goalErr && <span className="text-xs text-red-500">{goalErr}</span>}
           </div>
-          {/* 目标列表 */}
+          {/* Goal list */}
           {goals.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {goals.map((g) =>
@@ -572,20 +572,20 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           )}
         </CardContent>
       </Card>
-      {/* 操作约束管理：allow=允许 / deny=禁止。约束会在下一轮规划时注入 planner/worker 的系统
-          提示以框定探索边界（注入范围可在 系统设置 里按 planner/worker 开关）。改动不即时打断，
-          下一轮规划自然读到。 */}
+      {/* Operational constraint management:allow=Allow / deny=Prohibited. Constraints will be injected in the next round of planning planner/worker system
+          Prompt to frame the exploration boundary (the injection range can be clicked in System Settings planner/worker switch). Changes are not immediately interrupted,
+          Naturally read the next round of planning. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldAlertIcon className="size-4 text-amber-500" /> Operational constraints
             <span className="text-muted-foreground text-xs font-normal">
-              (Frame the exploration boundary of planner/worker, total {constraints.length} Article; changes to the next round of planning will take effect)
+              (Frame the exploration boundary of planner/worker, {constraints.length} total; changes to the next round of planning will take effect)
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {/* 新增表单 */}
+          {/* New form */}
           <div className="flex flex-wrap items-center gap-2">
             <NativeSelect
               size="sm"
@@ -615,7 +615,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </Button>
             {conErr && <span className="text-xs text-red-500">{conErr}</span>}
           </div>
-          {/* 约束列表 */}
+          {/* Constraint list */}
           {constraints.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {constraints.map((c) =>
@@ -734,20 +734,20 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           </CardContent>
         </Card>
       )}
-      {/* LLM Token 用量：按模型分组，数据来自 llm_records（需开启 LLM 录制）。 */}
+      {/* LLM Token Usage: grouped by model, data from llm_records(Need to be turned on LLM Recording). */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <CoinsIcon className="size-4 text-amber-500" /> LLM Token usage
             <span className="text-muted-foreground text-xs font-normal">
-              (Statistics by model{tokenTotals.calls > 0 ? `, total${tokenTotals.calls}calls` : ""}）
+              (Statistics by model{tokenTotals.calls > 0 ? `, total${tokenTotals.calls}calls` : ""})
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {modelTokens.length > 0 ? (
             <>
-              {/* 合计总览 */}
+              {/* Total overview */}
               <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
                 <span className="tabular-nums">
                   <span className="text-muted-foreground">Input </span>
@@ -768,7 +768,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
                   </span>
                 </span>
               </div>
-              {/* 按模型明细表 */}
+              {/* Details by model */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -805,18 +805,18 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           )}
         </CardContent>
       </Card>
-      {/* 测试范围：覆盖度分母 + 授权边界，可手动增删。 */}
+      {/* Test scope: coverage denominator + Authorization boundary, can be added or deleted manually. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldCheckIcon className="size-4 text-emerald-500" /> Test range
             <span className="text-muted-foreground text-xs font-normal">
-              (coverage denominator + authorization boundary, total {scope.length} strip)
+              (coverage denominator + authorization boundary, {scope.length} total)
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {/* 新增表单 */}
+          {/* New form */}
           <div className="flex flex-wrap items-center gap-2">
             <NativeSelect
               size="sm"
@@ -861,7 +861,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </Button>
             {scopeErr && <span className="text-xs text-red-500">{scopeErr}</span>}
           </div>
-          {/* 范围列表 */}
+          {/* range list */}
           {scope.length > 0 ? (
             <div className="flex flex-col gap-1.5">
               {scope.map((row) => (
@@ -916,7 +916,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             <div className="text-xs text-muted-foreground">Recent activities</div>
             <div className="mt-1 inline-flex items-center gap-1 text-sm">
               <ClockIcon className="size-3.5" />
-              {task?.last_activity ? new Date(task.last_activity).toLocaleTimeString("zh-CN") : "—"}
+              {task?.last_activity ? new Date(task.last_activity).toLocaleTimeString("en-US") : "—"}
             </div>
           </div>
           <div>
@@ -930,7 +930,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
               <div className="text-xs text-muted-foreground">Completion time</div>
               <div className="mt-1 inline-flex items-center gap-1 text-sm">
                 <ClockIcon className="size-3.5" />
-                {new Date(task.completed_unix * 1000).toLocaleString("zh-CN")}
+                {new Date(task.completed_unix * 1000).toLocaleString("en-US")}
               </div>
             </div>
           ) : null}
@@ -1000,8 +1000,8 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         </Card>
       </div>
 
-      {/* Blocked intents — 出错/被拦(如 LLM 网络问题)的意图，可一键重跑：置回 open，
-          worker 会重新认领、从头再跑（已写回图谱的数据保留）；任务若已终态/暂停会自动复活。 */}
+      {/* Blocked intents — Error/stopped(As LLM Network problems)Intention, you can rerun with one click: Reset open,
+          worker Will re-claim and run again (the data written back to the map will be retained); if the task has ended/Pause will automatically revive. */}
       {blocked.length > 0 && (
         <Card className="border-red-500/30">
           <CardHeader className="flex-row items-center justify-between gap-2 space-y-0">
@@ -1033,7 +1033,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             ))}
             {blocked.length > 20 && (
               <p className="text-xs text-muted-foreground">
-                Only display the first 20 entries, click "Rerun All" to process the remaining {blocked.length - 20} strip.
+                Only display the first 20 entries, click "Rerun All" to process the remaining {blocked.length - 20} entries.
               </p>
             )}
           </CardContent>
@@ -1064,8 +1064,8 @@ const TASK_RULE_KIND_LABEL: Record<AssetInterceptKind, string> = Object.fromEntr
   TASK_RULE_KIND_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<AssetInterceptKind, string>;
 
-// TaskInterceptRulesCard 在任务详情总览里管理「任务级资产拦截 / 允许规则」：
-// 列表 + 新增 + 行内编辑 + 删除 + 启用开关。规则仅本任务生效，不进全局表。
+// TaskInterceptRulesCard Manage in task details overview[Task-level asset interception / Allow rules]:
+// List + New + Inline editing + Delete + Enable the switch. The rule only takes effect for this task and does not enter the global table..
 function TaskInterceptRulesCard({ taskId }: { taskId: string }) {
   const [rules, setRules] = React.useState<AssetInterceptRule[]>([]);
   const [busy, setBusy] = React.useState(false);
@@ -1084,7 +1084,7 @@ function TaskInterceptRulesCard({ taskId }: { taskId: string }) {
     try {
       setRules(await api.taskInterceptRules(taskId));
     } catch {
-      // 忽略瞬时错误
+      // Ignore transient errors
     }
   }, [taskId]);
 
@@ -1170,12 +1170,12 @@ function TaskInterceptRulesCard({ taskId }: { taskId: string }) {
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldCheckIcon className="size-4 text-sky-500" /> Task level asset interception/allow
           <span className="text-muted-foreground text-xs font-normal">
-            (Only this task takes effect and does not enter the global situation; intercept first and then allow, total {rules.length} strip)
+            (Only this task takes effect and does not enter the global situation; intercept first and then allow, {rules.length} total)
           </span>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        {/* 新增表单 */}
+        {/* New form */}
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect size="sm" value={newAction} onChange={(e) => setNewAction(e.target.value as "block" | "allow")}>
             <NativeSelectOption value="block">Interception</NativeSelectOption>
@@ -1210,7 +1210,7 @@ function TaskInterceptRulesCard({ taskId }: { taskId: string }) {
           </Button>
           {err && <span className="text-xs text-red-500">{err}</span>}
         </div>
-        {/* 规则列表 */}
+        {/* Rule list */}
         {rules.length > 0 ? (
           <div className="flex flex-col gap-1.5">
             {rules.map((r) =>

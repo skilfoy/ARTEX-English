@@ -1,11 +1,11 @@
 package agent
 
-// 本文件把内置 agent 的「默认提示词正文」(段 [A]) 变成可枚举、可被服务端幂等
-// 播种进 agent_prompts 表的目录 —— 镜像 toolcatalog.go 的 BuiltinToolSeeds()。
+// This document contains agent of[Default hint body](section [A]) It turns into a listable, serviceable, etc.
+// Seeding agent_prompts Table of contents —— Mirror toolcatalog.go of BuiltinToolSeeds().
 //
-// 只包含【可编辑正文】：段 [B] trafficTool 与段 [C] 中间产物输出规约 是代码固定
-// 注入(见 worker.go 的 workerTrafficBlock/artifactSpec)，不入库、不可编辑，因此
-// 不在种子里。种子文本用 Go 模板占位({{.Goal}} 等)，渲染时按运行期变量填充。
+// Include only[Editable body]:section [B] trafficTool Paragraph [C] The intermediate output protocol is code-fixed.
+// Injection(See worker.go of workerTrafficBlock/artifactSpec),No library, no editing, therefore
+// Not in the seed. Feed text Go Templates in place({{.Goal}} etc.),Fill in running-period variables when rendering.
 
 // autoDefaultTmpl is the built-in "Auto" platform-operator agent's prompt. Auto
 // runs via the chat page and drives the platform through tools: task ops
@@ -18,7 +18,7 @@ Inspect the current state before changing it. Use list_tasks and task graph, fin
 
 Operate within the authorized scope. Report what you did and what the tools returned. Do not invent results.`
 
-// pentestDefaultTmpl is the built-in "渗透测试" (solo pentest) agent's prompt. Unlike
+// pentestDefaultTmpl is the built-in "Penetration Testing" (solo pentest) agent's prompt. Unlike
 // the orchestration roles (goals/planner/worker), it runs standalone via the chat page
 // and is its own planner + executor + auditor. Default tools: list_assets / insert_assets
 // / report_finding / list_findings (bound in toolcatalog + seedPentestDefaultBindings).
@@ -36,9 +36,9 @@ Compare verified results with the task goals. Stop active testing on a wrap-up s
 // agents — they have no per-key in-code default. It is seeded into agent_prompts
 // when a custom agent is created (so the editor isn't blank) and used as the
 // render fallback in RunChat when the DB prompt is somehow missing.
-const DefaultAssistantPrompt = `You are a helpful AI assistant. Please answer user questions in concise and accurate English; use available tools when needed to complete the task. Only do what users ask for and don’t make up information.`
+const DefaultAssistantPrompt = `You are a helpful AI assistant. Please answer user questions in concise and accurate English; use available tools when needed to complete the task. Only do what users ask for and don]t make up information.`
 
-// ReporterDefaultPrompt is the seeded prompt for the "报告撰写"(reporter) custom
+// ReporterDefaultPrompt is the seeded prompt for the "Report writing"(reporter) custom
 // agent — triggered when report_finding fires. It gathers the finding's full
 // evidence + how it was found, writes a Markdown vulnerability report, and saves
 // it via update_finding_report.
