@@ -13,43 +13,44 @@ import (
 	"github.com/skilfoy/ARTEX-English/notify"
 )
 
-// What is this document? IM Send channel configuration and event layer. The recipient and status of the delivery task are now in the current.
-// db/notification_delivery.go.
+// This file is the IM notification channel configuration and event layer.
+// Claiming deliveries and state transitions live in db/notification_delivery.go.
 //
-// Two variables. Make sure this file is maintained.:
+// Two invariants must hold when this file changes:
 //
-//  1. Writing for bugs(RecordFindingTx)Call Only InsertNotificationEventTx One blind plug.,
-//     Do not read any notice-related tables, do not filter matches. Any reading introduced here could be due to
-//     The user has wrong filter conditions and contaminated or even aborted the bugs..
-//  2. Filter Match Never Wrong: Configure malformations always press[hit]Processing(See notify.Match).I'd rather push.,
-//     Don't let it slip..
+//  1. The finding-write transaction (RecordFindingTx) calls InsertNotificationEventTx
+//     once as a blind insert. It must not read any notification table or run filter
+//     matching. A read introduced here can be poisoned by a misconfigured filter
+//     and contaminate or abort the finding write.
+//  2. Filter matching never returns an error: a malformed config is treated as a
+//     hit (see notify.Match). Prefer an extra push over a missed one.
 
-// ErrNotificationChannelNotFound There is no channel..
-var ErrNotificationChannelNotFound = errors.New("No channels of notification exist")
+// ErrNotificationChannelNotFound means the channel does not exist.
+var ErrNotificationChannelNotFound = errors.New("notification channel does not exist")
 
-// Organisation.
+// Delivery states.
 const (
-	NotifyStatePending = "pending" // To be issued
-	NotifyStateSending = "sending" // It's been one of them. dispatcher Received, lease not due
-	NotifyStateSent    = "sent"    // Delivered
-	NotifyStateFailed  = "failed"  // A re-test is exhausted or permanently failed and can re-activate manually
-	NotifyStateSkipped = "skipped" // Channel disabled, not sent
+	NotifyStatePending = "pending" // waiting to send
+	NotifyStateSending = "sending" // claimed by a dispatcher; lease has not expired
+	NotifyStateSent    = "sent"    // delivered
+	NotifyStateFailed  = "failed"  // retries exhausted or permanently failed; can be resent manually
+	NotifyStateSkipped = "skipped" // channel disabled; will not be sent
 )
 
-// Send Mode.
+// Push modes.
 const (
 	NotifyModeRealtime = "realtime"
 	NotifyModeDigest   = "digest"
 )
 
-// ValidNotifyMode White List Verify Send Mode (with findings.status Same: no. DB CHECK,
-// To facilitate subsequent expansion).
+// ValidNotifyMode reports whether m is an allowed push mode. Like findings.status,
+// this is not a DB CHECK constraint, so new modes can be added later.
 func ValidNotifyMode(m string) bool {
 	return m == NotifyModeRealtime || m == NotifyModeDigest
 }
 
-// NotificationChannel A channel case configuration.Config With Filter Keep original JSON,
-// Give it to me. notify Package——db I don't understand what their fields mean..
+// NotificationChannel is one channel instance. Config and Filter stay raw JSON;
+// the notify package parses them. The db layer does not interpret their fields.
 type NotificationChannel struct {
 	ID     int64           `json:"id"`
 	Name   string          `json:"name"`
@@ -57,18 +58,19 @@ type NotificationChannel struct {
 	Mode   string          `json:"mode"`
 	Config json.RawMessage `json:"config"`
 	Filter json.RawMessage `json:"filter"`
-	// Enabled The pointer is to distinguish.[No message.]With[Visibility false]——
-	// Front-end switch control only submits modified fields.
+	// Enabled is a pointer so an omitted field is distinct from an explicit false.
+	// The frontend toggle submits only the fields the operator changed.
 	Enabled    *bool     `json:"enabled,omitempty"`
 	RatePerMin int       `json:"rate_per_min"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// IsEnabled Return channel enabled;Enabled for nil(Unmounted) by Enable.
+// IsEnabled reports whether the channel is enabled. A nil Enabled (not loaded)
+// is treated as enabled.
 func (c *NotificationChannel) IsEnabled() bool { return c.Enabled == nil || *c.Enabled }
 
-// NotificationEvent It's a fact..
+// NotificationEvent is one recorded event.
 type NotificationEvent struct {
 	ID        int64           `json:"id"`
 	Kind      string          `json:"kind"`
@@ -89,8 +91,9 @@ func scanNotificationChannel(sc interface{ Scan(...any) error }) (*NotificationC
 	return &c, nil
 }
 
-// ListNotificationChannels Returns the example of all channels with the enabled front, peer pressed id.
-// Sort SQL It's for Jean. UI With dispatcher See the same stable order..
+// ListNotificationChannels returns every channel instance, enabled ones first,
+// then by id. The ORDER BY lives in SQL so the UI and the dispatcher see the
+// same stable order.
 func (d *DB) ListNotificationChannels(ctx context.Context) ([]*NotificationChannel, error) {
 	rows, err := d.QueryContext(ctx, `SELECT `+notificationChannelCols+` FROM notification_channels
 ORDER BY enabled DESC, id`)
@@ -109,7 +112,7 @@ ORDER BY enabled DESC, id`)
 	return out, rows.Err()
 }
 
-// NotificationChannelByID Access to individual channels.
+// NotificationChannelByID loads one channel.
 func (d *DB) NotificationChannelByID(ctx context.Context, id int64) (*NotificationChannel, error) {
 	row := d.QueryRowContext(ctx, `SELECT `+notificationChannelCols+` FROM notification_channels WHERE id=$1`, id)
 	c, err := scanNotificationChannel(row)
@@ -119,26 +122,30 @@ func (d *DB) NotificationChannelByID(ctx context.Context, id int64) (*Notificati
 	return c, err
 }
 
-// SaveNotificationChannel Create or update a new channel.
+// SaveNotificationChannel creates or updates a channel.
 //
-// Update only over the field given by the caller visible (no) nil / It's not empty, so the front end can submit local
-// Modified drawer form without returning config Those fields in there it didn't show.——It's going to happen.
-// [The mask covers the real key.]Accidents.
+// Updates overwrite only fields the caller set explicitly (non-nil / non-empty),
+// so the frontend can submit a partially edited drawer without echoing config
+// fields it never displayed. Echoing them would let a masked placeholder
+// overwrite the real secret.
 func (d *DB) SaveNotificationChannel(ctx context.Context, c *NotificationChannel) (int64, error) {
 	if c.Mode == "" {
 		c.Mode = NotifyModeRealtime
 	}
-	// This is the place.**No**Yes 0 Do any processing.:0 It's a legitimate configuration.[No current limit].
+	// Do not rewrite 0. Zero is a valid setting and means "no rate limit".
 	//
-	// Used to be written `if c.RatePerMin <= 0 { c.RatePerMin = Default value }`,It was meant to be.[When not specified
-	// A security default.],But that's...[Preface As 0]They swallowed it together.——Document,UI Tips and
-	// takeTokens Both 0 It's the only way to change it. 20(DingTalk/Micro/Telegram)
-	// or 100(The operator thinks it's free. 20/The minutes are stuck and there's no hint..
+	// This used to be `if c.RatePerMin <= 0 { c.RatePerMin = default }`, intended
+	// as a safe default when the field was omitted. That also swallowed an
+	// explicit 0. Docs, UI copy, and takeTokens all treat 0 as unlimited, but
+	// this path quietly rewrote it to 20 (DingTalk/WeCom/Telegram) or 100
+	// (Feishu). Operators thought the limit was off and were capped at 20/min
+	// with no warning.
 	//
-	// [Not specified]With[Visible 0]The difference is only known by the caller (the requested field is missing) vs Clear pass. 0),
-	// So the default value by server Level filled when fields are defaulted. See notifyCreateChannel.
+	// Only the caller can tell "omitted" from "explicit 0" (missing JSON field
+	// vs a literal 0). The server layer fills the default when the field is
+	// absent; see notifyCreateChannel.
 	if c.RatePerMin < 0 {
-		return 0, errors.New("The limit value cannot be negative")
+		return 0, errors.New("rate limit cannot be negative")
 	}
 	if c.Config == nil {
 		c.Config = json.RawMessage(`{}`)
@@ -168,10 +175,11 @@ WHERE id=$1`,
 	return c.ID, nil
 }
 
-// SetNotificationChannelEnabled Toggle departure.
+// SetNotificationChannelEnabled toggles a channel on or off.
 //
-// When a channel is disabled, mark the delivery that has not yet been sent as skipped:If not re-enabled
-// We'll get a batch.[Backlog during decommissioning]The old loophole, the time limit is lost and can easily be miscalculated as new..
+// Disabling a channel also marks its unsent deliveries skipped. Otherwise,
+// re-enabling it would suddenly deliver a backlog of stale findings from the
+// disabled period, which are easy to mistake for new ones.
 func (d *DB) SetNotificationChannelEnabled(ctx context.Context, id int64, enabled bool) error {
 	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, `UPDATE notification_channels SET enabled=$2 WHERE id=$1`, id, enabled)
@@ -184,7 +192,7 @@ func (d *DB) SetNotificationChannelEnabled(ctx context.Context, id int64, enable
 		if !enabled {
 			if _, err := tx.ExecContext(ctx, `UPDATE notification_deliveries SET state=$2, last_error=$3
 WHERE channel_id=$1 AND state IN ($4,$5)`,
-				id, NotifyStateSkipped, "Channel disabled", NotifyStatePending, NotifyStateSending); err != nil {
+				id, NotifyStateSkipped, "channel disabled", NotifyStatePending, NotifyStateSending); err != nil {
 				return err
 			}
 		}
@@ -192,8 +200,9 @@ WHERE channel_id=$1 AND state IN ($4,$5)`,
 	})
 }
 
-// DeleteNotificationChannel Delete channel. Their delivery history deletes with external key cascades
-// (There's no way to read history.).
+// DeleteNotificationChannel deletes a channel. Delivery history is removed by
+// the foreign-key cascade (without the channel config, that history cannot be
+// interpreted).
 func (d *DB) DeleteNotificationChannel(ctx context.Context, id int64) error {
 	res, err := d.ExecContext(ctx, `DELETE FROM notification_channels WHERE id=$1`, id)
 	if err != nil {
@@ -205,53 +214,60 @@ func (d *DB) DeleteNotificationChannel(ctx context.Context, id int64) error {
 	return nil
 }
 
-// RecordNotificationEventTx In the caller's business.**Try.**Write a push event.
+// RecordNotificationEventTx best-effort inserts one push event inside the caller's transaction.
 //
-// This is the only notice-related change on the loophole: once INSERT,No watch, no channel.,
-// Don't run the filter. It's a promise.[Hole Out]With[Send Task Exists]Atoms Same,
-// There are no successful windows where messages are lost forever..
+// This is the only notification write on the finding path: a single INSERT.
+// It reads no tables, knows no channels, and runs no filter. Committing the
+// transaction makes "finding stored" and "push task exists" atomic, so there
+// is no window where the commit succeeds, the event is never queued, and the
+// message is lost forever.
 //
-// Two key designs, not handwritten.:
+// Two design choices are deliberate:
 //
-//  1. **Why? SAVEPOINT**:PostgreSQL The word 'in-house' is wrong.
-//     aborted status, all subsequent statements COMMIT)All fail. So...[Ignore this. INSERT
-//     error, let the caller continue submitting]at PG Lee can't do it.——Unless you isolate the error with a preservation point.
-//     This statement. There's no point, there's only one.[Roll Back]This option.
+//  1. Why a SAVEPOINT: in PostgreSQL, any statement error aborts the whole
+//     transaction. Later statements, including COMMIT, then fail. "Ignore this
+//     INSERT and let the caller commit" is impossible unless a savepoint
+//     isolates that one statement. Without it, the only option is to roll the
+//     entire transaction back.
 //
-//  2. **Why is it wrong to roll back?**:Delivery is a function of convenience, and the record of loopholes is the product itself. One announcement
-//     The problem with the table (unmoved old library, instantaneous disk failure) should not keep the high-risk loophole out of the library. So it's quarantined.
-//     Error, log, return false,Let the loophole be written as usual——The price is to lose this delivery..
-//     Return bool instead of error It's intentional: the caller shouldn't think of it as an error that affects success or failure..
+//  2. Why rolling the whole transaction back is wrong: push is a convenience;
+//     the finding record is the product. A notification-table problem (unmigrated
+//     schema, a transient disk fault) must not keep a high-severity finding out
+//     of the database. The error is isolated, logged, and reported as false so
+//     the finding write still commits. The cost is losing this one push.
+//     Returning bool rather than error is intentional: callers must not treat
+//     it as a failure of the finding write.
 func RecordNotificationEventTx(ctx context.Context, tx *sql.Tx, kind string, findingID int64, snap notify.Snapshot) bool {
 	raw, err := json.Marshal(snap)
 	if err != nil {
-		log.Printf("[notify] Sequenced push event failed finding=%d: %v", findingID, err)
+		log.Printf("[notify] failed to serialize push event finding=%d: %v", findingID, err)
 		return false
 	}
 	if _, err := tx.ExecContext(ctx, `SAVEPOINT notify_event`); err != nil {
-		log.Printf("[notify] Failed to create saving point finding=%d: %v", findingID, err)
+		log.Printf("[notify] failed to create savepoint finding=%d: %v", findingID, err)
 		return false
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO notification_events(kind,finding_id,snapshot) VALUES($1,$2,$3)`,
 		kind, findingID, string(raw)); err != nil {
-		log.Printf("[notify] Writing to push event failed finding=%d(The bug record is intact.): %v", findingID, err)
-		// Roll back to the preservation point and get the business from aborted Save it in your state..
+		log.Printf("[notify] failed to write push event finding=%d (finding record unaffected): %v", findingID, err)
+		// Roll back to the savepoint so the transaction leaves the aborted state.
 		if _, rbErr := tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT notify_event`); rbErr != nil {
-			log.Printf("[notify] Failed to roll back to saving point finding=%d: %v", findingID, rbErr)
+			log.Printf("[notify] failed to roll back to savepoint finding=%d: %v", findingID, rbErr)
 		}
 		return false
 	}
-	// Release the saving point to avoid the accumulation of useless saving points in long business.
+	// Release the savepoint so a long transaction does not accumulate unused ones.
 	_, _ = tx.ExecContext(ctx, `RELEASE SAVEPOINT notify_event`)
 	return true
 }
 
-// AddNotificationEvent Yes InsertNotificationEventTx Independent service version for not available
-// Call points in established transactions (e.g. channel)[Send test message],It's not real. finding).
+// AddNotificationEvent is the standalone-transaction form of InsertNotificationEventTx
+// for callers that are not already in a transaction (for example a channel
+// "send test message", which has no real finding).
 func (d *DB) AddNotificationEvent(ctx context.Context, kind string, findingID int64, snap notify.Snapshot) (int64, error) {
 	raw, err := json.Marshal(snap)
 	if err != nil {
-		return 0, fmt.Errorf("Sequenced notification event snapshot failed: %w", err)
+		return 0, fmt.Errorf("failed to serialize notification event snapshot: %w", err)
 	}
 	var id int64
 	err = d.QueryRowContext(ctx, `INSERT INTO notification_events(kind,finding_id,snapshot) VALUES($1,$2,$3) RETURNING id`,
@@ -259,19 +275,22 @@ func (d *DB) AddNotificationEvent(ctx context.Context, kind string, findingID in
 	return id, err
 }
 
-// FanOutPendingEvents Commencing the currently active channel to deliver the outstanding bug event,
-// Number of events returned to current cycle and new delivery.
+// FanOutPendingEvents expands unassigned finding events into delivery tasks
+// for the channels that are currently enabled. It returns how many events this
+// round processed and how many deliveries it created.
 //
-// Round operation in one service: event use FOR UPDATE SKIP LOCKED Collect, multiple processes running simultaneously
-// They also received different lines.
-// db/task_archives.go of completeNextArchiveJob).
+// The whole round is one transaction. Events are claimed with
+// FOR UPDATE SKIP LOCKED, so concurrent processes each take different rows.
+// The archive queue claims work the same way; see completeNextArchiveJob in
+// db/task_archives.go.
 //
-// Filter matching deliberately placed Go Side instead of Side SQL:Channel filter condition is a set of optional fields JSONB,
-// Use SQL The matching of the six combinations makes the query difficult to maintain and the number of channels is[How many are there?],
-// Once fully loaded, it's faster and easier to measure in the memory by article..
+// Filter matching stays in Go, not SQL. A channel filter is JSONB of optional
+// fields, and expressing every combination in SQL would be hard to maintain.
+// There are only a handful of hand-configured channels, so loading them and
+// comparing in memory is faster and easier to test.
 //
-// Any failure to hit any channel will also be marked. fanned_out ——Otherwise, it'll stay in the pool forever.,
-// each tick Sweeped again..
+// Events that match no channel are still marked fanned_out. Otherwise they
+// would stay in the pending set and be rescanned on every tick.
 func (d *DB) FanOutPendingEvents(ctx context.Context, limit int) (eventCount, deliveryCount int, err error) {
 	if limit <= 0 {
 		limit = 200
@@ -280,7 +299,7 @@ func (d *DB) FanOutPendingEvents(ctx context.Context, limit int) (eventCount, de
 	if err != nil {
 		return 0, 0, err
 	}
-	defer tx.Rollback() //nolint:errcheck // After successful submission no-op
+	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
 
 	channels, err := listEnabledNotificationChannelsTx(ctx, tx)
 	if err != nil {
@@ -302,11 +321,13 @@ WHERE NOT fanned_out ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1`, limit)
 			return 0, 0, err
 		}
 		var snap notify.Snapshot
-		// The snapshot was written by us, and it must be decipherable in theory; failure does not interrupt delivery.,
-		// But this event will be bypassed by all filtering channels because the field is empty.——I'd rather not push one.
-		// And don't let a bad card kill the whole line..
+		// We wrote the snapshot, so it should parse. A parse failure must not
+		// stop the fan-out. The event's fields stay empty, so every channel
+		// with a filter skips it. Dropping one bad row is better than letting
+		// it jam the queue.
 		_ = json.Unmarshal(ev.Snapshot, &snap)
-		// kind Based on the inside of the line: the photo in the snapshot is a printed copy that could be written in the old version. Pass..
+		// The row's kind wins. The copy inside the snapshot is for rendering
+		// and may have been written by an older version.
 		snap.Kind = ev.Kind
 		events = append(events, ev)
 		parsedSnaps = append(parsedSnaps, snap)
@@ -346,7 +367,7 @@ WHERE NOT fanned_out ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1`, limit)
 		}
 	}
 
-	// Mark this round event has been assigned. Events that did not hit any channel are also marked together (see function comment)).
+	// Mark this round's events as assigned, including those that matched no channel (see the function comment).
 	ids := make([]string, 0, len(events))
 	markArgs := make([]any, 0, len(events))
 	for _, ev := range events {
@@ -359,8 +380,9 @@ WHERE NOT fanned_out ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1`, limit)
 	return len(events), len(toInsert), tx.Commit()
 }
 
-// listEnabledNotificationChannelsTx Take the active channel in the transaction. Few.,
-// No page breaks and no caches.——Cache will introduce[When will the configuration be effective?]This extra time series problem..
+// listEnabledNotificationChannelsTx loads enabled channels inside the transaction.
+// There are few of them, so this neither pages nor caches. A cache would add
+// a "when does a config change take effect" timing problem.
 func listEnabledNotificationChannelsTx(ctx context.Context, tx *sql.Tx) ([]*NotificationChannel, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT id, name, kind, config, mode, filter, rate_per_min
 FROM notification_channels WHERE enabled ORDER BY id`)
@@ -379,11 +401,11 @@ FROM notification_channels WHERE enabled ORDER BY id`)
 	return out, rows.Err()
 }
 
-// NotificationAssetNames Put assets id Parsing to short display names for uploading messages.
+// NotificationAssetNames resolves asset ids to short display names for push messages.
 //
-// Return order is consistent with participation and may be less than participation (non-existent) id Skipped. Keep the order of participation.
-// In order to stabilize the sequence of assets in multiple deliveries of the same leak.——Otherwise, we'll try again.
-// The asset sequence has changed. It'll be misread.[The assets have changed.].
+// The result follows the input order and may be shorter (missing ids are
+// skipped). Stable order matters: the same finding must list assets in the
+// same order across retries, or a reshuffle is easy to read as "the assets changed".
 func (d *DB) NotificationAssetNames(ctx context.Context, ids []int64) ([]string, error) {
 	if len(ids) == 0 {
 		return nil, nil
@@ -424,9 +446,10 @@ func (d *DB) NotificationAssetNames(ctx context.Context, ids []int64) ([]string,
 	return out, nil
 }
 
-// assetDisplayName Select the most visible identifier by asset type.
-// Back to the empty string at the bottom.[Assets not named]——This function does not assume placeholders,
-// Otherwise[Assets#42]This noise is going to get in the mail. Readers think it's a real domain..
+// assetDisplayName picks the most recognizable identifier for an asset type.
+// It returns an empty string when nothing usable exists. Callers decide how to
+// present an unnamed asset. This function does not invent a placeholder;
+// noise like "asset#42" would land in the push and be read as a real domain.
 func assetDisplayName(typ, domain, ip, url, appName, bundleID string) string {
 	pick := func(vals ...string) string {
 		for _, v := range vals {
@@ -450,17 +473,21 @@ func assetDisplayName(typ, domain, ip, url, appName, bundleID string) string {
 	}
 }
 
-// SetFindingStatusWithNotify Update gap disposal status and register a change in status in the same service
-// Organisation.
+// SetFindingStatusWithNotify updates a finding's triage status and, in the same
+// transaction, records a status-change push event.
 //
-// Return from=Status Before Change;found=Is there a loophole?;notified=Events registered successfully.
+// from is the status before the change, found reports whether the finding
+// exists, and notified reports whether the event was recorded.
 //
-// Three deliberate acts.:
-//   - Events are not registered when the status has not changed. Resubmission of same value or automated script in front drawer
-//     We can't even produce noise..
-//   - Return when the loophole does not exist found=false without writing anything, translated by the caller 404.
-//   - The failure to register events does not affect the status update (see RecordNotificationEventTx Can not open message),
-//     So notified=false The situation has changed. The caller should not be mistaken..
+// Three behaviors are deliberate:
+//   - No event is recorded when the status does not actually change. Resubmitting
+//     the same value from the drawer, or an idempotent script replay, must not
+//     create push noise.
+//   - A missing finding returns found=false and writes nothing. The caller
+//     turns that into a 404.
+//   - A failed event insert does not undo the status update (see the savepoint
+//     notes on RecordNotificationEventTx). When notified is false the status
+//     has already changed, and the caller must not treat that as an error.
 func (d *DB) SetFindingStatusWithNotify(ctx context.Context, id int64, status string) (from string, found bool, notified bool, err error) {
 	err = d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		var txErr error
@@ -470,16 +497,19 @@ func (d *DB) SetFindingStatusWithNotify(ctx context.Context, id int64, status st
 	return from, found, notified, err
 }
 
-// SetFindingStatusTx at**Caller services**Update bug status inside and register status change push events.
+// SetFindingStatusTx updates a finding's status and records a status-change
+// push event inside the caller's transaction.
 //
-// Draws into a service level function so that all changed paths share the same semantics——It was just...
-// patchFinding Go with the notice version, and**Reconciling conclusion:[Fixed]hour**(finding_retests
-// The one in there. `UPDATE findings SET status=...`)It's a direct library, and it's a match.
-// `on_status_change` The channel is completely unreceivable for this state flow: the state on the interface has changed quietly.,
-// It's not until we open the platform..
+// Every status-changing path shares this function. Previously only patchFinding
+// used the notifying version. When a retest concluded "fixed", finding_retests
+// wrote `UPDATE findings SET status=...` directly, so channels configured for
+// on_status_change never heard about that transition. The UI status changed
+// quietly and operators only noticed after opening the platform.
 //
-// Return from=Pre-change state,found=Is there a loophole?,changed=Has the state really changed?,
-// notified=Whether or not the event was registered successfully (the failure does not affect the status update; see RecordNotificationEventTx).
+// from is the previous status, found reports whether the finding exists,
+// changed reports whether the status actually changed, and notified reports
+// whether the event was recorded. A failed insert does not undo the status
+// update; see RecordNotificationEventTx.
 func SetFindingStatusTx(ctx context.Context, tx *sql.Tx, id int64, status string) (from string, found bool, changed bool, notified bool, err error) {
 	var (
 		vulnclass, name, severity, summary string
@@ -497,8 +527,8 @@ FROM findings WHERE id=$1 FOR UPDATE`, id).
 	}
 	found = true
 	if from == status {
-		// Non-registration of events without a real change in status: duplicate submission of the same value, reset of the thorium, etc.
-		// It's making noise..
+		// No event when the status did not really change. Duplicate submits and
+		// idempotent replays must not create push noise.
 		return from, true, false, false, nil
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status=$2 WHERE id=$1`, id, status); err != nil {
@@ -528,12 +558,13 @@ type NotificationStats struct {
 	Pending      int   `json:"pending"`
 	Failed       int   `json:"failed"`
 	SentToday    int   `json:"sent_today"`
-	BacklogAgeMS int64 `json:"backlog_age_ms"` // The oldest to be delivered in milliseconds
+	BacklogAgeMS int64 `json:"backlog_age_ms"` // age in milliseconds of the oldest unsent delivery
 }
 
-// NotificationStatsSnapshot Health of the aggregate notification system.
-// BacklogAgeMS Yes[Is it stuck?]Most immediate indicators——That's right. pending Counting is much more useful.,
-// Because of the backlog. 3 Article and backlog 3 The difference in the article can be from 3 Seconds to arrive 3 hours.
+// NotificationStatsSnapshot summarizes notification-system health.
+// BacklogAgeMS is the most direct "is push stuck" signal, and it is much more
+// useful than the pending count: three queued items can be 3 seconds old or
+// 3 hours old.
 func (d *DB) NotificationStatsSnapshot(ctx context.Context) (*NotificationStats, error) {
 	var s NotificationStats
 	if err := d.QueryRowContext(ctx, `SELECT

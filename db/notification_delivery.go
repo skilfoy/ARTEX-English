@@ -9,33 +9,39 @@ import (
 	"time"
 )
 
-// This document is the recipient and status flow of the delivery task.
+// This file claims delivery tasks and moves them through states.
 //
-// Receipt[Leases]It's not a long story. sending And put next_attempt_at To the future.
-// The lease expires when the services are submitted for delivery. Do not hold database locks during delivery——
-// Network requests may take several seconds (client timeout) 15 In seconds, holding the line lock will drag down the other writing operations of the library..
+// Claiming uses a lease, not a long transaction: the row is set to sending and
+// next_attempt_at is pushed into the future as the lease expiry. The
+// transaction commits before the network send, so delivery does not hold a
+// database lock. A request can take several seconds (the client timeout is
+// 15 seconds); holding the row lock would stall other writes on the same database.
 //
-// The price is if the process crashes on the way to delivery, the line stops. sending.This is...**Healing himself.**After expiration of lease
-// next_attempt_at If you fall in the past, the next round will retake the same line.
-// state IN ('pending','sending')).Retry count when it's collected +1,So the crash won't cause it.
-// Unlimited Retry——MaxNotifyAttempts Once you've had your chance, you fall in. failed Waiting for manual processing.
+// If the process crashes mid-delivery, the row stays in sending. That heals
+// itself: once the lease expires, next_attempt_at is in the past and the next
+// claim picks the same row up again (the claim predicate includes
+// state IN ('pending','sending')). The attempt counter is incremented at claim
+// time, so a crash cannot retry forever. After MaxNotifyAttempts the row lands
+// in failed and waits for a person.
 
-// MaxNotifyAttempts is the maximum number of attempts of a delivery).
-// Define here, not in the delivery engine: it's a state machine's own strategy, the engine's an implementer..
+// MaxNotifyAttempts is the maximum number of attempts for one delivery, including the first.
+// It lives here, not in the delivery engine: it is the state machine's policy, and the engine only executes it.
 const MaxNotifyAttempts = 3
 
-// MaxDigestBatchSize is the maximum number of individual batches merged at once.
+// MaxDigestBatchSize is how many deliveries one digest batch may merge.
 //
-// The raison d ' être is resources: if tens of thousands of loopholes are addressed in an aggregate cycle (opposable)——A full scan.
-// If you don't set the upper bounds, you can read all the lines into the memory.,
-// And then they cut off half the length limit of the channel.——It's a waste of memory.**Quietly lost.**The holes that were blocked..
-// Once the line is set, the excess remains in the vault for the next batch, and the next cycle will be natural..
+// The bound exists for resource reasons. One digest cycle can see tens of
+// thousands of findings (a full scan is enough). Without a cap, the claim would
+// read every row into memory, render one huge message, and then have the
+// channel length limit cut most of it off. That wastes memory and silently
+// drops the findings that were truncated. With the cap, the overflow stays in
+// the database as the next batch and goes out on the next cycle.
 //
-// take 500 It's based on the fact that after the news is published, 4096 The byte limit is within"Readable."Scale;
-// It's bigger than that. It's just that the cut-off takes place further behind..
+// 500 is the size that still leaves readable content inside WeCom's 4096-byte
+// limit after rendering. Anything larger only moves the truncation point later.
 const MaxDigestBatchSize = 500
 
-// NotificationDelivery It's a delivery mission with the channel configuration and event snapshot required for rendering..
+// NotificationDelivery is one delivery task, including the channel config and event snapshot needed to render it.
 type NotificationDelivery struct {
 	ID            int64           `json:"id"`
 	EventID       int64           `json:"event_id"`
@@ -48,12 +54,12 @@ type NotificationDelivery struct {
 	CreatedAt     time.Time       `json:"created_at"`
 	SentAt        *time.Time      `json:"sent_at,omitempty"`
 	Snapshot      json.RawMessage `json:"snapshot,omitempty"`
-	// Joint load rendering context, no JSON(By server Layer assembly DTO).
+	// Rendering context loaded with the row. Not serialized; the server layer builds the DTO.
 	Channel *NotificationChannel `json:"-"`
-	// FindingID/EventKind Take it out of the event for the history list to jump through the loophole..
+	// FindingID and EventKind come from the event so the history list can open the finding.
 	FindingID int64  `json:"finding_id,string"`
 	EventKind string `json:"event_kind"`
-	// ChannelName/ChannelKind is the redundant field for the list display, save the front-end double query.
+	// ChannelName and ChannelKind are denormalized for the list view so the frontend does not query again.
 	ChannelName string `json:"channel_name"`
 	ChannelKind string `json:"channel_kind"`
 }
@@ -61,8 +67,8 @@ type NotificationDelivery struct {
 const notificationDeliveryCols = `d.id, d.event_id, d.channel_id, d.state, d.attempts, d.next_attempt_at,
        d.last_error, d.batch_id, d.created_at, d.sent_at`
 
-// joinedDeliveryQuery is the unified reading shape of the delivery line: delivery + Eventshot + Channel Configuration.
-// If you can't read a message, it'll be three trips..
+// joinedDeliveryQuery is the shared read shape: delivery row, event snapshot, and channel config.
+// Rendering a message needs all three; splitting them would be three round trips.
 const joinedDeliveryQuery = `SELECT ` + notificationDeliveryCols + `,
        e.snapshot, e.kind, e.finding_id,
        c.id, c.name, c.kind, c.enabled, c.config, c.mode, c.filter, c.rate_per_min
@@ -103,24 +109,29 @@ func scanNotificationDelivery(sc interface{ Scan(...any) error }) (*Notification
 	return &dl, nil
 }
 
-// claimQuery Description of the receipt: Press first sel Select the candidates and lock them up. sending and
-// Extension of the lease.sel inside lease Location by Caller $n I'm in position and I'm in..
+// claimQuery describes one claim: select candidates with sel and lock them,
+// then mark them sending and extend the lease. The caller supplies the lease
+// argument in the $n placeholder inside sel.
 type claimQuery struct {
 	sql  string
 	args []any
 }
 
-// ClaimRealtimeDeliveries Receipt of a shipment due in real time from a certain channel, up to limit strip.
+// ClaimRealtimeDeliveries claims up to limit due realtime deliveries for one channel.
 //
-// Do it deliberately.**Single channel**To receive instead of[We'll take one and we'll pick up the hair.]:The portal's in the delivery engine.
-// Maintenance. Only if we know how many more lines this channel can run and how many more lines we can take.
-// Number of retries. If the other way around, it's already been counted once. attempts,
-// 3 The next budget will be spent just waiting for it to come in. failed.
+// Claims are per channel, not "take a global batch and then pick what to send".
+// The delivery engine's rate-limit gate is per channel. The engine must know
+// how many this channel may still send this round, then claim exactly that many
+// rows, or the limit would burn retry attempts. Claiming first and discarding
+// the rest would already have incremented attempts on rows that were only
+// waiting. The budget of 3 would be spent on idle waits and the rows would land in failed.
 //
-// Organisation[Leases expired sending]——It's a place of collapse..lease Must be significantly greater than single times
-// Worst time for delivery (channel) HTTP Client timeout 15 Two in the same line. dispatcher
-// Together. Also block the disabled channel: the disablement has marked the stock delivery as skipped,
-// Here's another one, to avoid the drop-off and the drop-off..
+// The predicate includes sending rows whose lease has expired. That is how a
+// crash heals. lease must be well above the worst-case send time (the channel
+// HTTP client times out at 15 seconds), or two dispatchers will deliver the
+// same row. Disabled channels are excluded too: disabling already marks
+// existing deliveries skipped, and this is a second check so a disable racing
+// a claim cannot slip through.
 func (d *DB) ClaimRealtimeDeliveries(ctx context.Context, channelID int64, limit int, lease time.Duration) ([]*NotificationDelivery, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -137,15 +148,19 @@ LIMIT $5`,
 	}, nil)
 }
 
-// DigestBatchDue Report whether the channel has saved up to one due instalment: there is a pending delivery, and**The oldest one.**
-// Age has reached summary cycle.
+// DigestBatchDue reports whether the channel has a due digest batch: there is
+// a pending delivery, and the oldest one's age has reached the digest period.
 //
-// The decision is based on the age of the oldest delivery, not on the wall clock: This new channel doesn't have to be aligned.
-// I'm gonna spit out a single one right now.[Summary],A long backlog of batches will not wait for another round..
+// The decision uses the oldest delivery's age, not the wall clock. A channel
+// that was just created will not immediately emit a one-item "digest" because
+// the clock rolled to the hour, and a long-backlogged batch will not sit
+// through another idle cycle.
 //
-// With ClaimDigestBatch Separate because semantics differ: This function answers only[Should I?],
-// And the money's gonna take it away.**All**To be issued (including those under age))——Or one cycle
-// They'll be broken down into multiple pieces of information..
+// This is separate from ClaimDigestBatch because the meanings differ. This
+// function only answers "should we send". The claim takes every pending
+// delivery for the channel, including ones that are not old enough yet.
+// Otherwise one period would be split into several messages and the digest
+// would be pointless.
 func (d *DB) DigestBatchDue(ctx context.Context, channelID int64, minAge time.Duration) (bool, error) {
 	var due bool
 	err := d.QueryRowContext(ctx, `SELECT EXISTS (
@@ -158,28 +173,31 @@ func (d *DB) DigestBatchDue(ctx context.Context, channelID int64, minAge time.Du
 	return due, err
 }
 
-// ClaimDigestBatch Receiving a pending delivery due from a certain channel as a consolidated batch,
-// Single maximum MaxDigestBatchSize strip.
+// ClaimDigestBatch claims a channel's currently due pending deliveries as one
+// digest batch, at most MaxDigestBatchSize rows.
 //
-// All deliveries of the same batch are shared batch_id,With the smallest of the collections id Batch numbers (stable, readable),
-// No additional sequence is required. Use when retrying COALESCE Keep the original batch number so that[This one. N The strips were sent together.]
-// It's still there after several attempts..
+// Every delivery in the batch shares batch_id. The smallest id in the set is
+// the batch number: stable, readable, and no extra sequence. Retries keep the
+// original batch id with COALESCE, so "these N rows were sent together" still
+// holds after several attempts.
 //
-// Press id Before ascending N strips rather than random: the earliest deliveries are sent first and the backlog does not appear
-// [New holes start first, old ones stay behind.]Hunger.
+// The first N rows are taken in id order, not at random. The oldest deliveries
+// go first, so a backlog cannot starve old findings behind newer ones.
 func (d *DB) ClaimDigestBatch(ctx context.Context, channelID int64, limit int, lease time.Duration) ([]*NotificationDelivery, error) {
 	if limit <= 0 {
 		return nil, nil
 	}
-	// limit Yes**Memory Upper**,Caller Fax MaxDigestBatchSize;Here, one more.,
-	// Prevents the caller from moving into a larger value.
+	// limit is a memory cap. Callers pass MaxDigestBatchSize; this clamps
+	// anything larger.
 	//
-	// I wouldn't accept it.[Flow limit]Be a batch size: the limited flow is the number of messages——One batch only
-	// A message. A token. server Layer takeTokens Less——With[A bunch of them.
-	// Vulnerability]It's two different scales. ♪ Once for Jean ♪ rate_per_min Yes digest Entry into force for each round
-	// Request budget to be sent in for batch size, result rate=20/min Every batch of channels 1 A loophole,
-	// digest It's degraded into a real-time transfer with a summary file. To change the flow, please. takeTokens of want,
-	// Don't move here..
+	// Do not pass a rate-limit allowance as the batch size. The rate limit
+	// counts messages: one batch is one message and costs one token, deducted
+	// by takeTokens in the server layer. That is a different unit from "how
+	// many findings fit in a batch". Passing the per-round request budget in
+	// so that rate_per_min would apply to digest made a 20/min channel pack
+	// only one finding per batch, and digest degraded into a realtime push
+	// with digest wording. Change takeTokens' want to change the rate limit;
+	// do not change this.
 	if limit > MaxDigestBatchSize {
 		limit = MaxDigestBatchSize
 	}
@@ -206,14 +224,15 @@ WHERE id IN (`+ph+`)`, append([]any{batchID}, idArgs...)...)
 	return out, err
 }
 
-// claimDeliveries Execute[Select + set sending Extension of the lease + Read full lines],It's all a matter of business..
-// postClaim It's an optional additional step (sum of batches written) batch_id).
+// claimDeliveries selects rows, marks them sending, extends the lease, and
+// reads the full rows, all in one transaction. postClaim is an optional extra
+// step; digest batches use it to write batch_id.
 func (d *DB) claimDeliveries(ctx context.Context, lease time.Duration, cq claimQuery, postClaim func(*sql.Tx, []int64) error) ([]*NotificationDelivery, error) {
 	tx, err := d.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback() //nolint:errcheck // After successful submission no-op
+	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
 
 	ids, err := selectForClaim(ctx, tx, cq.sql, cq.args...)
 	if err != nil {
@@ -222,8 +241,9 @@ func (d *DB) claimDeliveries(ctx context.Context, lease time.Duration, cq claimQ
 	if len(ids) == 0 {
 		return nil, tx.Commit()
 	}
-	// set sending And put next_attempt_at Push to the future: this is the moment of the coming lease.,
-	// [Lease not due]With[Not time to try again]Therefore, we share the same condition and do not need a new addition..
+	// Mark sending and push next_attempt_at into the future. That timestamp is
+	// the lease expiry, so "lease still valid" and "not yet time to retry"
+	// share one predicate and no extra column is needed.
 	ph, idArgs := placeholders(3, ids)
 	if _, err := tx.ExecContext(ctx, `UPDATE notification_deliveries
 SET state=$1, attempts=attempts+1, next_attempt_at=now()+make_interval(secs => $2)
@@ -278,7 +298,7 @@ func loadDeliveriesTx(ctx context.Context, tx *sql.Tx, ids []int64) ([]*Notifica
 	return out, rows.Err()
 }
 
-// MarkDeliveriesSent Can not open message.
+// MarkDeliveriesSent marks a batch of deliveries as sent.
 func (d *DB) MarkDeliveriesSent(ctx context.Context, ids []int64) error {
 	ph, args := placeholders(2, ids)
 	if len(args) == 0 {
@@ -289,10 +309,11 @@ SET state=$1, sent_at=now(), last_error='' WHERE id IN (`+ph+`)`, append([]any{N
 	return err
 }
 
-// RescheduleDeliveries Return the delivery. pending And then try again later..
+// RescheduleDeliveries returns a batch of deliveries to pending and delays the next retry.
 //
-// Return pending Instead of introducing a new middle state, it's about letting[There are still a few chances.]Just one place.
-// Expression(MaxNotifyAttempts),Avoids the branching of the status machine expanding with the retry strategy.
+// They go back to pending instead of a new intermediate state so "attempts
+// remaining" is expressed in only one place (MaxNotifyAttempts). The state
+// machine does not grow a branch for every retry policy.
 func (d *DB) RescheduleDeliveries(ctx context.Context, ids []int64, delay time.Duration, errMsg string) error {
 	ph, args := placeholders(4, ids)
 	if len(args) == 0 {
@@ -305,15 +326,18 @@ WHERE id IN (`+ph+`)`,
 	return err
 }
 
-// DeferDeliveries Return the delivery. pending,immediate retake, and**The attempt to cancel the receipt count.**.
+// DeferDeliveries returns a batch to pending so it can be claimed immediately,
+// and undoes the attempt counted when it was claimed.
 //
-// There is only one use: when the aggregate message is sent by the maximum length of the channel, the entry that is not included in this article is left to the next Batch.
-// It wasn't a failure, so it shouldn't cost the budget.——When received attempts Already optimistic. +1 Yeah.,
-// It has to be down here. Or one. 500 The backlog of articles will follow each paragraph 20 Strip 25 section,
-// End entry in 3 It's just a part of it. MaxNotifyAttempts Agreed. failed,And they never did anything wrong..
+// The only use is digest segmentation: when a digest is split to fit the
+// channel length limit, items that did not fit this message wait for the next
+// batch. That is not a failure, so it must not spend retry budget. Claiming
+// already incremented attempts optimistically, and this decrements it again.
+// Otherwise a backlog of 500, cut into 25 segments of 20, would mark the tail
+// failed at segment 3 via MaxNotifyAttempts even though those rows never erred.
 //
-// GREATEST(...,0) Hold on.[Someone's hand-held. attempts And then it came here.]Situation,
-// Don't let the count turn negative..
+// GREATEST(..., 0) covers a manual resend that already zeroed attempts and
+// then reached this path, so the counter cannot go negative.
 func (d *DB) DeferDeliveries(ctx context.Context, ids []int64, reason string) error {
 	ph, args := placeholders(3, ids)
 	if len(args) == 0 {
@@ -326,9 +350,9 @@ WHERE id IN (`+ph+`)`,
 	return err
 }
 
-// FailDeliveries Mark the delivery as final failure, waiting for manual weight in the delivery history Fire!.
+// FailDeliveries marks a batch as permanently failed. A person can resend them from delivery history.
 func (d *DB) FailDeliveries(ctx context.Context, ids []int64, errMsg string) error {
-	// Placeholder From $3 Start:$1 Yes state,$2 Yes last_error.
+	// Placeholders start at $3: $1 is state, $2 is last_error.
 	ph, args := placeholders(3, ids)
 	if len(args) == 0 {
 		return nil
@@ -338,9 +362,10 @@ func (d *DB) FailDeliveries(ctx context.Context, ids []int64, errMsg string) err
 	return err
 }
 
-// RetryNotificationDelivery Redeal a delivery manually: Reset to pending,Zero test count,
-// Due immediately. Counting is deliberate.——Manual[Resend]Which means that the reasons for previous failures have been addressed.,
-// It doesn't make sense with the old count..
+// RetryNotificationDelivery manually resends one delivery: reset it to pending,
+// clear the attempt count, and make it due immediately. Clearing the count is
+// deliberate. A manual resend means the earlier failures have been handled,
+// so the old count should not keep limiting it.
 func (d *DB) RetryNotificationDelivery(ctx context.Context, id int64) error {
 	res, err := d.ExecContext(ctx, `UPDATE notification_deliveries
 SET state=$2, attempts=0, next_attempt_at=now(), last_error=''
@@ -349,12 +374,12 @@ WHERE id=$1 AND state IN ($3,$4)`, id, NotifyStatePending, NotifyStateFailed, No
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("Organisation %d Cannot initialise Evolution's mail component.", id)
+		return fmt.Errorf("delivery %d does not exist or its current state does not allow a resend", id)
 	}
 	return nil
 }
 
-// NotificationDeliveryFilter It's a historical query condition..
+// NotificationDeliveryFilter is the query for delivery history.
 type NotificationDeliveryFilter struct {
 	ChannelID int64
 	State     string
@@ -382,7 +407,7 @@ func (f NotificationDeliveryFilter) where() (string, []any) {
 	return " WHERE " + strings.Join(conds, " AND "), args
 }
 
-// ListNotificationDeliveries Page Break Back to Drop History, New Before.
+// ListNotificationDeliveries returns delivery history one page at a time, newest first.
 func (d *DB) ListNotificationDeliveries(ctx context.Context, f NotificationDeliveryFilter, page, pageSize int) ([]*NotificationDelivery, int, error) {
 	if page < 1 {
 		page = 1
@@ -416,14 +441,15 @@ JOIN notification_events e ON e.id = d.event_id`+where, args...).Scan(&total); e
 	return out, total, rows.Err()
 }
 
-// truncateNotifyError Intercepts the error information to the acceptable length of the column. The channel's returned response may be long.
-// (General Webhook It's especially when you hit a self-contained service..
+// truncateNotifyError cuts an error to a length the column can store. A channel
+// response body can be long, especially a generic webhook hitting a custom
+// service, and leaving it uncut would bloat the history list payload.
 func truncateNotifyError(msg string) string {
 	const max = 500
 	if len(msg) <= max {
 		return msg
 	}
-	// Rewind by character boundary to avoid leaving half. UTF-8 Characters make the front end uncoded.
+	// Step back to a character boundary so a split UTF-8 sequence is not left for the frontend to render as garbage.
 	cut := max
 	for cut > 0 && !isUTF8Start(msg[cut]) {
 		cut--
@@ -433,8 +459,8 @@ func truncateNotifyError(msg string) string {
 
 func isUTF8Start(b byte) bool { return b&0xC0 != 0x80 }
 
-// placeholders Generate From start Started. $n Positioning strings and corresponding parameters for IN (...) Use.
-// For example start=3, ids=[7,8] → "$3,$4", [7,8].
+// placeholders builds $n placeholders starting at start, plus the matching args, for IN (...).
+// For example start=3, ids=[7,8] yields "$3,$4" and [7,8].
 func placeholders(start int, ids []int64) (string, []any) {
 	ph := make([]string, 0, len(ids))
 	args := make([]any, 0, len(ids))
