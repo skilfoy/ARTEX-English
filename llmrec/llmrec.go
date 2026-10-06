@@ -66,9 +66,10 @@ type Recorder struct {
 	pg    *db.DB
 	model string // model name (from config, not in CompletionRequest)
 	prof  string // LLM profile name (from llm_profiles)
-	// thinkingType / reasoningEffort It's a configuration reflection parameter.(Think switch / Thinking intensity).They're...
-	// norma of buildBody() Ree. provider Configure into real HTTP body,Not here.
-	// CompletionRequest on,So Recorder We'll have to bring one here.,Write in Sequencing.
+	// thinkingType / reasoningEffort mirror the config (thinking on/off and effort).
+	// norma's buildBody() is what turns the provider config into the real HTTP body;
+	// those fields are not on CompletionRequest, so Recorder has to carry them here
+	// and write them into the serialized record.
 	thinkingType    string
 	reasoningEffort string
 	enabled         func() bool // reports whether recording is currently on; nil = always record
@@ -358,9 +359,11 @@ func (r *Recorder) serializeRequest(req llm.CompletionRequest) string {
 		"messages":   req.Messages,
 		"max_tokens": req.MaxTokens,
 	}
-	// Record the actual thought parameters of this call.type Adoption[Valid value]:Overwrite per Request req.Thinking
-	// Priority over configuration level thinkingType(With norma buildBody The determination is consistent, e.g. compaction Summary meeting
-	// Force disabled);effort No request overwhelms, take the configuration value directly. Neither is written. thinking Field.
+	// Record the thinking parameters actually used for this call. A non-empty
+	// req.Thinking overrides the config-level thinkingType (same rule as norma's
+	// buildBody, for example a compaction summary that forces thinking off).
+	// Effort is not set per request, so the config value is used as-is. If neither
+	// is set, the thinking field is omitted.
 	effType := r.thinkingType
 	if req.Thinking != "" {
 		effType = req.Thinking

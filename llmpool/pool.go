@@ -40,7 +40,7 @@ type Member struct {
 const RankActive = int(^uint(0)>>1) - 1
 
 // ErrExhausted is returned when every member of the chain failed.
-var ErrExhausted = errors.New("LLM Query: All configurations not available")
+var ErrExhausted = errors.New("LLM call failed: no profile in the chain is available")
 
 // Pool is an llm.Provider that fails over across an ordered chain of members.
 // It is safe for concurrent use: members are immutable after construction and
@@ -106,18 +106,18 @@ func (p *Pool) Stream(ctx context.Context, req llm.CompletionRequest) iter.Seq2[
 			lastErr = failed
 			hard := isHardFailure(failed)
 			if p.health.Trip(m.ID, trimErr(failed), hard) {
-				log.Printf("[llmpool] Configuration %q(%s) Full:%s", m.Name, m.Model, trimErr(failed))
+				log.Printf("[llmpool] profile %q (%s) tripped: %s", m.Name, m.Model, trimErr(failed))
 			}
 			if i+1 < len(order) {
 				n := order[i+1]
-				log.Printf("[llmpool] LLM Failover:%q(%s) → %q(%s),Reasons:%s",
+				log.Printf("[llmpool] failover: %q (%s) → %q (%s), reason: %s",
 					m.Name, m.Model, n.Name, n.Model, trimErr(failed))
 			}
 		}
 		if lastErr == nil {
 			lastErr = ErrExhausted
 		}
-		log.Printf("[llmpool] The chain of inquiry is exhausted.(%d All configurations failed),Last Error:%s", len(order), trimErr(lastErr))
+		log.Printf("[llmpool] failover chain exhausted (%d profiles failed), last error: %s", len(order), trimErr(lastErr))
 		yield(llm.StreamEvent{}, fmt.Errorf("%w:%v", ErrExhausted, lastErr))
 	}
 }
@@ -145,18 +145,18 @@ func (p *Pool) Complete(ctx context.Context, req llm.CompletionRequest) (llm.Mes
 		lastErr = err
 		hard := isHardFailure(err)
 		if p.health.Trip(m.ID, trimErr(err), hard) {
-			log.Printf("[llmpool] Configuration %q(%s) Full:%s", m.Name, m.Model, trimErr(err))
+			log.Printf("[llmpool] profile %q (%s) tripped: %s", m.Name, m.Model, trimErr(err))
 		}
 		if i+1 < len(order) {
 			n := order[i+1]
-			log.Printf("[llmpool] LLM Failover:%q(%s) → %q(%s),Reasons:%s",
+			log.Printf("[llmpool] failover: %q (%s) → %q (%s), reason: %s",
 				m.Name, m.Model, n.Name, n.Model, trimErr(err))
 		}
 	}
 	if lastErr == nil {
 		lastErr = ErrExhausted
 	}
-	log.Printf("[llmpool] The chain of inquiry is exhausted.(%d All configurations failed),Last Error:%s", len(order), trimErr(lastErr))
+	log.Printf("[llmpool] failover chain exhausted (%d profiles failed), last error: %s", len(order), trimErr(lastErr))
 	return llm.Message{}, "", llm.Usage{}, fmt.Errorf("%w:%v", ErrExhausted, lastErr)
 }
 

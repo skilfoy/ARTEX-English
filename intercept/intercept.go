@@ -609,7 +609,7 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 	})
 	activity := db.Activity{
 		Kind:    "intercept_request",
-		Summary: fmt.Sprintf("Tools %s Request Approval (#%d)", toolName, pendingID),
+		Summary: fmt.Sprintf("Tool %s is waiting for approval (#%d)", toolName, pendingID),
 		Detail:  string(detail),
 	}
 
@@ -665,7 +665,7 @@ func (i *Interceptor) HandleAsk(ctx context.Context, convID int64, dec Decision,
 	}
 }
 
-var ErrAlreadyDecided = errors.New("The approval has been processed or does not exist, please refresh the record")
+var ErrAlreadyDecided = errors.New("this approval was already handled or no longer exists; refresh and try again")
 
 // Decide resolves a pending request. Called by the HTTP decide endpoint.
 func (i *Interceptor) Decide(pendingID int64, allowed bool) error {
