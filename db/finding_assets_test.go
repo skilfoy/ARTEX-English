@@ -200,7 +200,7 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		{"Leaf Node", assetKey(subID), 1},             // Sub-domain name itself
 		{"Another tree.", assetKey(otherID), 1},       // They don't smell like each other.
 		{"Not associated", FindingUnassignedAsset, 2}, // asset_ids Empty + Pointing at detached assets
-		{"Other Organiser", "a:999000222", 0},         // No this node is currently filtered → Empty Results,Not without filtering
+		{"missing node", "a:999000222", 0},         // filtering to a node that is not in the tree yields an empty result, not the unfiltered list
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

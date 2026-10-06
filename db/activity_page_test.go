@@ -12,7 +12,7 @@ func TestActivityPageSessions(t *testing.T) {
 	}
 	defer d.Close()
 
-	expID, err := d.CreateExploration("test", "Page Break History")
+	expID, err := d.CreateExploration("test", "pagination history")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestListByKindPage(t *testing.T) {
 	}
 	defer d.Close()
 
-	expID, err := d.CreateExploration("test", "Intentional Page Break")
+	expID, err := d.CreateExploration("test", "intent pagination")
 	if err != nil {
 		t.Fatal(err)
 	}

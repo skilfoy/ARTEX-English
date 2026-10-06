@@ -16,7 +16,7 @@ type LLMProfile struct {
 	Name          string  `json:"name"`
 	Format        string  `json:"format"`
 	BaseURL       string  `json:"base_url,omitempty"`
-	Proxy         string  `json:"proxy,omitempty"` // LLM Outstation agent.(http/https/socks5);Empty=Use environment variable
+	Proxy         string  `json:"proxy,omitempty"` // outbound LLM proxy (http/https/socks5); empty uses environment variables
 	Model         string  `json:"model"`
 	APIKey        string  `json:"-"` // never serialized to UI
 	APIKeyHint    string  `json:"api_key_hint,omitempty"`
@@ -25,11 +25,13 @@ type LLMProfile struct {
 	// ContextWindowK is the model's context window in K tokens, used to size
 	// compaction thresholds. 0 = use a 200K default; capped at 1000 (1M).
 	ContextWindowK int `json:"context_window_k"`
-	// ThinkingType Independent control thinking.[Switch](thinking.type):"" = Do not send(Default);
-	// "disabled" = Active Close; "enabled" = Open. With ReasoningEffort Disarm.
+	// ThinkingType independently controls the thinking switch (thinking.type).
+	// "" means do not send it (default); "disabled" explicitly turns it off;
+	// "enabled" turns it on. It is independent of ReasoningEffort.
 	ThinkingType string `json:"thinking_type"`
-	// ReasoningEffort Independent control thinking.[Strength]:"" = Do not send(Default);
-	// "low"/"medium"/"high"/"xhigh"/"max" = Correlation intensity. See agent.Config.NewProvider.
+	// ReasoningEffort independently controls thinking strength.
+	// "" means do not send it (default). "low", "medium", "high", "xhigh", and "max"
+	// are the corresponding strengths. See agent.Config.NewProvider.
 	ReasoningEffort string `json:"reasoning_effort"`
 	IsDefault       bool   `json:"is_default"`
 	// Priority orders the failover chain: higher goes first. The ACTIVE profile
@@ -445,20 +447,20 @@ type Agent struct {
 	Role             string `json:"role"`
 	Builtin          bool   `json:"builtin"`
 	Enabled          bool   `json:"enabled"`
-	LLMProfileID     *int64 `json:"llm_profile_id"`    // Bound LLM Configuration;nil=Follow the mission/session pin,And back to global activation.
-	MaxTurns         int    `json:"max_turns"`         // Run maximum wheel once;0=Unlimited
-	RunSecs          int    `json:"run_seconds"`       // worker The upper limit of a single running wall clock(second);0=Unlimited
-	WebSearch        bool   `json:"web_search"`        // Whether to enable network search(Subject to system global switch gate control)
-	InteractiveShell bool   `json:"interactive_shell"` // Whether to enable interactive shell(Durable PTY Conversation tool family)
-	WrapupPrompt     string `json:"wrapup_prompt"`     // Ending prompt word(Timeout/When the steps run out settlement Tips);Empty=Set Default with Code Internal
-	WrapupMaxTurns   int    `json:"wrapup_max_turns"`  // End-of-service cycle own round budget;0=Set Default with Code Internal(Press agent)
-	// Task-level timeout ending words(With per-run Two sets;Only worker/planner Use);Empty/0=Set Default with Code Internal.
+	LLMProfileID     *int64 `json:"llm_profile_id"`    // bound LLM profile; nil follows the task or session pin, then the globally active profile
+	MaxTurns         int    `json:"max_turns"`         // maximum turns in one run; 0 means unlimited
+	RunSecs          int    `json:"run_seconds"`       // worker per-run wall-clock cap in seconds; 0 means unlimited
+	WebSearch        bool   `json:"web_search"`        // whether network search is enabled (still gated by the global system switch)
+	InteractiveShell bool   `json:"interactive_shell"` // whether the interactive shell (persistent PTY session tools) is enabled
+	WrapupPrompt     string `json:"wrapup_prompt"`     // wrap-up prompt (settlement hint when time or steps run out); empty uses the in-code default
+	WrapupMaxTurns   int    `json:"wrapup_max_turns"`  // turn budget of the wrap-up phase itself; 0 uses the in-code default for that agent
+	// Task-level timeout wrap-up (a separate pair from the per-run wrap-up; only worker and planner use it). Empty or 0 uses the in-code default.
 	TaskTimeoutWrapupPrompt   string `json:"task_timeout_wrapup_prompt"`
 	TaskTimeoutWrapupMaxTurns int    `json:"task_timeout_wrapup_max_turns"`
-	// P3 Post-trigger processing strategy(Customize only agent meaningful):
-	// TriggerRunMode  serial|parallel — Serial Queuing / Each trigger triggers a concurrent session
-	// TriggerMergeMode by_task|all|none — Only serial Use:Merge same tasks / Merge all / Do not merge
-	// TriggerMaxParallel — Only parallel Every time I use it agent Concurrency upper limit;0=No limit
+	// P3 trigger follow-up policy (meaningful only for custom agents):
+	// TriggerRunMode serial|parallel — queue serially, or start a concurrent session per trigger.
+	// TriggerMergeMode by_task|all|none — serial only: merge the same task, merge everything, or do not merge.
+	// TriggerMaxParallel — parallel only: per-agent concurrency cap; 0 means no limit.
 	TriggerRunMode     string `json:"trigger_run_mode"`
 	TriggerMergeMode   string `json:"trigger_merge_mode"`
 	TriggerMaxParallel int    `json:"trigger_max_parallel"`
@@ -643,7 +645,7 @@ func (d *DB) SetAgentWebSearch(key string, on bool) error {
 }
 
 // SetAgentInteractiveShell toggles whether an agent gets the interactive shell
-// (Durable PTY session) tool family + Bash Punctuation(See docs/InteractiveshellDesign.md §14.2).
+// (persistent PTY session) tool family, and the Bash prompt changes with it (see the interactive-shell design, section 14.2).
 func (d *DB) SetAgentInteractiveShell(key string, on bool) error {
 	_, err := d.Exec(`UPDATE agents SET interactive_shell=$1 WHERE key=$2`, on, key)
 	return err
@@ -680,9 +682,10 @@ func (d *DB) SetAgentRunSeconds(key string, runSecs int) error {
 	return err
 }
 
-// SetAgentTriggerBehavior stores an agent's P3 trigger post-processingStrategy:
-// runMode(serial|parallel) / mergeMode(by_task|all|none) / maxParallel(parallel Use,0=No limit).
-// A white list check.,Invalid value drop default,Avoid dirty data scheduling. pump Slash.
+// SetAgentTriggerBehavior stores an agent's P3 trigger follow-up policy:
+// runMode (serial|parallel), mergeMode (by_task|all|none), and maxParallel
+// (used by parallel; 0 means no limit). Values are checked against a whitelist.
+// Invalid values fall back to the default so dirty data cannot throw the scheduler pump off.
 func (d *DB) SetAgentTriggerBehavior(key, runMode, mergeMode string, maxParallel int) error {
 	switch runMode {
 	case "serial", "parallel":

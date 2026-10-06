@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Built-in[Remove Class Interface Path]The rules match the whole. tool_input JSON Threads, so use the example directly.
-// JSON Form given, with Interceptor I actually got it. subject Consistent.
+// The built-in delete-style API path rule matches the whole tool_input JSON string,
+// so the examples are given as JSON, matching the subject the interceptor actually sees.
 func TestDeleteEndpointPathPattern(t *testing.T) {
 	re := regexp.MustCompile(deleteEndpointPathPattern)
 

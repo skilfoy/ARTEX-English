@@ -10,8 +10,9 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// Normalize Natural Keys (nkey):Ported to old age graph/id.go,Get rid of it. StableID Hash.(PG Use BIGSERIAL Primary Key +
-// UNIQUE(type, nkey) Go heavy. Sub-asset nkey Embedded parent assets int64 id,Encode Levels into Keys.
+// Normalized natural keys (nkey), ported from the old graph/id.go without the StableID hash
+// (PostgreSQL uses a BIGSERIAL primary key plus UNIQUE(type, nkey) for dedup).
+// A child asset's nkey embeds the parent asset's int64 id, so the hierarchy is part of the key.
 
 func DomainKey(fqdn string) string {
 	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(fqdn)), ".")

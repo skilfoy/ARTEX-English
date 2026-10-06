@@ -1,5 +1,5 @@
-// Package db is the PostgreSQL data source for ARTEX (Replace old graph Single file SQLite).
-// It opens connections, applies. schema,and seed Built-in agent Directory with Variables.
+// Package db is the PostgreSQL data source for ARTEX (replacing the old single-file graph SQLite).
+// It opens connections, applies the schema, and seeds built-in agents and the variable catalog.
 package db
 
 import (
@@ -161,23 +161,24 @@ func Open(dsn string) (*DB, error) {
 type builtinAgent struct {
 	key, name, role, desc string
 	vars                  []promptVar
-	interactiveShell      bool // Default interactive on construction shell Switch;ON CONFLICT Do not overwrite user follow-up manual switches
-	runSeconds            *int // Single time at construction run Wall clock ceiling(second);nil=Use torrent default(1200),0=No time limit
+	interactiveShell      bool // default interactive-shell switch when the row is created; ON CONFLICT does not overwrite a later manual toggle
+	runSeconds            *int // per-run wall-clock cap in seconds at creation; nil uses the built-in default (1200), 0 means no limit
 }
 
 type promptVar struct{ name, desc, example, source string }
 
-// intp Return v A pointer for... builtinAgent Optional Fields(As runSeconds)Visible values.
+// intp returns a pointer to v so optional builtinAgent fields (such as runSeconds) can be set explicitly.
 func intp(v int) *int { return &v }
 
-// builtinAgents mirrors docs §5(a). Internal tools not in library; here only seed agent + Variable Directory.
-// Note:planner/worker/mainagent/auto Interactive shell Default From Bottom interactive_shell_default_v1
-// One Block true(Respect for follow-up toggle);Here. interactiveShell Just what you need.[Building a line is defaulted]New agent.
+// builtinAgents mirrors docs §5(a). Built-in tools are not stored here; this only seeds agents and the variable catalog.
+// The interactive-shell default for planner/worker/mainagent/auto is set in one
+// block below by interactive_shell_default_v1, and a later toggle is respected.
+// interactiveShell here is only for new agents that should be on as soon as the row is created.
 var builtinAgents = []builtinAgent{
 	{"goals", "Goal decomposition", "goals", "Break an assessment objective into independent, verifiable goals.", []promptVar{
 		{"EngagementDescription", "Task description and assessment context", "Assess the example.com site", "exploration"},
-		// Now It's global. runtime Variables(See server.globalPromptVars),Not around anymore. agent In the directory.
-		// Repeat definition,Otherwise withGlobalVars If added, you will run into a global item..
+		// Now is a global runtime variable (see server.globalPromptVars), not repeated
+		// in each agent's catalog. A duplicate would collide when withGlobalVars appends it.
 	}, false, nil},
 	{"planner", "Planner", "planner", "Review the task state and add exploration intents only for uncovered directions.", []promptVar{
 		{"Goal", "Overall task goal", "Assess administrator access at example.com", "exploration"},
@@ -192,9 +193,12 @@ var builtinAgents = []builtinAgent{
 		{"ProxyAddr", "Traffic recording proxy address", "127.0.0.1:8080", "runtime"},
 		{"WorkerName", "Worker identifier (optional)", "worker-1", "runtime"},
 	}, false, nil},
-	// Auto:Built-in[Platform Operations]agent.Do not participate in the permeation cycle,Driven by Dialogue Page,Operate platforms with tools.
+	// Auto: built-in platform-operations agent. It is not part of the assessment loop.
+	// The chat page drives it, and it operates the platform through tools.
 	{"auto", "Auto", "assistant", "Platform assistant for managing tasks, assets, skills, custom tools, and MCP connections.", nil, false, nil},
-	// Penetration Testing:Built-in[Independent infiltration]agent.Driven by Dialogue Page,One man takes the full chain of infiltration from reconnaissance to closing.,I'm planning to do my own validation. Default Open Interactive shell.
+	// Pentest: built-in standalone assessment agent. The chat page drives it.
+	// One agent walks the full chain from recon to wrap-up, planning, executing,
+	// and verifying itself. Interactive shell is on by default.
 	{"pentest", "Independent assessment", "assistant", "Standalone agent that plans, executes, and independently verifies each stage of an authorized assessment.", nil, true, intp(0)},
 }
 
@@ -223,8 +227,9 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 	}
 	// Drop catalog entries for variables that were renamed, so the white-list no
 	// longer advertises a name templates can't resolve (EngagementTitle→Description).
-	// 'Now' From all agent Raise Directory to Global runtime After Variable,Old Treasury. goals One left. 'Now'
-	// It'll run into the whole world.(List of front-end variables key Repeat);Clear it together..
+	// After Now was promoted from every agent's catalog to a global runtime variable,
+	// old databases still had a goals row named Now. It collides with the global
+	// entry (duplicate key in the frontend variable list). Delete it too.
 	if _, err := d.Exec(`DELETE FROM agent_prompt_vars WHERE var_name IN ('EngagementTitle', 'CoverageGaps', 'Now')`); err != nil {
 		return fmt.Errorf("cleanup renamed vars: %w", err)
 	}
@@ -344,41 +349,41 @@ func (d *DB) seedDefaultInterceptRules() error {
 		priority int
 	}
 	rules := []rule{
-		// ── System Destructive Command (priority 100) ──────────────────────────────────
+		// ── System-destructive commands (priority 100) ──────────────────────────────────
 		{
-			name:     "[Built-in] Recursive Force Delete rm -rf",
+			name:     "[Built-in] Recursive forced delete (rm -rf)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\brm\b.{0,80}(?:-[a-z]*r[a-z]*f[a-z]*|-[a-z]*f[a-z]*r[a-z]*|--recursive|--no-preserve-root)`,
 			action:   "deny",
-			message:  "Prohibit execution of retrogression forced deletion(rm -rf / rm --recursive),Possible permanent damage to systems or target environment",
+			message:  "Recursive forced deletion is forbidden (rm -rf / rm --recursive). It can permanently damage the system or the target environment",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Remove System Critical Directory",
+			name:     "[Built-in] Delete critical system directories",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\brm\b[^"'\n]{0,60}["'\s](/|/etc|/bin|/usr|/boot|/var|/lib|/sys|/proc|/dev|/sbin|/root)`,
 			action:   "deny",
-			message:  "Deleting System Critical Paths",
+			message:  "Deleting critical system paths is forbidden",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Disk Formatting mkfs",
+			name:     "[Built-in] Disk format (mkfs)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bmkfs\b`,
 			action:   "deny",
-			message:  "Ban formatting disks(mkfs)",
+			message:  "Formatting disks is forbidden (mkfs)",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Overwrite Disk Device dd",
+			name:     "[Built-in] Overwrite a disk device with dd",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bdd\b[^|\n]{0,100}\bof=\s*/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "Prohibition of use dd Overwrite Disk Device",
+			message:  "Using dd to overwrite a disk device is forbidden",
 			priority: 100,
 		},
 		{
@@ -387,34 +392,34 @@ func (d *DB) seedDefaultInterceptRules() error {
 			typ:      "regex",
 			pattern:  `:\(\)\s*\{[^}]*:\|:`,
 			action:   "deny",
-			message:  "Prohibition of enforcement Fork Bomb",
+			message:  "Fork bombs are forbidden",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Shutdown / Restart",
+			name:     "[Built-in] Shutdown or reboot",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shutdown|reboot|halt|poweroff|init\s+[06])\b`,
 			action:   "deny",
-			message:  "Prohibit the execution of a shutdown or restart order",
+			message:  "Shutdown and reboot commands are forbidden",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Kill All Processes",
+			name:     "[Built-in] Kill every process",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\bkill\s+-9\s+-1\b|\bkillall\s+-9\b`,
 			action:   "deny",
-			message:  "Prohibited kill -9 -1 or killall -9(Kill all processes)",
+			message:  "kill -9 -1 and killall -9 are forbidden (they kill every process)",
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Disk Erase shred / wipe",
+			name:     "[Built-in] Disk erase (shred / wipe)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `\b(?:shred|wipe)\b[^|\n]{0,80}/dev/[a-zA-Z]`,
 			action:   "deny",
-			message:  "Ban Disk Device Execution shred/wipe Erase",
+			message:  "Running shred or wipe against a disk device is forbidden",
 			priority: 100,
 		},
 		{
@@ -423,17 +428,17 @@ func (d *DB) seedDefaultInterceptRules() error {
 			typ:      "regex",
 			pattern:  `\biptables\s+(?:-F|--flush)\b|\bnft\s+flush\s+ruleset\b`,
 			action:   "deny",
-			message:  "Ban on clearing firewalls.(iptables -F / nft flush)",
+			message:  "Flushing firewall rules is forbidden (iptables -F / nft flush)",
 			priority: 100,
 		},
-		// ── Database Disruption Operations (priority 90) ─────────────────────────────────
+		// ── Destructive database operations (priority 90) ─────────────────────────────────
 		{
 			name:     "[Built-in] SQL DROP DATABASE / TABLE / SCHEMA",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bDROP\s+(?:DATABASE|TABLE|SCHEMA|INDEX|VIEW|TABLESPACE|USER|ROLE)\b`,
 			action:   "deny",
-			message:  "Prohibition of enforcement DROP Operation, possibly irreversible destruction of database objects",
+			message:  "DROP is forbidden. It can irreversibly destroy database objects",
 			priority: 90,
 		},
 		{
@@ -442,7 +447,7 @@ func (d *DB) seedDefaultInterceptRules() error {
 			typ:      "regex",
 			pattern:  `(?i)\bTRUNCATE\s+(?:TABLE\s+)?\w`,
 			action:   "deny",
-			message:  "Prohibition of enforcement TRUNCATE,Could empty all data in the data sheet",
+			message:  "TRUNCATE is forbidden. It can wipe every row in a table",
 			priority: 90,
 		},
 		{
@@ -451,7 +456,7 @@ func (d *DB) seedDefaultInterceptRules() error {
 			typ:      "regex",
 			pattern:  `(?i)\.(?:dropDatabase|dropCollection|drop)\s*\(`,
 			action:   "deny",
-			message:  "Prohibition of enforcement MongoDB drop Operation",
+			message:  "MongoDB drop operations are forbidden",
 			priority: 90,
 		},
 		{
@@ -460,48 +465,48 @@ func (d *DB) seedDefaultInterceptRules() error {
 			typ:      "regex",
 			pattern:  `(?i)\b(?:FLUSHALL|FLUSHDB)\b`,
 			action:   "deny",
-			message:  "Prohibition of enforcement Redis FLUSHALL / FLUSHDB,Could empty all cache data",
+			message:  "Redis FLUSHALL and FLUSHDB are forbidden. They can wipe all cached data",
 			priority: 90,
 		},
-		// ── HTTP Disruptive Request (priority 80) ──────────────────────────────────
+		// ── Destructive HTTP requests (priority 80) ──────────────────────────────────
 		// Agent Send DELETE Three common ways to request:
-		//   1. curl -X DELETE / --request DELETE(Bash Tools directly execute or write scripts)
+		//   1. curl -X DELETE / --request DELETE (Bash runs them directly or writes them into a script)
 		//   2. Python HTTP Client .delete() Method
 		//   3. JS/In a generic script. method: 'DELETE' / method="DELETE"
 		{
-			name:     "[Built-in] curl / wget Send DELETE Request",
+			name:     "[Built-in] curl or wget sends a DELETE request",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\bcurl\b[^|\n&;"]{0,300}(?:-X\s*DELETE|--request\s+DELETE|-XDELETE)|\bwget\b[^|\n&;"]{0,300}--method[=\s]+DELETE`,
 			action:   "deny",
-			message:  "It's forbidden. curl/wget Send HTTP DELETE Request, possible deletion of target system data",
+			message:  "Sending an HTTP DELETE request with curl or wget is forbidden. It can delete data on the target system",
 			priority: 80,
 		},
 		{
-			name:     "[Built-in] Python HTTP Client DELETE(requests/httpx/aiohttp)",
+			name:     "[Built-in] Python HTTP client DELETE (requests/httpx/aiohttp)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)\b(?:requests|httpx|aiohttp|urllib\.request)\.delete\s*\(|session\.delete\s*\(|client\.delete\s*\(`,
 			action:   "deny",
-			message:  "Prohibition of use Python HTTP Client Send DELETE Request",
+			message:  "Sending a DELETE request with a Python HTTP client is forbidden",
 			priority: 80,
 		},
 		{
-			name:     "[Built-in] Synchronising folder HTTP DELETE Method(JS/General)",
+			name:     "[Built-in] Script declares an HTTP DELETE method (JS/generic)",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)axios\.delete\s*\(|method\s*[:=]\s*['"]DELETE['"]`,
 			action:   "deny",
-			message:  "Prohibit declaration and sending in scripts HTTP DELETE Request",
+			message:  "Declaring and sending an HTTP DELETE request in a script is forbidden",
 			priority: 80,
 		},
 		{
-			name:     "[Built-in] Batch Empty / Clear interface path",
+			name:     "[Built-in] Bulk clear or wipe API paths",
 			target:   "tool_input",
 			typ:      "regex",
 			pattern:  `(?i)/(?:clear|wipe|flush|purge|truncate|drop|destroy|factory[-_]reset|reset[-_]all)(?:[/?#"'\s]|$)`,
 			action:   "deny",
-			message:  "Ban calling batch empty or destroy type interfaces(/clear /wipe /flush /purge etc.)",
+			message:  "Calling bulk clear or destroy endpoints is forbidden (/clear /wipe /flush /purge and similar)",
 			priority: 80,
 		},
 	}
@@ -538,18 +543,18 @@ func (d *DB) seedDefaultInterceptRulesV2() error {
 		priority int
 	}{
 		{
-			name:     "[Built-in] Disruptive System Command",
+			name:     "[Built-in] Destructive system command",
 			pattern:  `(?i)\b(rm\s+-rf\s+/|mkfs|dd\s+if=|:\(\)\s*\{|shutdown|reboot|>\s*/dev/sd)`,
 			action:   "deny",
-			message:  "Disruptive command denied.(rm -rf / / mkfs / dd / fork bomb / Shutdown restart / Overwrite Disk Device)",
+			message:  "Destructive command denied (rm -rf /, mkfs, dd, fork bomb, shutdown/reboot, or overwriting a disk device)",
 			enabled:  true,
 			priority: 100,
 		},
 		{
-			name:     "[Built-in] Data leak pipe",
+			name:     "[Built-in] Data exfiltration pipe",
 			pattern:  `(?i)(curl|wget|nc|ncat)\b[^|]*\b(\|\s*(curl|wget|nc))`,
 			action:   "deny",
-			message:  "Suspected data leak conduit rejected (command output) Yes. curl/wget/nc Outgoing)",
+			message:  "Suspected data-exfiltration pipe rejected (command output piped out through curl, wget, or nc)",
 			enabled:  false,
 			priority: 80,
 		},
@@ -587,14 +592,14 @@ func (d *DB) seedDefaultInterceptRulesV3() error {
 	if v, _, _ := d.GetSetting("intercept_default_rules_v3"); v == "done" {
 		return nil
 	}
-	const name = "[Built-in] Remove Class Interface Path"
+	const name = "[Built-in] Delete-style API path"
 	if _, err := d.Exec(`
 INSERT INTO intercept_rules(name, enabled, priority, match_target, match_type, pattern, action, message, timeout_enabled, timeout_seconds, timeout_action)
 SELECT $1, true, 80, 'tool_input', 'regex', $2, 'deny', $3, false, 60, 'deny'
 WHERE NOT EXISTS (SELECT 1 FROM intercept_rules WHERE name = $1)`,
 		name,
 		deleteEndpointPathPattern,
-		"Disable call to delete class interface(/delete /remove /unlink /erase I don't care what you use. HTTP Method——Most of the deleted interfaces applied GET/POST It triggers, and it removes the target data.",
+		"Calling a delete-style endpoint is forbidden (/delete /remove /unlink /erase and similar), whichever HTTP method is used. Most applications expose deletion over GET or POST, and that still deletes real target data.",
 	); err != nil {
 		return fmt.Errorf("rule %q: %w", name, err)
 	}

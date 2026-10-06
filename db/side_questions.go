@@ -11,8 +11,8 @@ import (
 	"github.com/skilfoy/ARTEX-English/sidequestion"
 )
 
-var ErrSideBusy = errors.New("There's a side question on the current session.")
-var ErrSideParentGone = errors.New("Sidefather session deleted or archived")
+var ErrSideBusy = errors.New("this session already has a side question being answered")
+var ErrSideParentGone = errors.New("the parent side session was deleted or archived")
 
 // Lock the real parent before the side session, also covering soft task/intent
 // deletion. A delayed checkpoint cannot recreate data after archive cleanup.
@@ -173,7 +173,7 @@ func (d *DB) StartSideRequest(ctx context.Context, s sidequestion.Snapshot, clie
 	e, err := scanSide(tx.QueryRowContext(ctx, `SELECT `+sideCols+` FROM side_question_requests WHERE session_key=$1 AND generation=$2 AND client_id=$3`, s.Parent.Key(), generation, clientID))
 	if err == nil {
 		if e.Question != question {
-			return nil, false, fmt.Errorf("Same request ID Not for different issues.")
+			return nil, false, fmt.Errorf("the same request id cannot be reused for a different question")
 		}
 		return &e, false, tx.Commit()
 	}
@@ -283,6 +283,6 @@ AND EXISTS(SELECT 1 FROM side_question_requests r WHERE r.id=$4 AND r.session_ke
 }
 
 func (d *DB) InterruptSideRequests(ctx context.Context) error {
-	_, err := d.ExecContext(ctx, `UPDATE side_question_requests SET status='interrupted',error='Service restart. Reply aborted.',sequence=sequence+1 WHERE status='running'`)
+	_, err := d.ExecContext(ctx, `UPDATE side_question_requests SET status='interrupted',error='service restarted; the answer was interrupted',sequence=sequence+1 WHERE status='running'`)
 	return err
 }

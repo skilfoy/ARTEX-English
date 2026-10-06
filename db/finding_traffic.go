@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	ErrEvidenceConflict = errors.New("The flow evidence has changed. Please refresh and try again.")
-	ErrFindingNotFound  = errors.New("The vulnerability does not exist")
-	ErrEvidenceNotFound = errors.New("There's no evidence of traffic.")
+	ErrEvidenceConflict = errors.New("traffic evidence has changed; refresh and try again")
+	ErrFindingNotFound  = errors.New("finding does not exist")
+	ErrEvidenceNotFound = errors.New("no traffic evidence")
 )
 
 // This lock covers the evidence filesystem as well as its SQL references. All
@@ -51,13 +51,13 @@ func NormalizeTrafficRefs(refs []TrafficRef) ([]TrafficRef, error) {
 	for _, ref := range refs {
 		ref.TrafficID = strings.TrimSpace(ref.TrafficID)
 		if ref.TrafficID == "" {
-			return nil, errors.New("traffic_id Cannot be empty")
+			return nil, errors.New("traffic_id cannot be empty")
 		}
 		if ref.Role == "" {
 			ref.Role = "supporting"
 		}
 		if !ValidTrafficRole(ref.Role) {
-			return nil, fmt.Errorf("Invalid flow use %q", ref.Role)
+			return nil, fmt.Errorf("invalid traffic role %q", ref.Role)
 		}
 		if !seen[ref.TrafficID] {
 			out = append(out, ref)
@@ -186,7 +186,7 @@ func LockFindingEvidenceTx(tx *sql.Tx, findingID int64, version *int64) error {
 
 func InsertEvidenceSnapshotTx(tx *sql.Tx, s TrafficEvidenceSnapshot) error {
 	if s.ID != TrafficSnapshotID(s) {
-		return errors.New("The evidence is not matched by metadata.")
+		return errors.New("evidence does not match its metadata")
 	}
 	// The ID was computed over the normalized form; store those same bytes.
 	id := s.ID
@@ -275,7 +275,7 @@ func (d *DB) GetFindingTraffic(ctx context.Context, findingID int64) (out *Findi
 
 func (d *DB) EditFindingTraffic(ctx context.Context, findingID, bindingID, version int64, role, note *string, remove bool, order []int64) error {
 	if role != nil && !ValidTrafficRole(*role) {
-		return errors.New("Invalid flow use")
+		return errors.New("invalid traffic role")
 	}
 	return d.WithEvidenceTx(ctx, func(tx *sql.Tx) error {
 		if err := LockFindingEvidenceTx(tx, findingID, &version); err != nil {
@@ -349,7 +349,7 @@ func RecordFindingTx(ctx context.Context, tx *sql.Tx, in RecordFindingInput, pre
 			return nil, err
 		}
 		if expID != in.ExplorationID {
-			return nil, errors.New("The task of the loophole does not match the discovery record.")
+			return nil, errors.New("the finding's task does not match the discovery record")
 		}
 	}
 	if in.IntentID > 0 {
@@ -358,7 +358,7 @@ func RecordFindingTx(ctx context.Context, tx *sql.Tx, in RecordFindingInput, pre
 			return nil, err
 		}
 		if !ok {
-			return nil, errors.New("intent_id It must be the intent of this mission.)")
+			return nil, errors.New("intent_id must be an intent of this task")
 		}
 	}
 	payload, _ := json.Marshal(map[string]any{"vulnclass": in.VulnClass, "name": in.Name, "severity": in.Severity, "summary": in.Summary, "evidence": map[string]any{"by": in.Worker, "poc": in.Evidence}})

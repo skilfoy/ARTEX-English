@@ -12,7 +12,7 @@ import (
 
 const FindingRetestAgentKey = "retester"
 
-var ErrRetestNotRunning = errors.New("This retrospect is closed or not yet started. Please initiate a new retrospect from the gap details")
+var ErrRetestNotRunning = errors.New("this retest has finished or has not started; start a new retest from the finding details")
 
 // FindingRetest is an immutable historical test once its conversation turn ends.
 // Snapshot is only loaded for the agent, never sent with the history list.
@@ -182,7 +182,7 @@ func (d *DB) StartFindingRetest(ctx context.Context, id int64) (bool, error) {
 // runtime conversation. Identical retries are safe; a second verdict is refused.
 func (d *DB) RecordFindingRetestResult(ctx context.Context, conversationID int64, verdict, summary, evidence string) error {
 	if verdict != "reproduced" && verdict != "fixed" && verdict != "inconclusive" {
-		return errors.New("verdict Must be. reproduced / fixed / inconclusive")
+		return errors.New("verdict must be reproduced, fixed, or inconclusive")
 	}
 	summary, evidence = strings.TrimSpace(summary), strings.TrimSpace(evidence)
 	if summary == "" || evidence == "" {
