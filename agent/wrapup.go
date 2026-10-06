@@ -33,7 +33,7 @@ var wrapupTurnDefaults = map[string]int{
 
 const genericWrapupTurns = 10
 
-const plannerWrapUpDefault = "This planning round is ending. Record actionable exploration directions with add_intent, mark verified goals with prove_goal, and save any useful sequence with TodoWrite. The mission may continue in another round. No summary text is required."
+const plannerWrapUpDefault = "This planning round's step budget is about to run out. Only this round is ending. The system will wake you again as the situation changes; the task is not ending, and you do not need to close out the whole plan here. Record conclusions you have already reached so this round is not wasted, but do not invent intents just to wrap up (zero intents this round is still a completely normal result): (1) if you have already decided a direction should be dispatched now, submit it once in a batch with add_intent (do not hold back a direction you have already decided); (2) for a goal already proved by a finding or fact, call prove_goal to mark it met (do not miss one); (3) if you have identified a dependent sequence that must be done in steps, record it with TodoWrite so the next wake-up can continue dispatching it. Then end the round. No summary text is required."
 
 const mainAgentWrapUpDefault = "The interaction is ending. Finish the current work and give the user one plain-text sentence summarizing progress, key findings, and next steps."
 

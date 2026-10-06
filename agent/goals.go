@@ -51,7 +51,8 @@ type GoalSpec struct {
 // shares the rate limiter, gets recorded by llmrec, and participates in LLM
 // failover instead of quietly bypassing all three.
 //
-// desc is the task's free-text description (Background: range of targets/flag Number/Statements of engagement, etc.).
+// desc is the task's free-text description (background: target scope, flag count,
+// engagement terms, and so on).
 // It is fed alongside the goal so the decomposer no longer splits blind — the
 // prompt still forbids inventing anything the two texts don't state.
 //
@@ -80,12 +81,15 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if prov == nil {
 		return nil
 	}
-	// Target dismantling is a one-time call: hang up. transcript store,So agentcore I won't. ctx Top
-	// session id(It's only there. writer It's late. See you. agentcore.Prompt).And press session-id head
-	// Do hint caches/Gateway for sticky routing(opencode zen Missing x-opencode-session Direct 400
-	// MissingSessionID)I read it. ctx Value——It's just...[Dialogue normal. Dismantling. 400].
-	// Show one steady id:The same explorer's request for dismantling shares it (for Cache) and name and
-	// planner/worker No conflict. llmrec.parseSession Correct attribution.
+	// Goal decomposition is a one-shot call: no transcript store is attached, so
+	// agentcore does not put a session id on ctx (it only does that when a writer
+	// exists; see agentcore.Prompt). Gateways that key prompt cache or sticky
+	// routing on the session-id header (opencode zen returns 400 MissingSessionID
+	// when x-opencode-session is absent) read that ctx value. Omitting it means
+	// chat works and decomposition returns 400. Attach one stable id explicitly:
+	// decomposition requests for the same exploration share it (better cache hits),
+	// the name does not collide with planner or worker, and llmrec.parseSession
+	// attributes it correctly.
 	if ts != nil {
 		ctx = transcript.WithSessionID(ctx, fmt.Sprintf("exp%d-goals", ts.ID()))
 	}
@@ -97,8 +101,9 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	// {{.EngagementDescription}} template var — else a prompt that references the var
 	// would inject the description twice. System prompt stays pure static instructions.
 	sys := renderSystem("goals", goalsDefaultTmpl, GoalsVars{DataDir: dataDir, Now: nowStr()})
-	// set_constraints Always available(Not dependent asset store):Text Already Contained[Smuggle operational restraints before target is removed.]This step.
-	// (Available at agent Edit Page Reword),All we need here is tools..
+	// set_constraints is always available (it does not depend on the asset store).
+	// The prompt already says to extract operation constraints before splitting
+	// goals (that wording can be edited on the agent page). Here we only attach the tool.
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
 	// Wire add_task_scope only when we have a real asset store + task to write to.
 	// The scope-extraction tail is appended in lockstep so the prompt never asks for
@@ -109,7 +114,7 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	}
 	userMsg := "Task goal:\n" + goalText
 	if d := strings.TrimSpace(desc); d != "" {
-		userMsg += "\n\nTask description and context, which may include the target scope or engagement terms. Use only what is stated:\n" + d
+		userMsg += "\n\nTask description (background; it may include target scope, flag count, or engagement terms. Use it only as context and do not invent anything it does not state):\n" + d
 	}
 	// Use captureRun so every LLM step is emitted as an activity record (visible in
 	// the plan tab under the round-0 marker). Falls back gracefully when emit is nil.
@@ -125,10 +130,11 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		Tools:                  tools,
 		PermissionMode:         acperm.ModeBypass,
 		DisableBackgroundTasks: true,
-		// 3 Step(Draw constraints → Scope of registration → Targets)One tool call each,Avoid leakage before closing the foot round set_goals.
+		// Three steps (extract constraints, register scope, split goals), one tool call
+		// each. Give enough turns so set_goals is not skipped before wrap-up.
 		MaxTurns:     8,
-		NonStreaming: nonStreaming, // The profile Walk when choosing non-stream Provider.Complete
-		MaxTokens:    maxTokens,    // 0 = No limit,By the server default
+		NonStreaming: nonStreaming, // When the profile selects non-streaming, the run uses Provider.Complete
+		MaxTokens:    maxTokens,    // 0 = no cap; the server default applies
 	}, userMsg, captureEmit)
 	// set_goals persisted the goals directly; read them back so the caller sees what
 	// was written (empty slice ⇒ the LLM produced nothing ⇒ caller falls back).

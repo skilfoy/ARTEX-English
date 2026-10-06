@@ -148,22 +148,22 @@ func renderPlannerTodos(items []actool.Todo) string {
 // overview. Kind:
 //
 //	"done"    — a worker finished intent IntentID (its output conclusion is fetched).
-//	"finding" — a worker reported a finding on intent IntentID (Detail = Abstract).
-//	"goal"    — the human (via Lord agent of set_goals) added one OR MORE goals in a
-//	            single call (Goals = This new target text,1+ strip;set_goals Support batch).
-//	"goal_deleted" — the human deleted a goal from Objective management of the overview (Detail = Deleted target text).
-//	"goal_edited"  — the human edited a goal from Objective management of the overview (OldGoal→NewGoal Text).
-//	"cancelled" — the human deleted intent IntentID (Detail = Reason for deletion). The intent is
+//	"finding" — a worker reported a finding on intent IntentID (Detail = summary).
+//	"goal"    — the human (via the main agent's set_goals) added one OR MORE goals in a
+//	            single call (Goals = the new goal texts, one or more; set_goals supports a batch).
+//	"goal_deleted" — the human deleted a goal from goal management on the overview (Detail = the deleted goal text).
+//	"goal_edited"  — the human edited a goal from goal management on the overview (OldGoal→NewGoal text).
+//	"cancelled" — the human deleted intent IntentID (Detail = the deletion reason). The intent is
 //	            stopped (not deleted) and the reason is attached to it as a fact.
 type TriggerEvent struct {
 	Kind     string
 	IntentID int64
 	Detail   string
-	Summary  string   // Kind=="cancelled" Earmarked: Summary of intent captured before deletion (no longer available, no longer available))
-	Goals    []string // Kind=="goal" Earmarked: This time set_goals New Target Text(1 Articles or articles)
-	OldGoal  string   // Kind=="goal_edited" Earmarked: Target text before change
-	NewGoal  string   // Kind=="goal_edited" Earmarked: modified target text
-	Hints    []string // Kind=="hint" Earmarked: This time add_hint New Hint text(1 Articles or articles)
+	Summary  string   // Kind=="cancelled" only: intent summary captured before deletion (after a real delete the node is gone and cannot be looked up)
+	Goals    []string // Kind=="goal" only: goal texts added by this set_goals call (one or more)
+	OldGoal  string   // Kind=="goal_edited" only: goal text before the edit
+	NewGoal  string   // Kind=="goal_edited" only: goal text after the edit
+	Hints    []string // Kind=="hint" only: hint texts added by this add_hint call (one or more)
 }
 
 // renderTriggers spells out the change(s) that fired this round: for a finished
@@ -175,20 +175,20 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\nChanges that triggered this planning round (review these first):")
+	b.WriteString("\n\nChanges that triggered this planning round (review these first, then decide whether to add a direction):")
 	for _, ev := range evs {
 		switch ev.Kind {
 		case "goal":
 			if len(ev.Goals) == 1 {
-				b.WriteString(fmt.Sprintf("\n- The operator added a goal: %s. Add an exploration direction if no intent covers it.", ev.Goals[0]))
+				b.WriteString(fmt.Sprintf("\n- The operator (main agent) added a goal to achieve: %s. Add an exploration direction if no intent covers it yet.", ev.Goals[0]))
 			} else {
-				b.WriteString(fmt.Sprintf("\n- The operator added %d goals: %s. Review each for an uncovered direction.", len(ev.Goals), strings.Join(ev.Goals, "; ")))
+				b.WriteString(fmt.Sprintf("\n- The operator (main agent) added %d new goals to achieve: %s. For each goal that does not yet have a matching intent, add an exploration direction.", len(ev.Goals), strings.Join(ev.Goals, "; ")))
 			}
 		case "hint":
 			if len(ev.Hints) == 1 {
-				b.WriteString(fmt.Sprintf("\n- The operator added a strategic hint: %s. Adjust the plan where appropriate.", ev.Hints[0]))
+				b.WriteString(fmt.Sprintf("\n- The operator (main agent) added a strategic hint, now on the exploration graph: %s. Adjust or add a direction if none covers it yet.", ev.Hints[0]))
 			} else {
-				b.WriteString(fmt.Sprintf("\n- The operator added %d strategic hints: %s. Review each when planning.", len(ev.Hints), strings.Join(ev.Hints, "; ")))
+				b.WriteString(fmt.Sprintf("\n- The operator (main agent) added %d strategic hints, now on the exploration graph: %s. Adjust or add a direction for each.", len(ev.Hints), strings.Join(ev.Hints, "; ")))
 			}
 		case "goal_deleted":
 			b.WriteString(fmt.Sprintf("\n- The operator removed this goal: %s. Reassess the remaining goals and do not dispatch further work for the removed goal.", ev.Detail))
@@ -197,12 +197,12 @@ func renderTriggers(ts *db.ExplorationStore, evs []TriggerEvent) string {
 		case "finding":
 			b.WriteString(fmt.Sprintf("\n- The worker on intent #%d (%s) reported a finding: %s", ev.IntentID, intentSummary(ts, ev.IntentID), ev.Detail))
 		case "cancelled":
-			// Intentional content preferred to be captured when deleted Summary(Really delete the postnode does not exist,intentSummary I can't.).
+			// Prefer the summary captured at deletion (after a real delete the node is gone and intentSummary cannot find it).
 			sm := ev.Summary
 			if sm == "" {
 				sm = intentSummary(ts, ev.IntentID)
 			}
-			b.WriteString(fmt.Sprintf("\n- The operator removed intent #%d (%s). Reason: %s. Replan without this intent.", ev.IntentID, sm, ev.Detail))
+			b.WriteString(fmt.Sprintf("\n- The operator deleted intent #%d. Content: %s. Reason: %s. The intent is deleted and will not be executed; replan from that.", ev.IntentID, sm, ev.Detail))
 		default: // "done"
 			b.WriteString(fmt.Sprintf("\n- The worker on intent #%d (%s) finished. Conclusion: %s", ev.IntentID, intentSummary(ts, ev.IntentID), workerOutput(ts, ev.IntentID)))
 			if fids := factIDsYielded(ts, ev.IntentID); fids != "" {
@@ -293,7 +293,7 @@ func renderGraphOverview(data map[string]any) string {
 }
 
 // plannerDefaultTmpl is the built-in EDITABLE body (section [A]) of the planner prompt,
-// seeded into agent_prompts. Goal is a {{.Goal}} template var; the Intermediate output regulations
+// seeded into agent_prompts. Goal is a {{.Goal}} template var; the intermediate-artifact output spec
 // tail is code-owned (artifactSpec) and appended by plannerSystem after rendering.
 const plannerDefaultTmpl = `You are the planner for an authorized security assessment. Review the task graph, assess its goals, and create exploration intents for uncovered directions. Workers execute those intents. Respond in English.
 
@@ -346,33 +346,36 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	if origin, _ := ts.OriginFactID(); origin > 0 {
 		tsx.SetOwnerNode(origin) // planner-side anchors default to the task root (origin fact)
 	}
-	// Field tools + Basic Default Toolset(Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash)
-	// Remove asset overwhelm functionality when off add_task_scope/list_untested_assets(I can't. prompt).
+	// Domain tools plus the base default toolset (Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash).
+	// When asset-coverage is off, drop add_task_scope and list_untested_assets (they stay out of the prompt).
 	base := append(tsx.DropCoverageTools(tsx.PlannerTools()), actool.DefaultTools()...)
 	ctx = WithRunInfo(ctx, RunInfo{TaskID: taskID, ExplorationID: explorationID(ts)})
 	tools, def, cleanup := AugmentTools(ctx, "planner", base)
 	defer cleanup()
-	// Critical postures (intent just completed) + Full preset)[Current round user Input](See below input),system
-	// Only static planning body.move-out Let system Each round is more stable and more resilient; the cost is that if a single wheel is longer, the posture may
-	// Being compaction Compression(planner Single rounds are usually short and low-risk.).situational It's going down. input.
+	// The live situation (the intent that just finished, plus the prefetched full graph)
+	// goes in this round's user input (see input below). system keeps only the static
+	// planning body. Moving it out keeps system stable across rounds and easier to cache.
+	// The cost is that a long round may compact the situation (planner rounds are usually
+	// short, so the risk is low). situational is spliced into input below.
 	situational := renderTriggers(ts, triggers) + renderGraphOverview(tsx.graphOverviewData())
-	// Task level deadline / Final Mode(Sutra ctx Injection,See taskclock.go).The final round timed off.
-	// planner End of sentence as[Current round of operational instructions]Spell in the current wheel user Input(Whatever. situational),Make it last.
-	// Targeting, no new intent..
+	// Task-level deadline / final mode (injected via ctx; see taskclock.go). On the final
+	// round, splice the task-timeout wrap-up into this round's user input (with situational)
+	// as this round's operating instruction: judge goals only, and do not produce a new intent.
 	tc := taskClockFrom(ctx)
 	if tc.Final {
-		situational += "\n\nFinal task wrap-up instruction for this round: " + resolveTaskTimeoutWrapup("planner")
+		situational += "\n\nTask final wrap-up (special instruction for this round; it overrides the normal planning flow above): " + resolveTaskTimeoutWrapup("planner")
 	}
-	// Task Directory <workDir>/tasks/<taskID>,Build it first..
+	// This task's working directory, <workDir>/tasks/<taskID>. Create it first.
 	taskDir := ensureRunDir(p.workDir, taskID, 0)
 	ctx = intercept.WithReviewContext(ctx, taskDir, intercept.ReviewBackground{})
 	sysBody := plannerSystem(goal, p.workDir, taskDir)
 	if p.wantConstraints() {
-		sysBody += constraintBlock(ts) // Operational constraints(If there is.)Injection system hint,Framed Explored Borders
+		sysBody += constraintBlock(ts) // operation constraints, if any, are injected into the system prompt and bound exploration
 	}
 	system, boundary := deferredSystem(sysBody, def)
-	// planner No own wall budget;Yes deadline Time MaxDuration We'll get the rest.,Let the planning wheel on the run
-	// Finish the task at point.(Because it's time out.→Task timeout,Step→per-run Words).
+	// The planner has no wall-clock budget of its own. When a deadline is set, clamp
+	// MaxDuration to the time remaining so a running planning round enters wrap-up when
+	// the task is due (timeout → task-timeout wording; step budget → per-run wording).
 	maxDur, clamped := clampMaxDuration(tc.DeadlineUnix, 0)
 	settle := wrapupSettlement("planner", nil)
 	if tc.DeadlineUnix > 0 {
@@ -386,11 +389,11 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		DeferredTools:   def.Deferred,
 		UnlockSet:       def.Unlock,
 		PermissionMode:  permission.ModeBypass,
-		EnableWebFetch:  true, // Walking records agent leaves marks;loading agent CA Verification MITM Resigned HTTPS Certificate
+		EnableWebFetch:  true, // WebFetch goes through the recording proxy and is logged like curl; the proxy CA lets MITM-resigned HTTPS certificates verify normally
 		WebFetchProxy:   p.proxyAddr,
 		WebFetchCACert:  p.proxyCACert,
-		// Network Search(Optional).ddgs No need key;brave-free Required BraveKey;tavily Required TavilyKey.
-		// WebSearchProxy It's an independent export agent.(http/https/socks5),With the traffic recorded MITM Agent is irrelevant; empty is direct.
+		// Optional web search. ddgs needs no key; brave-free needs BraveKey; tavily needs TavilyKey.
+		// WebSearchProxy is a separate egress proxy (http/https/socks5), unrelated to the traffic-recording MITM proxy. Empty means a direct connection.
 		EnableWebSearch:       p.webSearch.Enabled,
 		WebSearchBackend:      p.webSearch.Backend,
 		BraveSearchAPIKey:     p.webSearch.BraveKey,
@@ -399,45 +402,54 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 		DeepSeekSearchAPIKey:  p.webSearch.DeepSeekAPIKey,
 		DeepSeekSearchModel:   p.webSearch.DeepSeekModel,
 		WebSearchProxy:        p.webSearch.Proxy,
-		BashEnv:               proxyEnv(p.proxyAddr, p.proxyCACert), // Bash Sub-order default proxy+Trust CA
-		WorkingDir:            taskDir,                              // Other Organiser <workDir>/tasks/<taskID>
+		BashEnv:               proxyEnv(p.proxyAddr, p.proxyCACert), // Bash child processes use the recording proxy by default and trust its CA
+		WorkingDir:            taskDir,                              // this task's working directory <workDir>/tasks/<taskID>
 		ToolOutputDir:         cmdOutDir(taskDir),
 		MaxTurns:              p.maxTurns, // 0 = unlimited (configurable in agent management)
-		MaxDuration:           maxDur,     // 0=No limit;Yes deadline hour=Distance deadline Remaining
+		MaxDuration:           maxDur,     // 0 = no limit; with a deadline, the time remaining until it
 		Compaction:            compactionConfig(p.compactionWindow()),
-		// Plan-to-dos across awakening sharing: keep the chain between multiple rounds(session It's new.,store No).
+		// Planning to-dos shared across wakes, so a serial chain survives between rounds
+		// (the session is new; the store is not).
 		Todos: p.todoFor(ts.ID()),
-		// hit[Current round]Step budget→ SDK End of the run.:Putting down what we've come up with.(It's a pie. add_intent,
-		// I can prove it. prove_goal,Serial chain TodoWrite),Not stop planning.——planner They'll wake up again and again..
-		// clamped(Tasked deadline Cracker.)Time to Use PromptByReason(See wrapupSettlementForTask).
+		// Hitting this round's step budget makes the SDK run wrap-up: land what this round
+		// already decided (add_intent for directions to dispatch, prove_goal for what can
+		// be proved, TodoWrite for a serial chain) instead of stopping planning. The planner
+		// will still be woken again. When clamped by the task deadline, use PromptByReason
+		// (see wrapupSettlementForTask).
 		Settlement:   settle,
-		NonStreaming: p.nonStreaming(), // The profile Walk when choosing non-stream Provider.Complete
-		MaxTokens:    p.maxTokens(),    // 0 = No limit,By the server default
+		NonStreaming: p.nonStreaming(), // When the profile selects non-streaming, the run uses Provider.Complete
+		MaxTokens:    p.maxTokens(),    // 0 = no cap; the server default applies
 	}
 	if p.tx != nil { // persist raw LLM conversation; one accumulating file per task's planner
 		opts.Transcript = p.tx
 		opts.SessionID = fmt.Sprintf("exp%d-planner", ts.ID())
 	}
-	// Experimental features:Open by noa Take over context compression(Archive concentrated. <workDir>/noa/<SessionID> Down,Durable).
+	// Experimental: when enabled, noa takes over context compression (archives live under <workDir>/noa/<SessionID> and persist).
 	noaSession := fmt.Sprintf("exp%d-planner", ts.ID())
 	enableNoa(&opts, p.noaEnabledFn, p.workDir, noaSession, noaWarn(noaSession))
-	// Trends (intentions just completed) + Now spell the current wheel. user Enter (see below) input).user There's more in there.
-	// Command + Awakening To-do(todo It's the model's own plan. user Yeah.).
-	// Opening statement press[Any specific changes during current cycle]In two categories: change → Point Down[Actual changes]blocks;no change
-	// (Heart beat time check. / hint / Restoring) → Don't lie."Figure changed.",Instead, we're suggesting that we review our running intentions..
-	lead := "Review the changes that triggered this round, then plan the next step:"
+	// The situation (the intent that just finished, plus the full graph) is spliced into
+	// this round's user input (see input below). The user turn also carries the instruction
+	// and the to-do list kept across wakes (a todo is the model's own planning note and can
+	// be regenerated, so the user turn is the right place).
+	// The opening line depends on whether this round has a concrete change. With a change,
+	// point at the change block below. With none (heartbeat, hint, resume, and so on), do
+	// not claim the graph changed; instead, suggest a review of running intents.
+	lead := "A concrete change just happened (see the changes that triggered this round below). Plan the next step from that:"
 	if len(triggers) == 0 {
-		lead = "This round is a scheduled review without a specific change signal. Review active intents. Use steer_work for stalled or drifting work and kill_work for a fundamentally wrong direction. Assess goals and uncovered directions:"
-		// Heartbeat/When no change wakes up,If the whole picture is gone, open or running Intention → The exploration has stopped.(Nope. worker He's running.,
-		// There's no line.).Clear announcement planner And force it to take a new course.,Don't just review your intentions and turn around..
+		lead = "This round is a scheduled heartbeat review with no specific change signal — the graph may not have anything new. While you are here, review running intents: use steer_work when work has stalled or drifted, and kill_work to cut losses when a direction is fundamentally wrong. Then judge the goals and decide whether to add a direction:"
+		// On a heartbeat or no-change wake, if the whole graph has no open or running
+		// intent, exploration has stalled (no worker is running and nothing is queued).
+		// Tell the planner that plainly and require a new direction this round. Do not
+		// review running intents and then idle.
 		if active, err := ts.HasActiveIntent(); err == nil && !active {
-			lead = "This is a scheduled review with no open or running intents. Check whether the goals are met. For every unmet goal, submit at least one new, nonduplicate intent that advances it:"
+			lead = "This round is a scheduled heartbeat review, and there are currently no open or running intents — no worker is running and nothing is queued, so exploration has stalled. You must produce one or more new intents this round that advance the goals and do not duplicate intents already in the graph (do not produce zero intents). First judge from the situation below whether the goals are already met; if not, add a direction immediately:"
 		}
 	}
-	input := lead + situational + "\n\nAssess the goals against verified evidence and use prove_goal for each achieved goal. If a goal remains unmet and frontier_open=0 with no running_intents, submit at least one intent that advances it. Submit zero intents only when active work covers the directions or all goals are met." +
+	input := lead + situational + "\n\nJudge the goals from the situation above. When a goal is truly met (the objective outcome is in hand, or the target vulnerability is confirmed), mark each one with prove_goal. Hard floor: if a goal is not yet met and there is no open or running intent (frontier_open=0 and running_intents is empty), this round must produce at least one intent that advances the goal — there is no running work to wait on and nothing queued, so zero intents means the task stalls. Produce no new intent only when an open or running intent is already advancing the work, or the goals are already met." +
 		renderPlannerTodos(opts.Todos.List())
-	// MaxDuration We'll break the running tools at the end of the clock and finish the ground.(Yes. ctx on),No more single-wheel cards.
-	// Around the end.,No external hard work. ctx Bottom.ctx Only carried pause / kill / shutdown.
+	// MaxDuration now interrupts an in-flight tool at the wall-clock deadline and enters
+	// wrap-up on the live ctx, so a stuck round no longer skips wrap-up. No external hard
+	// ctx backstop is needed. ctx itself carries only pause / kill / shutdown.
 	_, _, err = captureRun(ctx, opts, input,
 		func(r db.Activity) {
 			if emit != nil {

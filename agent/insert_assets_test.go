@@ -42,7 +42,7 @@ func callInsertAssets(t *testing.T, ts *ToolSet, payload any) map[string]any {
 
 // =====================================================================
 // TestInsertAssetsSubdomainSideEffects
-// Sub-domain Insert → Autocreate root_domain + IP Assets,IP Bind domain name
+// Inserting a subdomain creates the root_domain and IP assets, and the IP binds the domain.
 // =====================================================================
 func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 	d := testDB(t)
@@ -111,7 +111,7 @@ func TestInsertAssetsSubdomainSideEffects(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsMultiIPSubdomain
-// Multiple IP Sub-domain name: All IP It's all in. record_value[],Create each IP Assets
+// Subdomain with several IPs: every IP is stored in record_value[], and each IP asset is created.
 // =====================================================================
 func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 	d := testDB(t)
@@ -159,7 +159,7 @@ func TestInsertAssetsMultiIPSubdomain(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsHTTPServiceTechnologies
-// HTTP Service Insert:technologies Store and read back;IP Writing domain names and ports when they exist IP Assets
+// Inserting an HTTP service stores technologies and reads them back; when an IP is present, the domain and port are written onto the IP asset.
 // =====================================================================
 func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 	d := testDB(t)
@@ -242,7 +242,7 @@ func TestInsertAssetsHTTPServiceTechnologies(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsOtherService
-// Not HTTP Service:c_segment Auto Generate,IP Assets open_ports and bound_domains
+// Non-HTTP service: c_segment is generated automatically, and the IP asset includes open_ports and bound_domains.
 // =====================================================================
 func TestInsertAssetsOtherService(t *testing.T) {
 	d := testDB(t)
@@ -303,7 +303,7 @@ func TestInsertAssetsOtherService(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsMixedBatch
-// Mixed batch insertion: multiple types of insertion called at a time
+// Mixed batch: one call inserts several asset types.
 // =====================================================================
 func TestInsertAssetsMixedBatch(t *testing.T) {
 	d := testDB(t)
@@ -361,7 +361,7 @@ func TestInsertAssetsMixedBatch(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsDedup
-// Writing: insert the same asset twice and return the same ID
+// Idempotent write: inserting the same asset twice returns the same ID.
 // =====================================================================
 func TestInsertAssetsDedup(t *testing.T) {
 	d := testDB(t)
@@ -398,8 +398,8 @@ func TestInsertAssetsDedup(t *testing.T) {
 
 // =====================================================================
 // TestInsertAssetsRejectsHostnameIPPerItem
-// A bunch of intruders. ip I filled out a host name. → Only that failed. The rest went into the library as usual.,
-// And it's in the wrong. index and corrective methods,Agent The next round can fix itself..
+// One item in the batch has a hostname in the ip field → only that item fails; the rest are stored as usual,
+// and the error includes the index and how to fix it so the agent can correct it next round.
 // =====================================================================
 func TestInsertAssetsRejectsHostnameIPPerItem(t *testing.T) {
 	d := testDB(t)

@@ -14,18 +14,24 @@ func noaWarn(session string) func(string) {
 	return func(msg string) { log.Printf("[noa] %s: %s", session, msg) }
 }
 
-// noa Yes norma v0.4.0 Introduction[Model driven context compression]Mechanisms,As a platform experiment feature, user-driven
-// system settings. It's with the interior. compaction Crust.:noaadapter.Enable The only way in.,Hang up once.
-// Context receiver(Compactor),Compress Tools & Three Permanent Notes,Do Not Call Enable Close
-// (Built-in compaction Work as usual.).Switches by each agent Injecting. noaEnabledFn Analysis,each run Read
-// Once.,So switch only to start after run,No need to rebuild. agent.
+// noa is the model-driven context compression introduced in norma v0.4.0. It is a
+// platform experiment the user toggles in system settings. It is mutually exclusive
+// with built-in compaction: noaadapter.Enable is the only entry point and, once
+// called, installs the context takeover (Compactor), the Compress tool, and three
+// persistent prompt notes. Not calling Enable leaves it off (built-in compaction
+// works as usual). Each agent resolves the switch through its injected noaEnabledFn,
+// read once per run, so a toggle only affects runs started afterwards. The agent
+// does not need to be rebuilt.
 
-// enableNoa When the parser report opens noa Access opts.archiveRoot It's a condensed sustainable base directory.
-// (Take Global workDir,Each agent Unanimous <workDir>/noa Down,Do not follow the mission/Intentional directory dispersed),sessionID
-// Naming its lower archive subdirectories(One in the world.,So there's no conflict in the same base directory.).
+// enableNoa wires noa into opts when the resolver reports it enabled. archiveRoot is
+// the durable base directory for the compressed originals (the global workDir; every
+// agent stores them under <workDir>/noa rather than scattering them across task or
+// intent directories). sessionID names the archive subdirectory under that base
+// (globally unique, so there is no clash within the same base directory).
 //
-// noa It's an experimental function.:Access failure must not interrupt the real task. When an error occurs onWarn Report and reverse internal compression.
-// Clear when enabled opts.Compaction,Avoid agentcore Because[Both context manager settings]Police!.
+// noa is experimental: a failed hookup must not abort the real task. On error, report
+// via onWarn and fall back to built-in compression. On success, clear opts.Compaction
+// so agentcore does not warn that two context managers are set at once.
 func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessionID string, onWarn func(string)) {
 	if enabled == nil || !enabled() {
 		return
@@ -39,10 +45,10 @@ func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessio
 		OnWarn:         onWarn,
 	}); err != nil {
 		if onWarn != nil {
-			onWarn("noa Compression enabled failed,Revert internal compression:" + err.Error())
+			onWarn("noa compression failed to enable; falling back to built-in compression:" + err.Error())
 		}
 		return
 	}
-	// Compactor override Compaction,But when they're together, agentcore Every time, they call the police.;Clear..
+	// Compactor overrides Compaction, but agentcore warns every time both are set; clear it explicitly.
 	opts.Compaction = nil
 }

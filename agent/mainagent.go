@@ -82,8 +82,8 @@ func (m *MainAgent) SetWebSearch(o WebSearchOpts) { m.webSearch = o }
 func (m *MainAgent) SetSteerWork(fn func(intentID int64, msg string) error) { m.steerWork = fn }
 
 // mainAgentDefaultTmpl is the built-in EDITABLE body (section [A]) of the main agent
-// prompt, seeded into agent_prompts. Goal is a {{.Goal}} template var; the Centre
-// Production Export Statute tail is code-owned (artifactSpec), appended after rendering.
+// prompt, seeded into agent_prompts. Goal is a {{.Goal}} template var; the
+// intermediate-artifact output spec tail is code-owned (artifactSpec), appended after rendering.
 const mainAgentDefaultTmpl = `You are the main agent in an authorized security assessment. You are the operator's interface to the task. Observe progress and carry out operator instructions through platform tools. The planner generates routine exploration intents and workers execute them. Respond in English.
 
 Use graph_overview, list_findings, list_facts, list_assets, and get_worker_output to answer questions about recorded progress. Base every status statement on tool results.
@@ -113,18 +113,18 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 	}
 	tsx.SetTaskID(taskID)
 	tsx.SetCoverageEnabled(as == nil || as.CoverageEnabled(taskID))
-	tsx.SetNotify(notify)         // Universal wake-up call (unearmarked write-back operation removes it),debounced)
-	tsx.SetResumeTask(resume)     // set_goals Add Target → Finish/Paused task pull back running
-	tsx.SetNotifyGoal(notifyGoal) // set_goals Add Target → Give planner Remember one.[People have added targets.:…]Trigger
-	tsx.SetNotifyHint(notifyHint) // add_hint Add hint → Give planner Remember one.[People have added. N A strategic reminder:…]Trigger
+	tsx.SetNotify(notify)         // generic wake (writes with no dedicated callback use it; debounced)
+	tsx.SetResumeTask(resume)     // set_goals adds a goal → pull a finished or paused task back to running
+	tsx.SetNotifyGoal(notifyGoal) // set_goals adds a goal → record a "the operator added goals: …" trigger for the planner
+	tsx.SetNotifyHint(notifyHint) // add_hint adds hints → record a "the operator added N strategic hints: …" trigger for the planner
 	tsx.steerWork = m.steerWork   // enable steer_work tool (nil = unavailable)
-	// Field tools + Basic Default Toolset(Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash)
-	// Remove asset overwhelm functionality when off add_task_scope/list_untested_assets(I can't. prompt).
+	// Domain tools plus the base default toolset (Read/Write/Edit/MultiEdit/LS/Glob/Grep/Bash).
+	// When asset-coverage is off, drop add_task_scope and list_untested_assets (they stay out of the prompt).
 	base := append(tsx.DropCoverageTools(tsx.MainAgentTools()), actool.DefaultTools()...)
 	ctx = WithRunInfo(ctx, RunInfo{TaskID: taskID, ExplorationID: explorationID(ts)})
 	tools, def, cleanup := AugmentTools(ctx, "mainagent", base)
 	defer cleanup()
-	// Task Directory <workDir>/tasks/<taskID>,Build it first..
+	// This task's working directory, <workDir>/tasks/<taskID>. Create it first.
 	mainDir := ensureRunDir(m.workDir, taskID, 0)
 	ctx = intercept.WithReviewWorkingDirectory(ctx, mainDir)
 	system, boundary := deferredSystem(mainAgentSystem(goal, m.workDir, mainDir), def)
@@ -136,11 +136,11 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 		DeferredTools:   def.Deferred,
 		UnlockSet:       def.Unlock,
 		PermissionMode:  permission.ModeBypass,
-		EnableWebFetch:  true, // Walking records agent leaves marks;loading agent CA Verification MITM Resigned HTTPS Certificate
+		EnableWebFetch:  true, // WebFetch goes through the recording proxy and is logged like curl; the proxy CA lets MITM-resigned HTTPS certificates verify normally
 		WebFetchProxy:   m.proxyAddr,
 		WebFetchCACert:  m.proxyCACert,
-		// Network Search(Optional).ddgs No need key;brave-free Required BraveKey;tavily Required TavilyKey.
-		// WebSearchProxy It's an independent export agent.(http/https/socks5),With the traffic recorded MITM Agent is irrelevant; empty is direct.
+		// Optional web search. ddgs needs no key; brave-free needs BraveKey; tavily needs TavilyKey.
+		// WebSearchProxy is a separate egress proxy (http/https/socks5), unrelated to the traffic-recording MITM proxy. Empty means a direct connection.
 		EnableWebSearch:       m.webSearch.Enabled,
 		WebSearchBackend:      m.webSearch.Backend,
 		BraveSearchAPIKey:     m.webSearch.BraveKey,
@@ -149,16 +149,18 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 		DeepSeekSearchAPIKey:  m.webSearch.DeepSeekAPIKey,
 		DeepSeekSearchModel:   m.webSearch.DeepSeekModel,
 		WebSearchProxy:        m.webSearch.Proxy,
-		BashEnv:               proxyEnv(m.proxyAddr, m.proxyCACert), // Bash Sub-order default proxy+Trust CA
-		WorkingDir:            mainDir,                              // Other Organiser <workDir>/tasks/<taskID>
+		BashEnv:               proxyEnv(m.proxyAddr, m.proxyCACert), // Bash child processes use the recording proxy by default and trust its CA
+		WorkingDir:            mainDir,                              // this task's working directory <workDir>/tasks/<taskID>
 		ToolOutputDir:         cmdOutDir(mainDir),
 		MaxTurns:              m.maxTurns,                             // 0 = unlimited (configurable in agent management)
 		Compaction:            compactionConfig(m.compactionWindow()), // long chats stay within the window
-		Todos:                 actool.NewTodoStore(),                  // Session-level temporary to-do(TodoWrite),It's for pure planning.
-		// Hit budget(Steps)→ SDK End of the run.:Output a summary of progress to users.Prompt Other Organiser(Default 10 wheel).
+		Todos:                 actool.NewTodoStore(),                  // Session-level scratch to-do (TodoWrite), for planning only; discarded when the session ends.
+		// Hitting the step budget makes the SDK run wrap-up: give the user a one-line
+		// progress summary. The prompt and wrap-up turn count are editable in the
+		// admin UI (default 10 turns).
 		Settlement:   wrapupSettlement("mainagent", nil),
-		NonStreaming: m.nonStreaming(), // The profile Walk when choosing non-stream Provider.Complete
-		MaxTokens:    m.maxTokens(),    // 0 = No limit,By the server default
+		NonStreaming: m.nonStreaming(), // When the profile selects non-streaming, the run uses Provider.Complete
+		MaxTokens:    m.maxTokens(),    // 0 = no cap; the server default applies
 	}
 	if m.tx != nil { // persist raw human↔AI conversation; one accumulating file per segment
 		opts.Transcript = m.tx
@@ -169,8 +171,8 @@ func (m *MainAgent) Chat(ctx context.Context, taskID int64, mainSeg int, as *db.
 			opts.SessionID = fmt.Sprintf("exp%d-main-s%d", ts.ID(), mainSeg)
 		}
 	}
-	// Experimental features:Open by noa Take over context compression(Archive concentrated. <workDir>/noa/<SessionID> Down,Durable).
-	// session id With transcript Same rule(Subsection Awareness),Align Archive with Restore.
+	// Experimental: when enabled, noa takes over context compression (archives live under <workDir>/noa/<SessionID> and persist).
+	// session id follows the same rule as the transcript (segment-aware) so the archive and restore stay aligned.
 	noaSession := fmt.Sprintf("exp%d-main", ts.ID())
 	if mainSeg > 0 {
 		noaSession = fmt.Sprintf("exp%d-main-s%d", ts.ID(), mainSeg)

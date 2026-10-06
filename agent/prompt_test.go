@@ -32,7 +32,7 @@ func TestRenderSystemOverrideAndFallback(t *testing.T) {
 	}
 
 	// full plannerSystem path: DB body [A] is honored, then the code-owned tail
-	// [C] (Intermediate output regulations) is ALWAYS appended — editing the body can't drop it.
+	// [C] (intermediate-artifact output spec) is ALWAYS appended — editing the body can't drop it.
 	PromptOverride = func(k string) (string, bool) { return "PLANNER {{.Goal}}", true }
 	got := plannerSystem("Get itX", "/data", "/data")
 	if !strings.HasPrefix(got, "PLANNER Get itX") {
