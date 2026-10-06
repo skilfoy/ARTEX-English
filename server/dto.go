@@ -32,7 +32,7 @@ func rawString(raw json.RawMessage) string {
 type TaskDTO struct {
 	ID                 string             `json:"id"`
 	ExplorationID      int64              `json:"exploration_id"`
-	Name               string             `json:"name"` // Optional task name;Empty=Unnamed
+	Name               string             `json:"name"` // optional task name; empty = unnamed
 	CategoryID         *int64             `json:"category_id,omitempty"`
 	CategoryName       string             `json:"category_name,omitempty"`
 	Pinned             bool               `json:"pinned"`
@@ -50,8 +50,8 @@ type TaskDTO struct {
 	Tokens             TokenTotalDTO      `json:"tokens"` // whole-task token consumption
 	GoalsTotal         int                `json:"goals_total"`
 	GoalsMet           int                `json:"goals_met"`
-	InFlight           int                `json:"in_flight"`                // Running Worker Number(state=running Intention)
-	Findings           FindingSeverityDTO `json:"findings"`                 // Number of registered gaps in the task(findings Table, by severity)
+	InFlight           int                `json:"in_flight"`                // running workers (intents with state=running)
+	Findings           FindingSeverityDTO `json:"findings"`                 // findings recorded for this task (findings table, by severity)
 	LLMProfileID       *int64             `json:"llm_profile_id,omitempty"` // LLM profile used for this task; nil = default
 	LLMProfileIDs      []int64            `json:"llm_profile_ids"`
 	ActiveLLMProfileID *int64             `json:"active_llm_profile_id,omitempty"`
@@ -60,10 +60,10 @@ type TaskDTO struct {
 	SourceTaskIDs      []string           `json:"source_task_ids"`
 	ArchiveBlockedBy   string             `json:"archive_blocked_by_task_id,omitempty"`
 	CompanyIDs         []int64            `json:"company_ids"`
-	CoverageEnabled    bool               `json:"coverage_enabled"` // Asset coverage function switch(Creation timing)
+	CoverageEnabled    bool               `json:"coverage_enabled"` // asset-coverage switch, fixed when the task is created
 }
 
-// FindingSeverityDTO is the number of gaps in the task list by severity slotting (serious)/high/medium/low).
+// FindingSeverityDTO is the per-severity finding count on the task list (critical / high / medium / low).
 type FindingSeverityDTO struct {
 	Critical int `json:"critical"`
 	High     int `json:"high"`
@@ -186,7 +186,7 @@ type TaskNodeDTO struct {
 	TS           string `json:"ts"`
 	SourceTaskID string `json:"source_task_id,omitempty"`
 	Inherited    bool   `json:"inherited,omitempty"`
-	DeleteReason string `json:"delete_reason,omitempty"` // Intent to fake delete(state='deleted')Reason for deletion
+	DeleteReason string `json:"delete_reason,omitempty"` // why an intent was soft-deleted (state='deleted')
 }
 
 func taskNodeDTO(n *db.Node) TaskNodeDTO {
@@ -208,7 +208,7 @@ func taskNodeDTO(n *db.Node) TaskNodeDTO {
 }
 
 // GoalDTO is a goal node with its payload unpacked into text/vulnclass — the shape
-// the Overview[Goal management]UI works with (vs TaskNodeDTO which carries raw payload JSON).
+// the Goals screen works with (vs TaskNodeDTO, which carries raw payload JSON).
 type GoalDTO struct {
 	ID        string `json:"id"`
 	Text      string `json:"text"`
@@ -242,7 +242,7 @@ func goalDTOs(in []*db.Node) []GoalDTO {
 	return out
 }
 
-// ConstraintDTO is one operation constraint (allow/deny) for the Overview[Regulation]UI.
+// ConstraintDTO is one operational constraint (allow/deny) for the Constraints screen.
 type ConstraintDTO struct {
 	ID     string `json:"id"`
 	Kind   string `json:"kind"` // allow | deny
@@ -312,12 +312,12 @@ type FindingDTO struct {
 	ID        string `json:"id"`
 	FindingID string `json:"finding_id,omitempty"` // standalone findings-table id — the handle for status updates
 	VulnClass string `json:"vulnclass"`
-	Name      string `json:"name,omitempty"` // Vulnerability name;Show back display for empty frontend vulnclass
+	Name      string `json:"name,omitempty"` // finding name; the frontend falls back to vulnclass when this is empty
 	Severity  string `json:"severity"`       // critical | high | medium | low
 	Status    string `json:"status"`         // pending | in_progress | confirmed | resolved | fixed | false_positive | ignored | duplicate | risk_accepted
 	Summary   string `json:"summary"`
 	Evidence  string `json:"evidence"`
-	Report    string `json:"report,omitempty"` // Detailed report(Markdown);Only the details interface returns,The list is empty
+	Report    string `json:"report,omitempty"` // detailed report (Markdown); returned only by the detail API, empty in lists
 
 	IntentID        string            `json:"intent_id,omitempty"`
 	ParamID         string            `json:"param_id,omitempty"`
@@ -398,7 +398,7 @@ func findingDTO(n *db.Node) FindingDTO {
 }
 
 // findingDTOsForTask converts a task's finding nodes to DTOs, stamping each with
-// the owning task's id/description so the global Discover page can group across tasks.
+// the owning task's id and description, so the global Findings page can group across tasks.
 // meta maps node id → the standalone findings row (id + status + asset ids), so the
 // per-task view shows the same triage state and anchored assets as the global page;
 // nodes with no row keep the 'pending' default and no finding_id (not editable).
@@ -544,8 +544,8 @@ type AgentDTO struct {
 	RunSecs          int    `json:"run_seconds"`
 	WebSearch        bool   `json:"web_search"`
 	InteractiveShell bool   `json:"interactive_shell"`
-	LLMProfileID     *int64 `json:"llm_profile_id"` // Bound LLM Configuration;null=Follow the mission/Global
-	// P3 Post-trigger processing strategy(Customize only agent meaningful).
+	LLMProfileID     *int64 `json:"llm_profile_id"` // bound LLM profile; null = follow the task or the global default
+	// P3 post-trigger policy (meaningful only for custom agents).
 	TriggerRunMode     string `json:"trigger_run_mode"`
 	TriggerMergeMode   string `json:"trigger_merge_mode"`
 	TriggerMaxParallel int    `json:"trigger_max_parallel"`
@@ -599,23 +599,23 @@ type LLMProfileDTO struct {
 	ThinkingType    string  `json:"thinking_type"`
 	ReasoningEffort string  `json:"reasoning_effort"`
 	IsDefault       bool    `json:"is_default"`
-	// Polling(Failover)Parameter:priority The bigger, the better.(Activate configuration constant chain);
-	// pool_exclude=true Not as a target for failure, but still possible. agent/Obvious binding of tasks.
+	// Polling (failover): a higher priority is chosen first (the active profile is always the head of the chain);
+	// pool_exclude=true means it is not a failover target, but an agent or task may still bind it explicitly.
 	Priority    int  `json:"priority"`
 	PoolExclude bool `json:"pool_exclude"`
-	// Out and out mode:true=Streaming(SSE) | false=It's not fluent. Nothing. omitempty —— false It has to be there.
-	// In response, otherwise no front-end reading[Non-streaming],Switches return to the default flow.
+	// Transport: true = streaming (SSE) | false = non-streaming. There is no omitempty — false must be
+	// present in the response, or the frontend cannot see "non-streaming" and the switch falls back to streaming.
 	Streaming bool `json:"streaming"`
-	// Single reply output upper limit(0=Do not send, determined by server default value),And which requested field name it uses.
-	// (''=max_tokens | 'max_completion_tokens',Only openai The format is meaningful).
+	// Per-reply output cap (0 = do not send the field; the server default applies) and which request field carries it
+	// ('' = max_tokens | 'max_completion_tokens'; meaningful only for the openai format).
 	MaxTokens      int    `json:"max_tokens"`
 	MaxTokensField string `json:"max_tokens_field"`
-	// Customized session header name: When it is not empty, each request will bring this HTTP head, head value=Current session/Intentional session id.
-	// ''=Do not send. Used to press session-id Header prompt cache/Gateway for sticky routing.
+	// Custom session-header name: when non-empty, every request sends this HTTP header with the value set to the
+	// current conversation or intent session id. '' = do not send. For gateways that key prompt cache or sticky routing on a session-id header.
 	SessionHeaderKey string `json:"session_header_key"`
-	// Overwrite this configuration for retry(Jianlian/Empty response/Same provider Safety window).Each attempts:
-	// 0=Inherit global strategy | -1=Close this layer and try again | >0=Number of times;interval_ms: 0=Avoidance with Default Index |
-	// >0=Change to the fixed millisecond interval. All 0 = It follows the whole picture, history..
+	// This profile's retry overrides (connect / empty response / same-provider safe window). For each, attempts:
+	// 0 = inherit the global policy | -1 = disable retries for that layer | >0 = that many tries; interval_ms: 0 = default exponential backoff |
+	// >0 = use that fixed interval in milliseconds. All zeros = follow the global policy entirely, which is the historical behavior.
 	Retry db.RetryOverride `json:"retry"`
 }
 

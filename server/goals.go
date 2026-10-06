@@ -18,13 +18,13 @@ type goalSpec struct {
 }
 
 // launchTask runs the shared post-creation sequence for a task created via ANY
-// path (HTTP createTask or orchestration spawn_task),Avoid two copy pastes:
-//  1. seed Root assets,Hey, it's an event drive. loop;
-//  2. Optional Feed Intent,worker No need to wait for the first round planner Start running directly;
-//  3. Backstage step for target breakdown.(Fa[Initial goal decomposition]round + LLM Decomposition step + Article by article goal,Page Visible),
-//     I'll break it up. engine.Run —— The engine's here. goal Start when node is ready,Avoid planner Get it first goal The race before..
+// path (HTTP createTask or orchestration spawn_task), so the two call sites do not copy-paste:
+//  1. seed the root assets that feed the event-driven loop;
+//  2. optionally seed an intent so the worker starts without waiting for the first planner round;
+//  3. break the goal down in the background (emit a "round 0 goal breakdown" round, the LLM steps,
+//     and one goal per item, all visible on the page), then engine.Run — only after goal nodes exist, so the planner cannot race ahead of them.
 //
-// A walk.(goroutine)So caller returns immediately.,Both paths are consistent.:Second-second missions, backstage targets..
+// The breakdown runs in a goroutine, so the caller returns immediately. Both paths behave the same: the task is created at once and goals are broken down in the background.
 func (s *Server) launchTask(t *Task, seedText string, seedFirstIntent bool) {
 	if !s.engine.beginTaskOperation(t.ID) {
 		return
@@ -45,7 +45,7 @@ func (s *Server) startTaskEngine(t *Task) {
 		return
 	}
 	s.engine.emitActivity(t, db.Activity{Worker: "planner", Kind: "round",
-		Summary: "Initial goal decomposition"})
+		Summary: "Round 0 goal breakdown"})
 	goals := s.createGoals(ctx, t, func(r db.Activity) {
 		s.engine.emitActivity(t, r)
 	})
@@ -130,10 +130,10 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	lifecycle := t.lifecycleSnapshot()
 	if requirePaused {
 		if isTerminalStatus(lifecycle.Status) {
-			return false, fmt.Errorf("The mission cannot continue.")
+			return false, fmt.Errorf("a finished task cannot be resumed")
 		}
 		if !lifecycle.Paused {
-			return false, fmt.Errorf("Only suspended missions can continue.")
+			return false, fmt.Errorf("only a paused task can be resumed")
 		}
 		mode = s.resumeAdmissionMode(t)
 	}
@@ -177,8 +177,8 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	// this ordering, its already-running worker loops can claim the newly-opened
 	// intent in the gap between status=running and queued=true.
 	if shouldQueue || wasTerminal || wasPaused || wasQueued {
-		s.engine.Pause(t.ID, agent.Causef("queued_for_admission", "Tasks awaiting operational access",
-			"Tasks are awaiting and being queued or submitted with access status, and this execution has been discontinued; intention will only be retrieved once a running slot has been obtained"))
+		s.engine.Pause(t.ID, agent.Causef("queued_for_admission", "Waiting for a run slot",
+			"The task is waiting for the concurrency queue or for admission to commit. This run has stopped; it will claim intents again only after it gets a run slot."))
 	}
 
 	status := lifecycle.Status
@@ -199,12 +199,12 @@ func (s *Server) admitTaskWhen(t *Task, mode string, requirePaused bool) (queued
 	}
 	if shouldQueue {
 		if !wasQueued {
-			summary := fmt.Sprintf("Queued: Accompaniment ceiling reached %d,Wait for empty slots to start automatically", limit)
+			summary := fmt.Sprintf("Queued: concurrency limit of %d reached; it will start automatically when a slot opens", limit)
 			switch {
 			case !ready:
-				summary = "Queued: No currently running LLM Configure, start automatically after configuration is restored"
+				summary = "Queued: no runnable LLM configuration; it will start automatically once configuration is restored"
 			case readyBacklog:
-				summary = "Queued: Earlier tasks waiting to run will be pressed FIFO Orders start automatically"
+				summary = "Queued: an earlier task is already waiting; this one will start automatically in FIFO order"
 			}
 			s.engine.emitActivity(t, db.Activity{Worker: "system", Kind: "text", Summary: summary})
 		}
@@ -266,15 +266,15 @@ func (s *Server) reconcileConcurrency() {
 				continue
 			}
 			mode := s.resumeAdmissionMode(task)
-			s.engine.Pause(task.ID, agent.Causef("llm_unavailable_queued", "LLM Not available, task entry waiting queue",
-				"The task cannot be parsed for running Planner/Worker LLM,Released chute; resume configuration in queue order"))
+			s.engine.Pause(task.ID, agent.Causef("llm_unavailable_queued", "LLM unavailable; task entered the wait queue",
+				"No runnable Planner/Worker LLM could be resolved, so the concurrency slot was released. It continues in queue order once configuration is restored."))
 			if err := s.m.EnqueueTask(task.ID, mode); err != nil {
 				s.engine.Resume(task)
 				log.Printf("[concurrency] could not queue task %s after LLM failure: %v", task.ID, err)
 				continue
 			}
 			s.engine.emitActivity(task, db.Activity{Worker: "system", Kind: "text",
-				Summary: "Queued: No currently running LLM Configure, start automatically after configuration is restored"})
+				Summary: "Queued: no runnable LLM configuration; it will start automatically once configuration is restored"})
 		}
 	}
 
@@ -346,18 +346,20 @@ func (s *Server) reconcileConcurrency() {
 	}
 }
 
-// reviveTask Let a stopped mission run again.:Put the finale in place.(done/failed/timeout)Pull back. running,
-// Unlock the pause.,and(Heavy)Start engine cycle. + Wake up. Already running And not suspended.:Only left. Run Once in.
-// Notify,Almost without side effects. For[Lord agent set_goals Add Target]and[Rerun blocked Intention]Two places..
+// reviveTask starts a stopped task again: pull a terminal status (done/failed/timeout) back to
+// running, clear the pause, and (re)start the engine loop plus a wake-up. A task that is already
+// running and not paused only gets the Notify inside Run, which is nearly free of side effects.
+// Used when the main agent set_goals adds a goal, and when a blocked intent is rerun.
 //
-// Why do you have to come back to life?:planner/worker The final door of the cycle(engine.go)It swallows ordinary. notify——Light change
-// Figure + Notify Can't wake up a completed assignment;Restart Last Job goroutine Or not.,That's why I want it. Run.
+// It has to be explicit: the terminal-status gate in the planner/worker loop (engine.go) swallows
+// an ordinary notify, so editing the graph and calling Notify cannot wake a task already judged
+// complete. After a restart the terminal task's goroutine may also be gone, so Run is required too.
 func (s *Server) reviveTask(t *Task) {
 	if t == nil {
 		return
 	}
 	if _, err := s.admitTask(t, "resume"); err != nil {
-		log.Printf("[revive] task %s Restore failed: %v", t.ID, err)
+		log.Printf("[revive] task %s failed to revive: %v", t.ID, err)
 	}
 }
 
@@ -396,7 +398,7 @@ func (s *Server) createGoals(ctx context.Context, t *Task, emit func(db.Activity
 		// as a single goal so the task still has something to judge against. This is the
 		// only path that writes here — decomposed goals are already persisted by the tool.
 		if g := strings.TrimSpace(t.Goal); g != "" {
-			log.Printf("[goals] task %s: LLM Target disassembly without output, back to[Original target as single target]", t.ID)
+			log.Printf("[goals] task %s: LLM goal breakdown produced nothing; falling back to the original goal as a single goal", t.ID)
 			origin, _ := t.Store.OriginFactID()
 			id, _ := t.Store.AddNode(db.KindGoal, map[string]any{"text": g}, 0, "open", "system", nil)
 			if origin > 0 && id > 0 {

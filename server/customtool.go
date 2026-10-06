@@ -22,12 +22,12 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// This document achieves a custom tool implementer(docs/Custom Tool Design.md).system=false of tools Row press
-// kind Distribution:command(Render Command→Reuse Bash Bottom run),script(Only Python;Write Temporary Files,
-// stdin=Parameter JSON + env TOOL_*,Use configured interpreter),http(Original request+Proxy).These tools
-// Like traffic./The same programming tools. seed No need.(They were there. tools Table),Sutra hostTools Injecting, binding filtering.
+// Custom-tool executors (see the custom-tool design notes). tools rows with system=false are
+// dispatched by kind: command (render the command and reuse Bash's underlying run), script (Python
+// only: a temp file, stdin = the args JSON plus TOOL_* env, using the configured interpreter), and http (a native request with an optional proxy). These tools
+// need no seed — they already live in the tools table — and are injected via hostTools, filtered by binding, like the traffic and orchestration tools.
 
-// ---------- Custom tools CRUD ----------
+// ---------- custom tool CRUD ----------
 
 type customToolReq struct {
 	Key         string          `json:"key"`
@@ -40,7 +40,7 @@ type customToolReq struct {
 	Deferred    bool            `json:"deferred"`
 }
 
-var reToolKey = reAgentKey // Same agent key Rules:Start with lowercase letters + lowercase letters/Number/Underline
+var reToolKey = reAgentKey // same rules as an agent key: a lowercase letter, then lowercase letters, digits, or underscores
 
 func (s *Server) pgCreateCustomTool(w http.ResponseWriter, r *http.Request) {
 	pg := s.pg(w)
@@ -54,19 +54,19 @@ func (s *Server) pgCreateCustomTool(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Key = strings.TrimSpace(req.Key)
 	if !reToolKey.MatchString(req.Key) {
-		writeErr(w, 400, "key Needs to start with a lowercase letter, only contains lowercase letters/Number/Underline")
+		writeErr(w, 400, "key must start with a lowercase letter and contain only lowercase letters, digits, and underscores")
 		return
 	}
 	if req.Kind != "command" && req.Kind != "script" && req.Kind != "http" && req.Kind != "shell" {
-		writeErr(w, 400, "kind Required command / script / http / shell")
+		writeErr(w, 400, "kind must be command, script, http, or shell")
 		return
 	}
 	if req.Kind == "http" && !hasSchemaProps(req.Schema) {
-		writeErr(w, 400, "http Tools must provide parameters JSON Schema(Cannot be left blank)")
+		writeErr(w, 400, "an http tool must provide a JSON Schema for its arguments (it cannot be empty)")
 		return
 	}
 	if exist, _ := pg.GetTool(req.Key); exist != nil {
-		writeErr(w, 409, "The key Already exists(Internal or custom tools)")
+		writeErr(w, 409, "that key already exists (built-in or custom tool)")
 		return
 	}
 	if err := pg.CreateCustomTool(&db.Tool{
@@ -100,11 +100,11 @@ func (s *Server) pgUpdateCustomTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Kind != "command" && req.Kind != "script" && req.Kind != "http" && req.Kind != "shell" {
-		writeErr(w, 400, "kind Required command / script / http / shell")
+		writeErr(w, 400, "kind must be command, script, http, or shell")
 		return
 	}
 	if req.Kind == "http" && !hasSchemaProps(req.Schema) {
-		writeErr(w, 400, "http Tools must provide parameters JSON Schema(Cannot be left blank)")
+		writeErr(w, 400, "an http tool must provide a JSON Schema for its arguments (it cannot be empty)")
 		return
 	}
 	if err := pg.UpdateCustomTool(&db.Tool{
@@ -150,7 +150,7 @@ func (s *Server) pgTestCustomTool(w http.ResponseWriter, r *http.Request) {
 	}
 	var req testToolReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, 400, "Invalid Request")
+		writeErr(w, 400, "invalid request body")
 		return
 	}
 	params := req.Params
@@ -169,16 +169,16 @@ func (s *Server) pgTestCustomTool(w http.ResponseWriter, r *http.Request) {
 	case "http":
 		res, _ = s.runHTTPTool(ctx, req.Exec, params, tc)
 	case "shell":
-		writeErr(w, 400, "shell Type tool is bash Environmental statement, no implementation")
+		writeErr(w, 400, "a shell tool only declares the bash environment and has nothing to execute")
 		return
 	default:
-		writeErr(w, 400, "Unknown tool type: "+req.Kind)
+		writeErr(w, 400, "unknown tool type: "+req.Kind)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"output": res.Flatten(), "is_error": res.IsError})
 }
 
-// ---------- Python Interpreter(Test + Library + override) ----------
+// ---------- Python interpreter (detect, store, override) ----------
 
 const settingPythonInterp = "python_interpreter"
 
@@ -209,11 +209,11 @@ func (s *Server) seedPythonInterpreter() {
 	}
 	if p := detectPython(); p != "" {
 		_ = s.m.pg.SetSetting(settingPythonInterp, p)
-		log.Printf("[custom-tool] Automatically detected python Interpreter: %s", p)
+		log.Printf("[custom-tool] detected python interpreter: %s", p)
 	}
 }
 
-// ---------- exec Specifications ----------
+// ---------- exec spec ----------
 
 type commandExec struct {
 	Command   string `json:"command"`
@@ -240,7 +240,7 @@ func timeoutOr(ms, def int) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
-// ---------- General Tool Structure ----------
+// ---------- shared tool construction ----------
 
 // customTools builds CoreTools for every user-defined (system=false) tool row.
 // shell-kind tools are environment hints only — they surface in the Bash tool
@@ -261,7 +261,7 @@ func (s *Server) customTools() ([]actool.CoreTool, error) {
 }
 
 // buildCustomTool turns one custom-tool row into a CoreTool. Empty schema → a thin
-// {args:string} (Thin Shell Tool), so command/http templates can use {args}.
+// {args:string} (a thin wrapper), so command and http templates can use {args}.
 func (s *Server) buildCustomTool(t *db.Tool) actool.CoreTool {
 	schema := ensureSchema(t.Schema)
 	key, kind, execRaw := t.Key, t.Kind, t.Exec
@@ -281,7 +281,7 @@ func (s *Server) buildCustomTool(t *db.Tool) actool.CoreTool {
 		case "http":
 			return s.runHTTPTool(ctx, execRaw, params, tc)
 		default:
-			return actool.Errorf("Unknown custom tool type: " + kind), nil
+			return actool.Errorf("unknown custom tool type: " + kind), nil
 		}
 	}
 	return actool.Build(actool.Spec{
@@ -321,22 +321,22 @@ func ensureSchema(raw json.RawMessage) map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"args": map[string]any{"type": "string", "description": "Command/Parameter(Free Text)"},
+			"args": map[string]any{"type": "string", "description": "command and arguments (free text)"},
 		},
 	}
 }
 
-// ---------- command:Render Command → Reuse Bash Bottom run ----------
+// ---------- command: render the command, then reuse Bash's underlying run ----------
 
 func (s *Server) runCommandTool(ctx context.Context, execRaw json.RawMessage, params map[string]any, tc *actool.ToolContext) (actool.Result, error) {
 	var spec commandExec
 	_ = json.Unmarshal(execRaw, &spec)
 	if strings.TrimSpace(spec.Command) == "" {
-		return actool.Errorf("command Empty"), nil
+		return actool.Errorf("command is empty"), nil
 	}
 	cmd := renderTemplate(spec.Command, params, shellQuote)
-	// Reuse Bash It's on the bottom. run(Sutra Bash CoreTool.Call):Automatically inherit security. floor/Timeout/
-	// Agent env/Output spill. Tools and Bash Horizontal, Common Bottom,No way. Bash This tool makes the model adjust..
+	// Reuse the underlying run that Bash also uses (via Bash CoreTool.Call). It inherits the safety floor,
+	// timeout, proxy env, and output overflow. This tool is a peer of Bash and shares that run; the model does not call the Bash tool.
 	bashIn, _ := json.Marshal(map[string]any{"command": cmd})
 	if spec.TimeoutMs > 0 {
 		var cancel context.CancelFunc
@@ -346,17 +346,17 @@ func (s *Server) runCommandTool(ctx context.Context, execRaw json.RawMessage, pa
 	return actool.NewBash().Call(ctx, bashIn, tc)
 }
 
-// ---------- script(Only Python):Temporary documents + stdin JSON + env ----------
+// ---------- script (Python only): temp file, stdin JSON, and env ----------
 
 func (s *Server) runScriptTool(ctx context.Context, key string, execRaw json.RawMessage, params map[string]any, tc *actool.ToolContext) (actool.Result, error) {
 	var spec scriptExec
 	_ = json.Unmarshal(execRaw, &spec)
 	if strings.TrimSpace(spec.Code) == "" {
-		return actool.Errorf("script code Empty"), nil
+		return actool.Errorf("script code is empty"), nil
 	}
 	interp := s.pythonInterpreter()
 	if interp == "" {
-		return actool.Errorf("Not configured and not detected python Interpreter(Set in System Configuration)"), nil
+		return actool.Errorf("no python interpreter is configured or was detected (set one in system settings)"), nil
 	}
 	workDir := s.m.dir
 	var sessionEnv []string
@@ -397,25 +397,25 @@ func execPython(ctx context.Context, interp, key, code string, params map[string
 	defer cancel()
 	c := exec.CommandContext(runCtx, interp, tmp)
 	c.Dir = workDir
-	c.Env = append(os.Environ(), sessionEnv...) // Session Proxy env
-	for k, v := range params {                  // Sample parameter mirroring TOOL_<NAME>
+	c.Env = append(os.Environ(), sessionEnv...) // session proxy env
+	for k, v := range params {                  // scalar parameters are mirrored as TOOL_<NAME>
 		if sv, ok := scalarStr(v); ok {
 			c.Env = append(c.Env, "TOOL_"+strings.ToUpper(k)+"="+sv)
 		}
 	}
 	pj, _ := json.Marshal(params)
-	c.Stdin = bytes.NewReader(pj) // Parameter JSON Go stdin
+	c.Stdin = bytes.NewReader(pj) // args JSON on stdin
 	out, err := c.CombinedOutput()
 	body := string(out)
 	if runCtx.Err() == context.DeadlineExceeded {
-		body += "\n... [Timeout terminated] ..."
+		body += "\n... [timed out] ..."
 	} else if err != nil {
 		body += "\n[exit: " + err.Error() + "]"
 	}
 	return body, nil
 }
 
-// ---------- http:Original request + Agent ----------
+// ---------- http: native request plus proxy ----------
 
 func (s *Server) runHTTPTool(ctx context.Context, execRaw json.RawMessage, params map[string]any, tc *actool.ToolContext) (actool.Result, error) {
 	var spec httpExec
@@ -426,7 +426,7 @@ func (s *Server) runHTTPTool(ctx context.Context, execRaw json.RawMessage, param
 	}
 	rawURL := renderTemplate(spec.URL, params, identity)
 	if strings.TrimSpace(rawURL) == "" {
-		return actool.Errorf("http url Empty"), nil
+		return actool.Errorf("http url is empty"), nil
 	}
 	var bodyReader io.Reader
 	if spec.Body != "" {
@@ -447,7 +447,7 @@ func (s *Server) runHTTPTool(ctx context.Context, execRaw json.RawMessage, param
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return actool.Errorf("Request Failed: " + err.Error()), nil
+		return actool.Errorf("request failed: " + err.Error()), nil
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
