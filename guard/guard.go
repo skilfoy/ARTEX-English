@@ -100,7 +100,7 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 	}
 	switch dec.Action {
 	case "deny":
-		// Observation:deny It won't block clearance.,Just one. denied(History/Mission intercept page visible.).
+		// deny does not let the call through. It logs one denied row, visible on the history and task intercept pages.
 		g.interceptor.Log(ctx, intercept.ConvIDFromContext(ctx), dec, ev.ToolName, ev.Input, "denied")
 		return g.block(ev.ToolName, systemBlockMessage(dec.Message), "")
 	case "allow":
@@ -112,11 +112,11 @@ func (g *Guard) applyIntercept(ctx context.Context, ev hook.Event) hook.Result {
 		// immediately without creating a pending record — avoids orphaned DB entries
 		// and makes execOne complete fast, reducing the race against drainSynthetic.
 		if ctx.Err() != nil {
-			return g.block(ev.ToolName, systemBlockMessage("Work cancelled, platform security blocked."), "")
+			return g.block(ev.ToolName, systemBlockMessage("Work cancelled; the platform security policy blocked this call."), "")
 		}
 		convID := intercept.ConvIDFromContext(ctx)
 		if !g.interceptor.HandleAsk(ctx, convID, dec, ev.ToolName, ev.Input) {
-			return g.block(ev.ToolName, systemBlockMessage("Manual approval not passed (user rejection or approval timeout))"), "")
+			return g.block(ev.ToolName, systemBlockMessage("Manual approval was not granted (rejected or timed out)"), "")
 		}
 		return hook.Result{}
 	}

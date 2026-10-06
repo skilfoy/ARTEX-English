@@ -15,13 +15,13 @@ import (
 	"time"
 )
 
-// sumsAsset Yes release.yml Sum list generated, overwrite Release All of it. zip.
+// sumsAsset is the checksum manifest produced by release.yml, covering every zip in the Release.
 const sumsAsset = "SHA256SUMS"
 
-// maxBinarySize To limit the volume of the binary from the depression and prevent malformations. zip Fill the disk..
+// maxBinarySize caps the extracted binary so a malformed zip cannot fill the disk.
 const maxBinarySize = 512 << 20 // 512 MiB
 
-// Phase It's a phase in the upgrade process and it's used directly. SSE From the event phase Field.
+// Phase is a step in the upgrade, used directly as the phase field of an SSE event.
 type Phase string
 
 const (
@@ -33,17 +33,20 @@ const (
 	PhaseFailed   Phase = "failed"
 )
 
-// Progress By the caller to push progress to the front.pct It makes sense only at the download stage.(0-100),
-// For the rest of the period -1.
+// Progress is supplied by the caller to push progress to the frontend.
+// pct is meaningful only during download (0-100); other phases pass -1.
 type Progress func(ph Phase, pct int, msg string)
 
-// Stage Download Assign Release Current platform release package, check and save the new binary as artex.new.
+// Stage downloads the current platform's archive for the given Release, verifies
+// it, and stages the new binary as artex.new.
 //
-// It's complete. zip Not nudity binary for two reasons: existing Release of SHA256SUMS Yes.
-// Overwrite Only zip,Go zip No need to change. CI,It's compatible with the historical version that's published.;zip It's still in there.
-// skills/,Synchronization for the Future skill Keep your mouth shut. It's just a lot of downloads. skills The hundreds. KB.
+// The full zip is used rather than a bare binary for two reasons: existing
+// Releases' SHA256SUMS already cover only the zip, so using the zip needs no CI
+// change and stays compatible with versions already published; the zip also
+// carries skills/, which leaves room to sync built-in skills later. The only
+// cost is downloading those few hundred KB of skills.
 //
-// Function returns as the temporary saving is completed and the caller then closes with grace and ExitRestart Exit.
+// When the function returns, staging is done. The caller then shuts down gracefully and exits with ExitRestart.
 func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion string, prog Progress) error {
 	if prog == nil {
 		prog = func(Phase, int, string) {}
@@ -59,21 +62,21 @@ func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion str
 	name := AssetName(rel.TagName, runtime.GOOS, runtime.GOARCH)
 	asset, ok := rel.FindAsset(name)
 	if !ok {
-		return fmt.Errorf("This version is not available %s/%s release package (missing %s)", runtime.GOOS, runtime.GOARCH, name)
+		return fmt.Errorf("this release has no %s/%s archive (missing %s)", runtime.GOOS, runtime.GOARCH, name)
 	}
 
-	prog(PhaseDownload, 0, "Access checksum list…")
+	prog(PhaseDownload, 0, "Fetching checksum manifest...")
 	sums, err := fetchSums(ctx, c, rel)
 	if err != nil {
 		return err
 	}
 	want, ok := sums[name]
 	if !ok {
-		return fmt.Errorf("%s Unrecorded %s,Refuse installation of uncertified binary", sumsAsset, name)
+		return fmt.Errorf("%s does not list %s; refusing to install an unverified binary", sumsAsset, name)
 	}
 
-	// The temporary files are all in the target directory. rename It's an atomic operation in the same file system.
-	// (Cross-equipment rename It'll fail, and... /tmp Often standalone mount point).
+	// Temporary files stay in the target directory so the final rename is atomic
+	// on the same filesystem (a cross-device rename fails, and /tmp is often its own mount).
 	zipPath := p.New + ".zip.part"
 	binPath := p.New + ".part"
 	defer func() {
@@ -81,37 +84,37 @@ func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion str
 		_ = os.Remove(binPath)
 	}()
 
-	prog(PhaseDownload, 0, fmt.Sprintf("Download %s(%s)…", name, humanSize(asset.Size)))
+	prog(PhaseDownload, 0, fmt.Sprintf("Downloading %s (%s)...", name, humanSize(asset.Size)))
 	got, err := download(ctx, c, asset, zipPath, prog)
 	if err != nil {
 		return err
 	}
 
-	prog(PhaseVerify, -1, "Verification SHA256…")
+	prog(PhaseVerify, -1, "Verifying SHA256...")
 	if !strings.EqualFold(got, want) {
-		return fmt.Errorf("SHA256 Not matching: expectations %s,Actual %s(Download corrupted or tampered)", short(want), short(got))
+		return fmt.Errorf("SHA256 mismatch: expected %s, got %s (download damaged or tampered with)", short(want), short(got))
 	}
 
-	prog(PhaseExtract, -1, "Unpressure and smoke tests…")
+	prog(PhaseExtract, -1, "Extracting and running smoke test...")
 	if err := extractBinary(zipPath, binPath); err != nil {
 		return err
 	}
 	if err := smokeTest(binPath); err != nil {
-		return fmt.Errorf("The new version cannot be run on the current system: %w", err)
+		return fmt.Errorf("new version cannot run on this system: %w", err)
 	}
 
-	// Save Yourself sha256 Save a single one: check again before next reloading starts.,
-	// Prevent documents from being altered or broken during the period between temporary saving and restart.
+	// Store the staged binary's own sha256 separately: it is checked again before
+	// the next start swaps it in, in case the file is altered or corrupted between staging and restart.
 	binSum, err := fileSHA256(binPath)
 	if err != nil {
-		return fmt.Errorf("Calculates the sum of the new binary: %w", err)
+		return fmt.Errorf("compute checksum of new binary: %w", err)
 	}
 	if err := os.WriteFile(p.Sum, []byte(binSum), 0o644); err != nil {
-		return fmt.Errorf("Write Checksum: %w", err)
+		return fmt.Errorf("write checksum: %w", err)
 	}
 	if err := os.Rename(binPath, p.New); err != nil {
 		_ = os.Remove(p.Sum)
-		return fmt.Errorf("Save New Version: %w", err)
+		return fmt.Errorf("stage new version: %w", err)
 	}
 
 	if err := writeMarker(p.Marker, marker{
@@ -119,47 +122,48 @@ func Stage(ctx context.Context, c *http.Client, rel *Release, currentVersion str
 		To:       strings.TrimPrefix(rel.TagName, "v"),
 		StagedAt: time.Now().Unix(),
 	}); err != nil {
-		// The tag only affects the automatic rollback capacity, and the temporary deposit itself is in place and does not interrupt the upgrade.
-		prog(PhaseStaged, -1, "Warning: Writing the upgrade tag failed and this upgrade will not have automatic rollback protection")
+		// The marker only affects automatic rollback. The staged file is already in place, so the upgrade continues.
+		prog(PhaseStaged, -1, "Warning: failed to write the upgrade marker; this upgrade will have no automatic rollback")
 	}
 
-	prog(PhaseStaged, 100, "New version ready, restarting.…")
+	prog(PhaseStaged, 100, "New version is ready; restarting...")
 	return nil
 }
 
-// fetchSums Download and parse SHA256SUMS,Return filename → Hexadecimal Summary.
+// fetchSums downloads and parses SHA256SUMS, returning filename → hex digest.
 func fetchSums(ctx context.Context, c *http.Client, rel *Release) (map[string]string, error) {
 	asset, ok := rel.FindAsset(sumsAsset)
 	if !ok {
-		return nil, fmt.Errorf("The Release No %s,Could not verify completeness. Deny upgrade", sumsAsset)
+		return nil, fmt.Errorf("this release has no %s; cannot verify integrity, refusing upgrade", sumsAsset)
 	}
 	body, err := get(ctx, c, asset.URL)
 	if err != nil {
-		return nil, fmt.Errorf("Download %s: %w", sumsAsset, err)
+		return nil, fmt.Errorf("download %s: %w", sumsAsset, err)
 	}
 	defer body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("Read %s: %w", sumsAsset, err)
+		return nil, fmt.Errorf("read %s: %w", sumsAsset, err)
 	}
 	out := parseSums(string(raw))
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s Content is empty or format unrecognized", sumsAsset)
+		return nil, fmt.Errorf("%s is empty or in an unrecognized format", sumsAsset)
 	}
 	return out, nil
 }
 
-// parseSums Analysis sha256sum Style List, return file First Name → Hexadecimal Summary.
+// parseSums parses a sha256sum-style manifest and returns filename → hex digest.
 //
-// The first field must be 64 Hexadecimal for recording. Press Only"Just two fields"It's not enough.——
-// The description of any line or two words is used as a valid entry and the value of the trash is inserted in the summary table,
-// Instead, real assets could match the wrong summary..
+// The first field is recorded only when it is 64 hex digits. "Exactly two
+// fields" is not enough: any line of two words of prose would be treated as a
+// valid entry, junk would land in the digest table, and a real asset could
+// match the wrong digest.
 func parseSums(raw string) map[string]string {
 	out := map[string]string{}
 	for line := range strings.Lines(raw) {
-		// Format As "<sha256>  <filename>"(sha256sum Double Space;shasum Binary
-		// Modes add file names * Prefix).
+		// Format is "<sha256>  <filename>" (sha256sum uses two spaces; shasum's
+		// binary mode prefixes the filename with *).
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) != 2 || !isHexSHA256(fields[0]) {
 			continue
@@ -187,35 +191,35 @@ func isHexSHA256(s string) bool {
 	return true
 }
 
-// download Write assets dst,Compute simultaneously SHA256 and press Content-Length Reporting on progress.
+// download writes the asset to dst, hashing it and reporting progress from Content-Length.
 func download(ctx context.Context, c *http.Client, a Asset, dst string, prog Progress) (string, error) {
 	body, err := get(ctx, c, a.URL)
 	if err != nil {
-		return "", fmt.Errorf("Download %s: %w", a.Name, err)
+		return "", fmt.Errorf("download %s: %w", a.Name, err)
 	}
 	defer body.Close()
 
 	f, err := os.Create(dst)
 	if err != nil {
-		return "", fmt.Errorf("Create temporary file: %w", err)
+		return "", fmt.Errorf("create temporary file: %w", err)
 	}
 	defer f.Close()
 
 	h := sha256.New()
 	pw := &progressWriter{total: a.Size, prog: prog, name: a.Name, last: time.Now()}
 	if _, err := io.Copy(io.MultiWriter(f, h, pw), body); err != nil {
-		return "", fmt.Errorf("Download aborted: %w", err)
+		return "", fmt.Errorf("download interrupted: %w", err)
 	}
 	if err := f.Sync(); err != nil {
-		return "", fmt.Errorf("Crash Failed: %w", err)
+		return "", fmt.Errorf("flush to disk failed: %w", err)
 	}
 	if a.Size > 0 && pw.written != a.Size {
-		return "", fmt.Errorf("Download incomplete: expectation %d bytes, actual %d Bytes", a.Size, pw.written)
+		return "", fmt.Errorf("incomplete download: expected %d bytes, got %d", a.Size, pw.written)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// get Start a white list. GET,Return Response.
+// get performs an allowlisted GET and returns the response body.
 func get(ctx context.Context, c *http.Client, rawURL string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -236,10 +240,12 @@ func get(ctx context.Context, c *http.Client, rawURL string) (io.ReadCloser, err
 	return resp.Body, nil
 }
 
-// extractBinary Remove from the release package artex Executable.
+// extractBinary pulls the artex executable out of the release archive.
 //
-// The structure in the bag is... artex-<version>-<os>-<arch>/artex,But here.**Base Name**Match instead of spell-out
-// Path: Version number appears once in the package name, the entire upgrade fails with a misspelled character, more durable by base name.
+// The archive layout is artex-<version>-<os>-<arch>/artex, but matching is by
+// base name rather than a reconstructed path: the version appears once in the
+// archive name, and one mistyped character would fail the whole upgrade.
+// Matching the base name survives that.
 func extractBinary(zipPath, dst string) error {
 	want := "artex"
 	if runtime.GOOS == "windows" {
@@ -247,7 +253,7 @@ func extractBinary(zipPath, dst string) error {
 	}
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return fmt.Errorf("Open Release Package: %w", err)
+		return fmt.Errorf("open release archive: %w", err)
 	}
 	defer zr.Close()
 
@@ -257,37 +263,38 @@ func extractBinary(zipPath, dst string) error {
 		}
 		rc, err := entry.Open()
 		if err != nil {
-			return fmt.Errorf("Read %s: %w", entry.Name, err)
+			return fmt.Errorf("read %s: %w", entry.Name, err)
 		}
 		defer rc.Close()
 
 		f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 		if err != nil {
-			return fmt.Errorf("Write New Binary: %w", err)
+			return fmt.Errorf("write new binary: %w", err)
 		}
 		defer f.Close()
 
 		n, err := io.Copy(f, io.LimitReader(rc, maxBinarySize+1))
 		if err != nil {
-			return fmt.Errorf("Unzip %s: %w", entry.Name, err)
+			return fmt.Errorf("extract %s: %w", entry.Name, err)
 		}
 		if n > maxBinarySize {
-			return fmt.Errorf("Release the executable in the package more than %s,Deny depression.", humanSize(maxBinarySize))
+			return fmt.Errorf("executable in the archive exceeds %s; refusing to extract", humanSize(maxBinarySize))
 		}
 		if n == 0 {
-			return fmt.Errorf("Release Package %s It's empty.", want)
+			return fmt.Errorf("%s in the archive is empty", want)
 		}
 		return f.Sync()
 	}
-	return fmt.Errorf("It's not in the release bag. %s", want)
+	return fmt.Errorf("archive does not contain %s", want)
 }
 
-// checkWritable The catalogue is written in advance. There's no such thing as this. root Run, or binary is placed in the system
-// The directories will be downloaded in dozens. MB And then I lost the moment I changed..
+// checkWritable confirms the directory is writable up front. Without this, a
+// non-root run, or a binary installed in a system directory, would download
+// tens of MB and only fail at the moment of the swap.
 func checkWritable(dir string) error {
 	probe, err := os.CreateTemp(dir, ".artex-update-probe-*")
 	if err != nil {
-		return fmt.Errorf("Program Directory %s Not written, cannot automatically update (check permissions or move to manual upgrade)): %w", dir, err)
+		return fmt.Errorf("program directory %s is not writable; cannot update automatically (check permissions or upgrade manually): %w", dir, err)
 	}
 	name := probe.Name()
 	_ = probe.Close()
@@ -295,7 +302,7 @@ func checkWritable(dir string) error {
 	return nil
 }
 
-// progressWriter Statistics written bytes and limited frequency reporting, avoiding each 32KiB I'll push one piece. SSE.
+// progressWriter counts bytes written and reports at a limited rate, so every 32KiB chunk does not emit an SSE event.
 type progressWriter struct {
 	total   int64
 	written int64

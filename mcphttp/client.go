@@ -315,9 +315,10 @@ func (c *Client) wrap(rt remoteTool) actool.CoreTool {
 			for _, blk := range res.Content {
 				text += blk.Text
 			}
-			// With Internal/Custom tool alignment: super long output walking Capture——By Session MaxOutputChars(Default
-			// 30000)Cut it off. ToolOutputDir Full time overwrite to disk only head + Pointer, avoid big.
-			// MCP Turns out the whole story is full..
+			// Match built-in and custom tools: very long output goes through Capture.
+			// It is cut at the session MaxOutputChars (default 30000). When
+			// ToolOutputDir is set, the full text is written to disk and only a
+			// head plus a pointer is kept, so a large MCP result does not fill the context.
 			return actool.Result{Content: []llm.ContentBlock{llm.TextBlock(actool.Capture(tc, text))}, IsError: res.IsError}, nil
 		},
 	})

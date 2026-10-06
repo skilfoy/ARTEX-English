@@ -41,7 +41,7 @@ func TestUpgradeFromOldInstall(t *testing.T) {
 	if _, err := old.Exec(ftsSchema); err != nil {
 		t.Fatal(err)
 	}
-	// Three historical flows with one article legacy path<>'' Lines
+	// Three historical exchanges; one of them still has a legacy path.
 	for i, row := range [][]any{
 		{"1700000000-0001", "old.example.com", ""},
 		{"1700000000-0002", "old.example.com", ""},
@@ -67,66 +67,66 @@ VALUES(?,'GET /x','','HTTP 200','Old Data Body')`, row[0]); err != nil {
 		t.Fatal(err)
 	}
 
-	// ---- New version taken over
+	// ---- the new Open takes over the same file
 	tr, err := Open(dir, "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("New version cannot open old library: %v", err)
+		t.Fatalf("new Open failed on the old database: %v", err)
 	}
 	defer tr.Close()
 
-	// 1. It has to be the same file.
+	// 1. It must still be the same file.
 	if st2, err := os.Stat(path); err != nil || st2.Size() == 0 {
-		t.Fatalf("Original index file abnormal: size=%v err=%v", st2, err)
+		t.Fatalf("original index file looks wrong: size=%v err=%v", st2, err)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(dir, "_index")); len(entries) > 3 {
 		for _, e := range entries {
-			t.Logf("_index Down: %s", e.Name())
+			t.Logf("_index entry: %s", e.Name())
 		}
-		t.Fatal("_index There are unexpected documents.,DSN Probably pointed to another library.")
+		t.Fatal("_index has unexpected files; the DSN may have opened another database")
 	}
-	t.Logf("Old Library %d Bytes, the new version remains the same document after taking over", stat.Size())
+	t.Logf("old index is %d bytes; the new Open kept the same file", stat.Size())
 
 	// 2. All historical data available.
 	n, err := tr.Count()
 	if err != nil || n != 3 {
-		t.Fatalf("Count=(%d,%v),For (3,nil) —— Loss of historical traffic", n, err)
+		t.Fatalf("Count=(%d,%v), want (3,nil); historical traffic was lost", n, err)
 	}
 	// 3. The full history index is still searchable.
 	if tr.fts {
 		rows, err := tr.query("old.example.com", "", "secret-token", 0, 10)
 		if err != nil {
-			t.Fatalf("Historical full text search failed: %v", err)
+			t.Fatalf("historical full-text search failed: %v", err)
 		}
 		if len(rows) != 2 {
-			t.Fatalf("Full history search hit. %d For 2", len(rows))
+			t.Fatalf("full-text search hits = %d, want 2", len(rows))
 		}
 	}
-	// 4. History is still readable.
+	// 4. Historical bodies are still readable.
 	if _, resp, err := tr.Get("1700000000-0001"); err != nil {
-		t.Fatalf("Failed to read history body: %v", err)
+		t.Fatalf("read historical body: %v", err)
 	} else if resp == "" {
-		t.Fatal("History responds empty.")
+		t.Fatal("historical response body is empty")
 	}
-	// 5. The old library is not miscalculated as enabled incremental recovery
+	// 5. A pre-upgrade database must not be treated as incremental vacuum.
 	if tr.incrementalVacuum {
-		t.Fatal("The old library was miscalculated as enabled incremental recovery")
+		t.Fatal("old database was treated as incremental vacuum")
 	}
-	// 6. Delete is still working and the recycling process is closed on the old library
+	// 6. Delete still works, and reclamation stays off for the old database.
 	deleted, err := tr.DeleteHostsExact([]string{"old.example.com"})
 	if err != nil || deleted != 2 {
-		t.Fatalf("DeleteHostsExact=(%d,%v),For (2,nil)", deleted, err)
+		t.Fatalf("DeleteHostsExact=(%d,%v), want (2,nil)", deleted, err)
 	}
 	tr.reaping.Wait()
 	if n, err := tr.Count(); err != nil || n != 1 {
-		t.Fatalf("After Delete Count=(%d,%v),For (1,nil)", n, err)
+		t.Fatalf("count after delete = (%d,%v), want (1,nil)", n, err)
 	}
-	// 7. legacy path<>'' It's not connected.
+	// 7. The legacy path column is left intact.
 	var legacyPath string
 	if err := tr.DB().QueryRow(`SELECT path FROM exchanges`).Scan(&legacyPath); err != nil {
 		t.Fatal(err)
 	}
 	if legacyPath == "" {
-		t.Fatal("legacy Okay. path It was emptied.")
+		t.Fatal("legacy path was cleared")
 	}
 }
 
@@ -141,24 +141,24 @@ func TestDowngradeToOldBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !tr.incrementalVacuum {
-		t.Fatal("The new library should enable incremental recovery")
+		t.Fatal("a fresh database should enable incremental vacuum")
 	}
 	bulkRecord(tr, "keep.example.com", 5, 100*1024)
 	if err := tr.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	old := openLegacyIndex(t, dir) // Old version binary takeover
+	old := openLegacyIndex(t, dir) // an old binary takes over
 	defer old.Close()
 	var n int
 	if err := old.QueryRow(`SELECT COUNT(*) FROM exchanges`).Scan(&n); err != nil || n != 5 {
-		t.Fatalf("Old version read (%d,%v),For (5,nil)", n, err)
+		t.Fatalf("old binary read (%d,%v), want (5,nil)", n, err)
 	}
 	if _, err := old.Exec(`INSERT INTO exchanges(id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
 VALUES('x',1,'new.example.com','GET','/x','http://x/x',200,'',0,0,'')`); err != nil {
-		t.Fatalf("Old version failed to write: %v", err)
+		t.Fatalf("old binary write failed: %v", err)
 	}
 	if _, err := old.Exec(`DELETE FROM exchanges WHERE host='keep.example.com'`); err != nil {
-		t.Fatalf("Failed to delete old version: %v", err)
+		t.Fatalf("old binary delete failed: %v", err)
 	}
 }

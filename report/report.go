@@ -49,12 +49,12 @@ var sevRank = map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3, ""
 func Markdown(in Input) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Penetration Test Report — %s\n\n", nz(in.Title, "Unnamed Task"))
-	fmt.Fprintf(&b, "- **Mission objective**:%s\n", nz(in.Goal, "(Not specified)"))
-	fmt.Fprintf(&b, "- **Generate Time**:%s\n\n", in.GeneratedAt.Format("2006-01-02 15:04:05"))
+	fmt.Fprintf(&b, "- **Objective**: %s\n", nz(in.Goal, "(not specified)"))
+	fmt.Fprintf(&b, "- **Generated**: %s\n\n", in.GeneratedAt.Format("2006-01-02 15:04:05"))
 
 	// summary
-	fmt.Fprintf(&b, "## Abstract\n\n")
-	fmt.Fprintf(&b, "- Confirm discovery:**%d** pieces\n", len(in.Findings))
+	fmt.Fprintf(&b, "## Summary\n\n")
+	fmt.Fprintf(&b, "- Confirmed findings: **%d**\n", len(in.Findings))
 	fmt.Fprintf(&b, "- Assets:")
 	var types []string
 	for t := range in.AssetCounts {
@@ -70,9 +70,9 @@ func Markdown(in Input) string {
 	b.WriteString("\n\n")
 
 	// findings
-	fmt.Fprintf(&b, "## Discover\n\n")
+	fmt.Fprintf(&b, "## Findings\n\n")
 	if len(in.Findings) == 0 {
-		b.WriteString("_This is not a confirmed loophole.._\n\n")
+		b.WriteString("_No confirmed findings._\n\n")
 	} else {
 		fs := make([]findingView, 0, len(in.Findings))
 		for _, n := range in.Findings {

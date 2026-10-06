@@ -1,23 +1,29 @@
-// Package selfupdate implements ARTEX . Page 1 update from: GitHub Release Draw new editions
-// Binary, validation, temporary storage and atom replacement at next startup.
+// Package selfupdate implements ARTEX's one-click in-app update: it pulls a new
+// binary from a GitHub Release, verifies it, stages it, and swaps it in atomically
+// on the next start.
 //
-// Overall division of labour (see start.sh / start.bat):
+// Division of work (see start.sh / start.bat):
 //
-//	Start Script  = Fools guard the loop, only responsible."After process exits, decide whether to pull again by exit code"
-//	This bag.      = All error-prone logic (downloading) / SHA256 Verification / Smoke. / Change up / Failed Rollback)
+//	start script = a dumb supervisor loop; after the process exits it only decides
+//	               whether to relaunch, based on the exit code
+//	this package = every fallible step (download / SHA256 check / smoke test /
+//	               swap / rollback)
 //
-// It's because of the change. Go Not in the script because... sha256 Checking and smoking tests. sh and bat on
-// Two sets to write.(sha256sum / shasum / certutil),And that's exactly what makes the most of mistakes.——Change one.
-// The binary that can't run, the dæmon will pull it up faithfully and repeatedly. Help!.
+// The swap lives in Go rather than the scripts because the SHA256 check and the
+// smoke test would otherwise have to be written twice (sha256sum / shasum /
+// certutil), and that is the step that must not go wrong. If a binary that cannot
+// run is installed, the supervisor will faithfully keep relaunching it, and the
+// only recovery is a manual fix on the machine.
 //
-// One complete upgrade was initiated by three processes:
+// One complete upgrade spans three process starts:
 //
-//	① Old version server Received /api/update/apply → Download Verification → Pending artex.new → exit 75
-//	② Scripts to reboot old versions → Bootstrap Discover artex.new → Verification+Smoke. → Change up → exit 75
-//	③ Scripts are back up. It's new. → Bootstrap One try. → Clear tag after start successful
+//	① the old server receives /api/update/apply → download and verify → stage artex.new → exit 75
+//	② the script relaunches the old binary → Bootstrap finds artex.new → verify + smoke → swap → exit 75
+//	③ the script relaunches, now the new binary → Bootstrap records one attempt → the marker is cleared after a successful start
 //
-// Any failure returns the old version.:② If you can't verify, delete the temporarys and keep running the old ones.;③ Continuous 3 He didn't make it.
-// Clear the markers, and automatically put it. artex.old Change it back..
+// Any failure falls back to the old version: ② deletes the staged files and keeps
+// running the old binary if verification fails; ③ automatically restores artex.old
+// if the new binary dies 3 times in a row before the marker is cleared.
 package selfupdate
 
 import (
@@ -29,41 +35,45 @@ import (
 	"strings"
 )
 
-// ExitRestart Yes"Please protect me."Exit code(EX_TEMPFAIL).Start the script and see it.
-// We'll run again, not counting the crash..0 This means that the user stops normally (script exits cycle), the rest is considered to be collapse.
+// ExitRestart is the "please relaunch me" exit code (EX_TEMPFAIL). The start
+// script reruns immediately and does not count it as a crash. 0 means the user
+// stopped normally (the script leaves its loop); anything else is a crash.
 const ExitRestart = 75
 
-// maxAttempts is the number of start-up attempts allowed after reloading. The new edition counts every time it starts. +1,Live.
-// settleDelay clears the markings; crashes maxAttempts The new edition doesn't come up..
+// maxAttempts is how many starts are allowed after a swap. Each start of the new
+// binary increments the count by 1. Surviving settleDelay clears the marker;
+// crashing maxAttempts times means the new binary cannot stay up, so it is rolled back.
 const maxAttempts = 3
 
-// Paths It's all the files involved in a single upgrade.**Directory of Executable Files**Down.
-// I don't want to. CWD:The server runtime directory may be / Or any path, with CWD I'll let the temporary deposit come down.
-// Somewhere else, the reloading logic simply lapses..
+// Paths is every file involved in one upgrade, all under the directory that
+// contains the executable. The working directory is deliberately not used:
+// a service may run with CWD set to / or any other path, and staging files
+// there would make the swap logic miss them entirely.
 type Paths struct {
-	Dir     string // Directory of Executable Files
-	Current string // Current running binary        artex      / artex.exe
-	New     string // Saved New Version            artex.new  / artex.new.exe
-	Sum     string // New version sha256(hex)  artex.new.sha256 / artex.new.exe.sha256
-	Old     string // Change old version of the backup before loading      artex.old  / artex.old.exe
-	Marker  string // Upgrade Status Marker            artex.upgrade.json
+	Dir     string // directory containing the executable
+	Current string // binary that is running now          artex      / artex.exe
+	New     string // staged new version                  artex.new  / artex.new.exe
+	Sum     string // sha256 of the new version (hex)     artex.new.sha256 / artex.new.exe.sha256
+	Old     string // previous version, backed up before the swap  artex.old  / artex.old.exe
+	Marker  string // upgrade state marker                artex.upgrade.json
 }
 
-// ResolvePaths Path all upgrades to the current executable.
+// ResolvePaths derives every upgrade path from the current executable.
 //
-// Windows on .new/.old It has to be. .exe The suffix, or the smoke test and the refitting will fail.,
-// So take off the suffix and spell it. The name of the two platforms is symmetrical..
+// On Windows, .new and .old must keep the .exe suffix or the smoke test and the
+// swapped binary both fail to run. The suffix is stripped and then reattached so
+// the two platforms name files the same way.
 func ResolvePaths() (Paths, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return Paths{}, fmt.Errorf("Position Executable: %w", err)
+		return Paths{}, fmt.Errorf("locate executable: %w", err)
 	}
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = resolved
 	}
 	dir := filepath.Dir(exe)
 	name := filepath.Base(exe)
-	ext := filepath.Ext(name) // Windows Top ".exe",Unix It's usually empty.
+	ext := filepath.Ext(name) // ".exe" on Windows; usually empty on Unix
 	stem := strings.TrimSuffix(name, ext)
 
 	join := func(suffix string) string { return filepath.Join(dir, stem+suffix+ext) }
@@ -77,11 +87,12 @@ func ResolvePaths() (Paths, error) {
 	}, nil
 }
 
-// marker Record the progress of a change of clothes to trigger automatic rollback when the new edition does not come.
+// marker records how far a swap has got, so a new binary that never stays up
+// can be rolled back automatically.
 type marker struct {
-	From     string `json:"from"`     // Pre-upgrade version
-	To       string `json:"to"`       // Target Version
-	Attempts int    `json:"attempts"` // Number of attempts to start after reloading
+	From     string `json:"from"`     // version before the upgrade
+	To       string `json:"to"`       // target version
+	Attempts int    `json:"attempts"` // starts attempted since the swap
 	StagedAt int64  `json:"staged_at"`
 }
 
@@ -105,17 +116,20 @@ func writeMarker(path string, m marker) error {
 	return os.WriteFile(path, b, 0o644)
 }
 
-// cleanStaged Other Organiser The reload was successful, the check failed, the user canceled it, and the rest was avoided.
-// artex.new Try again at next startup.
+// cleanStaged removes staged files. A successful swap, a failed verification,
+// and a user cancel all go through it, so a leftover artex.new is not retried
+// on the next start.
 func cleanStaged(p Paths) {
 	_ = os.Remove(p.New)
 	_ = os.Remove(p.Sum)
 }
 
-// CompareVersions Compare two versions, return -1/0/1(a<b / a==b / a>b).
-// ok=false Means that at least one side is not a comparable version number (e.g. locally developed builder) "dev" or
-// git describe Outputs "0.3.7-2-gabc1234-dirty"),The caller should disable one key update at this time,
-// Or we'll put the building under development."Upgrade"Formalize, cover unsubmitted changes.
+// CompareVersions compares two versions and returns -1/0/1 (a<b / a==b / a>b).
+// ok=false means at least one side is not a comparable version (for example a
+// local "dev" build, or git describe output such as "0.3.7-2-gabc1234-dirty").
+// The caller should disable one-click update in that case. Otherwise a
+// development build would be "upgraded" to a release and uncommitted changes
+// would be overwritten.
 func CompareVersions(a, b string) (int, bool) {
 	av, aok := parseVersion(a)
 	bv, bok := parseVersion(b)
@@ -133,11 +147,12 @@ func CompareVersions(a, b string) (int, bool) {
 	return 0, true
 }
 
-// parseVersion Analysis "v0.3.7" / "0.3.7" Version number in form [3]int.
+// parseVersion parses a "v0.3.7" / "0.3.7" version into [3]int.
 //
-// Only a pure three-part pattern is accepted:build.sh In Africa tag Use for construction git describe output
-// "0.3.7-2-gabc1234" These suffixed versions must be judged non-comparison rather than as
-// 0.3.7 —— Otherwise, the construction will be miscalculated."It's the latest."Or covered by official editions.
+// Only a plain three-part version is accepted. Off a tag, build.sh uses git
+// describe and produces suffixed versions such as "0.3.7-2-gabc1234". Those
+// must be treated as incomparable, not as 0.3.7 — otherwise a development build
+// is reported as "already up to date" or overwritten by a release.
 func parseVersion(s string) ([3]int, bool) {
 	s = strings.TrimSpace(s)
 	s = strings.TrimPrefix(s, "v")
@@ -159,9 +174,10 @@ func parseVersion(s string) ([3]int, bool) {
 	return out, true
 }
 
-// InDocker Is the reporting process in the container?.Docker The next reload is written on the packaging.,
-// `docker compose up -d` Rebuild the container will return the version of the mirror itself.——It's an expected act.
-// (But the front end needs to be clear..
+// InDocker reports whether the process is running in a container. A swap under
+// Docker writes the container's writable layer; `docker compose up -d` recreates
+// the container and returns to the image's own version. That is expected (the
+// user is pulling a new image), but the frontend needs to be able to say so.
 func InDocker() bool {
 	if _, err := os.Stat("/.dockerenv"); err == nil {
 		return true

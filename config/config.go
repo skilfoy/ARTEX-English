@@ -145,16 +145,16 @@ func SkillDir() string {
 // DSN came from (for startup logging).
 func PostgresDSN() (dsn, source string, err error) {
 	if v := strings.TrimSpace(os.Getenv("ARTEX_PG_DSN")); v != "" {
-		return v, "Environmental variables ARTEX_PG_DSN", nil
+		return v, "environment variable ARTEX_PG_DSN", nil
 	}
 	db := Load().Database
 	if d := strings.TrimSpace(db.DSN); d != "" {
-		return d, "Profile " + Path() + " (database.dsn)", nil
+		return d, "config file " + Path() + " (database.dsn)", nil
 	}
 	if db.Host != "" || db.DBName != "" || db.User != "" {
-		return db.buildDSN(), "Profile " + Path() + " (database Field)", nil
+		return db.buildDSN(), "config file " + Path() + " (database fields)", nil
 	}
-	return "", "", fmt.Errorf("Database configuration not found: environment variable ARTEX_PG_DSN Unset and profile %s Not provided database(dsn or host/user/dbname).Please try again after creating the profile or setting the environment variable", Path())
+	return "", "", fmt.Errorf("database configuration not found: ARTEX_PG_DSN is unset and config file %s has no database (dsn or host/user/dbname); create the config file or set the environment variable", Path())
 }
 
 func (d Database) buildDSN() string {

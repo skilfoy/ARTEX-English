@@ -278,13 +278,13 @@ func (t *Traffic) initIndex() error {
 	}
 	t.incrementalVacuum = mode == autoVacuumIncremental
 	if !t.incrementalVacuum {
-		log.Printf("[traffic] Index library not enabled incremental recovery(auto_vacuum=%d):Delete traffic will not shrink index.sqlite,Need to execute a storage compression to convert", mode)
+		log.Printf("[traffic] incremental vacuum is not enabled (auto_vacuum=%d); deleting traffic will not shrink index.sqlite until a compaction converts the database", mode)
 	}
 	if _, err := conn.ExecContext(ctx, indexSchema); err != nil {
 		return err
 	}
 	if _, err := conn.ExecContext(ctx, ftsSchema); err != nil {
-		log.Printf("[traffic] Full text index not available, text search disabled (metadata search not affected)):%v", err)
+		log.Printf("[traffic] full-text index unavailable; text search disabled (metadata search still works): %v", err)
 		return nil
 	}
 	t.fts = true
@@ -334,17 +334,17 @@ func ValidateProxyURL(raw string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, fmt.Errorf("Parsing proxy address %q: %w", raw, err)
+		return nil, fmt.Errorf("parse proxy URL %q: %w", raw, err)
 	}
 	switch u.Scheme {
 	case "http", "https", "socks5":
 	case "":
-		return nil, fmt.Errorf("Agent %q Missing protocol(Use http://,https:// or socks5://)", raw)
+		return nil, fmt.Errorf("proxy %q is missing a scheme (use http://, https://, or socks5://)", raw)
 	default:
-		return nil, fmt.Errorf("Unsupported proxy protocol %q(Use http,https or socks5)", u.Scheme)
+		return nil, fmt.Errorf("unsupported proxy scheme %q (use http, https, or socks5)", u.Scheme)
 	}
 	if u.Host == "" {
-		return nil, fmt.Errorf("Agent %q Synchronising folder", raw)
+		return nil, fmt.Errorf("proxy %q has no host", raw)
 	}
 	return u, nil
 }
@@ -414,7 +414,7 @@ func (t *Traffic) maybePassthrough(f *mproxy.Flow, err error) {
 		return
 	}
 	if _, loaded := t.pass.LoadOrStore(host, struct{}{}); !loaded {
-		log.Printf("[traffic] With %s of MITM Error, change to overwhelm host Follow-up direct targets, no more records, but request the same.):%v", host, err)
+		log.Printf("[traffic] MITM error for %s; later requests to this host pass through directly (not recorded, but still forwarded): %v", host, err)
 	}
 }
 
@@ -689,7 +689,7 @@ func (t *Traffic) blobPath(hash string) (string, error) {
 	// Validated as pure hex before touching the filesystem, so a crafted hash can
 	// never traverse out of the blob directory.
 	if !blobHashRe.MatchString(hash) {
-		return "", fmt.Errorf("Illegal. blob hash")
+		return "", fmt.Errorf("invalid blob hash")
 	}
 	for _, p := range []string{
 		filepath.Join(t.dir, "_blobs", "sha256", hash[:2], hash+".bin"),
@@ -967,7 +967,7 @@ FROM exchange_bodies b JOIN exchanges e ON e.id=b.id WHERE b.id=?`, id).
 		return "", "", err
 	}
 	if strings.TrimSpace(rel) == "" {
-		return "", "", fmt.Errorf("exchange %s No official record", id)
+		return "", "", fmt.Errorf("exchange %s has no stored body", id)
 	}
 	rb, _ := os.ReadFile(filepath.Join(t.dir, rel, "request.http"))
 	pb, _ := os.ReadFile(filepath.Join(t.dir, rel, "response.http"))
@@ -1054,7 +1054,7 @@ func (t *Traffic) DeleteHost(host string) (int64, error) {
 		return 0, errors.Join(err, restoreTrees(stageDir, moves))
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, errors.Join(fmt.Errorf("Submit flow index deletion: %w", err), restoreTrees(stageDir, moves))
+		return 0, errors.Join(fmt.Errorf("commit traffic index deletion: %w", err), restoreTrees(stageDir, moves))
 	}
 	t.reapStage(stageDir)
 	if n > 0 {
@@ -1103,7 +1103,7 @@ func (t *Traffic) DeleteAll() (deleted int64, reclaimed int64, err error) {
 		return 0, 0, errors.Join(err, restoreTrees(stageDir, moves))
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, 0, errors.Join(fmt.Errorf("Submit flow index deletion: %w", err), restoreTrees(stageDir, moves))
+		return 0, 0, errors.Join(fmt.Errorf("commit traffic index deletion: %w", err), restoreTrees(stageDir, moves))
 	}
 	t.reapStage(stageDir)
 	if err := t.gcBlobs(); err != nil {
@@ -1154,14 +1154,14 @@ func (t *Traffic) compactIndex() error {
 		// A full merge, not the bounded one reclaim uses: with the index emptied
 		// there is nothing left to merge, so this only discards the tombstones.
 		if _, err := conn.ExecContext(ctx, `INSERT INTO ex_fts(ex_fts) VALUES('optimize')`); err != nil {
-			return fmt.Errorf("Merge Full Text Index: %w", err)
+			return fmt.Errorf("merge full-text index: %w", err)
 		}
 	}
 	if _, err := conn.ExecContext(ctx, `PRAGMA auto_vacuum=incremental`); err != nil {
 		return err
 	}
 	if _, err := conn.ExecContext(ctx, `VACUUM`); err != nil {
-		return fmt.Errorf("Compact Index: %w", err)
+		return fmt.Errorf("compact index: %w", err)
 	}
 	var mode int
 	if err := conn.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
@@ -1171,7 +1171,7 @@ func (t *Traffic) compactIndex() error {
 	// space on their own instead of waiting for another purge.
 	t.incrementalVacuum = mode == autoVacuumIncremental
 	if _, err := conn.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		return fmt.Errorf("Cut WAL: %w", err)
+		return fmt.Errorf("truncate WAL: %w", err)
 	}
 	return nil
 }
@@ -1183,18 +1183,18 @@ func (t *Traffic) deleteWhere(tx *sql.Tx, where string, args ...any) (int64, err
 	if t.fts {
 		// ex_fts is contentless and addressed by rowid, hence the rowid sub-select.
 		if _, err := tx.Exec(`DELETE FROM ex_fts WHERE rowid IN (SELECT rowid FROM exchanges WHERE `+where+`)`, args...); err != nil {
-			return 0, fmt.Errorf("Delete full-text index: %w", err)
+			return 0, fmt.Errorf("delete full-text rows: %w", err)
 		}
 	}
 	if _, err := tx.Exec(`DELETE FROM exchange_bodies WHERE id IN (SELECT id FROM exchanges WHERE `+where+`)`, args...); err != nil {
-		return 0, fmt.Errorf("Delete Body: %w", err)
+		return 0, fmt.Errorf("delete bodies: %w", err)
 	}
 	if _, err := tx.Exec(`DELETE FROM blob_refs WHERE exchange_id IN (SELECT id FROM exchanges WHERE `+where+`)`, args...); err != nil {
-		return 0, fmt.Errorf("Delete blob References: %w", err)
+		return 0, fmt.Errorf("delete blob references: %w", err)
 	}
 	res, err := tx.Exec(`DELETE FROM exchanges WHERE `+where, args...)
 	if err != nil {
-		return 0, fmt.Errorf("Delete Index Line: %w", err)
+		return 0, fmt.Errorf("delete index rows: %w", err)
 	}
 	n, _ := res.RowsAffected()
 	return n, nil
@@ -1265,24 +1265,25 @@ func (t *Traffic) stageTreesForArchive(dirs, hosts []string, archiveID, taskID i
 			if os.IsNotExist(err) {
 				continue
 			}
-			return stageDir, moves, fmt.Errorf("Check history flow directory %s: %w", source, err)
+			return stageDir, moves, fmt.Errorf("check legacy traffic directory %s: %w", source, err)
 		}
 		planned = append(planned, stagedTrafficPath{source: source})
 	}
-	// Archive path even one history host There's no directory.(The flow of the new rig just fell. SQLite + _blobs)
-	// We have to stay. journal:If the point of collapse falls PostgreSQL Submission and SQLite Between submissions, after restart
-	// SQLite This is the only one. journal It'll make it work. host Line's deleted. Without it.,
-	// The monopoly of colded missions will remain in the hothouse forever..
+	// Write the journal even when a historical host has no directory (new captures
+	// live only in SQLite and _blobs). If the process dies between the PostgreSQL
+	// commit and the SQLite commit, that journal is the only record that can finish
+	// deleting the host rows on restart. Without it, a task already cold-archived
+	// stays in the hot store forever.
 	uniqueHosts := uniqueArchiveHosts(hosts)
 	if len(planned) == 0 && len(uniqueHosts) == 0 {
 		return "", nil, nil
 	}
 	parent := filepath.Join(t.dir, "_delete_staging")
 	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", nil, fmt.Errorf("Create flow suspense directory: %w", err)
+		return "", nil, fmt.Errorf("create traffic staging directory: %w", err)
 	}
 	if stageDir, err = os.MkdirTemp(parent, "hosts-"); err != nil {
-		return "", nil, fmt.Errorf("Create flow suspense directory: %w", err)
+		return "", nil, fmt.Errorf("create traffic staging directory: %w", err)
 	}
 	journal := hostDeleteStageJournal{Version: 1, ArchiveID: archiveID, TaskID: taskID, Hosts: uniqueHosts}
 	for i := range planned {
@@ -1296,7 +1297,7 @@ func (t *Traffic) stageTreesForArchive(dirs, hosts []string, archiveID, taskID i
 	for _, move := range planned {
 		source, staged := move.source, move.staged
 		if err := os.Rename(source, staged); err != nil {
-			return stageDir, moves, fmt.Errorf("Remove History Flow Directory %s: %w", source, err)
+			return stageDir, moves, fmt.Errorf("move legacy traffic directory %s: %w", source, err)
 		}
 		moves = append(moves, stagedTrafficPath{source: source, staged: staged})
 	}
@@ -1426,7 +1427,7 @@ func (t *Traffic) stageDeleteHostsExact(hosts []string, archiveID, taskID int64)
 	stage := &HostDeleteStage{traffic: t}
 	fail := func(cause error) (*HostDeleteStage, error) {
 		if rollbackErr := stage.rollbackLocked(); rollbackErr != nil {
-			return nil, errors.Join(cause, fmt.Errorf("Roll Backflow Delete: %w", rollbackErr))
+			return nil, errors.Join(cause, fmt.Errorf("roll back traffic deletion: %w", rollbackErr))
 		}
 		return nil, cause
 	}
@@ -1510,17 +1511,17 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 		}
 		var journal hostDeleteStageJournal
 		if err := json.Unmarshal(raw, &journal); err != nil {
-			errs = append(errs, fmt.Errorf("Read traffic temporary log %s: %w", stageDir, err))
+			errs = append(errs, fmt.Errorf("read traffic stage journal %s: %w", stageDir, err))
 			continue
 		}
 		if journal.Version != 1 {
-			errs = append(errs, fmt.Errorf("traffic temporary log %s Version %d Unsupported", stageDir, journal.Version))
+			errs = append(errs, fmt.Errorf("traffic stage journal %s has unsupported version %d", stageDir, journal.Version))
 			continue
 		}
 		moves := make([]stagedTrafficPath, 0, len(journal.Moves))
 		for _, move := range journal.Moves {
 			if !pathWithin(t.dir, move.Source) || !pathWithin(stageDir, move.Staged) {
-				errs = append(errs, fmt.Errorf("The flow log contains a cross-border path: %s", stageDir))
+				errs = append(errs, fmt.Errorf("traffic stage journal contains a path outside the store: %s", stageDir))
 				moves = nil
 				break
 			}
@@ -1538,7 +1539,7 @@ func (t *Traffic) RecoverHostDeleteStages(archiveCommitted func(int64, int64) (b
 		committed := false
 		if journal.ArchiveID > 0 {
 			if archiveCommitted == nil {
-				errs = append(errs, fmt.Errorf("Flow Archive %d No status solver", journal.ArchiveID))
+				errs = append(errs, fmt.Errorf("traffic archive %d has no commit checker", journal.ArchiveID))
 				continue
 			}
 			committed, err = archiveCommitted(journal.ArchiveID, journal.TaskID)
@@ -1633,7 +1634,7 @@ func (s *HostDeleteStage) rollbackLocked() error {
 	var errs []error
 	if s.tx != nil {
 		if err := s.tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			errs = append(errs, fmt.Errorf("Rollback flow index: %w", err))
+			errs = append(errs, fmt.Errorf("roll back traffic index: %w", err))
 		}
 	}
 	if err := restoreTrees(s.stageDir, s.moves); err != nil {
@@ -1656,7 +1657,7 @@ func (s *HostDeleteStage) Commit() error {
 		restoreErr := restoreTrees(s.stageDir, s.moves)
 		s.done = true
 		s.traffic.wmu.Unlock()
-		return errors.Join(fmt.Errorf("Submit flow index deletion: %w", err), restoreErr)
+		return errors.Join(fmt.Errorf("commit traffic index deletion: %w", err), restoreErr)
 	}
 	// Unlinking the staged trees is what used to hold the write lock for hours;
 	// it now runs in the background, while collection below only needs them to be
@@ -1665,7 +1666,7 @@ func (s *HostDeleteStage) Commit() error {
 	s.traffic.reclaim()
 	var errs []error
 	if err := s.traffic.gcBlobs(); err != nil {
-		errs = append(errs, fmt.Errorf("Recovery flows blob: %w", err))
+		errs = append(errs, fmt.Errorf("collect traffic blobs: %w", err))
 	}
 	s.done = true
 	s.traffic.wmu.Unlock()
@@ -1714,7 +1715,7 @@ func (t *Traffic) reclaim() {
 		ctx := context.Background()
 		conn, err := t.db.Conn(ctx)
 		if err != nil {
-			log.Printf("[traffic] Recovery index space failed (getting connected)):%v", err)
+			log.Printf("[traffic] could not reclaim index space (open connection): %v", err)
 			return
 		}
 		defer conn.Close()
@@ -1725,7 +1726,7 @@ func (t *Traffic) reclaim() {
 			progressed, err := t.reclaimChunk(ctx, conn, &merges)
 			t.wmu.Unlock()
 			if err != nil {
-				log.Printf("[traffic] Recovery index space failed:%v", err)
+				log.Printf("[traffic] could not reclaim index space: %v", err)
 				return
 			}
 			if !progressed {
@@ -1735,11 +1736,11 @@ func (t *Traffic) reclaim() {
 				return // shutdown must not wait out the remaining budget
 			}
 			if step+1 >= reclaimMaxSteps {
-				log.Printf("[traffic] Index space recovery uncompleted (used) %d Next time delete", reclaimMaxSteps)
+				log.Printf("[traffic] index reclamation stopped after %d steps; it resumes on the next delete", reclaimMaxSteps)
 				return
 			}
 			if time.Now().After(deadline) {
-				log.Printf("[traffic] Index space recovery uncompleted (used) %s Budget)", reclaimBudget)
+				log.Printf("[traffic] index reclamation stopped after the %s budget; it resumes on the next delete", reclaimBudget)
 				return
 			}
 		}
@@ -1762,7 +1763,7 @@ func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int)
 	if t.fts && *merges > 0 {
 		// A negative rank is fts5's page budget for one incremental merge.
 		if _, err := conn.ExecContext(ctx, `INSERT INTO ex_fts(ex_fts, rank) VALUES('merge', ?)`, -reclaimMergePages); err != nil {
-			return false, fmt.Errorf("Merge Full Text Index: %w", err)
+			return false, fmt.Errorf("merge full-text index: %w", err)
 		}
 		*merges--
 		progressed = true
@@ -1782,7 +1783,7 @@ func (t *Traffic) reclaimChunk(ctx context.Context, conn *sql.Conn, merges *int)
 	}
 	// The budget is a constant and PRAGMA arguments cannot be bound as parameters.
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`PRAGMA incremental_vacuum(%d)`, reclaimChunkPages)); err != nil {
-		return false, fmt.Errorf("Recover Index Free Pages: %w", err)
+		return false, fmt.Errorf("reclaim index free pages: %w", err)
 	}
 	if err := conn.QueryRowContext(ctx, `PRAGMA freelist_count`).Scan(&after); err != nil {
 		return false, err
@@ -1934,9 +1935,9 @@ func (t *Traffic) query(host, contains, bodyContains string, page, limit int) ([
 		cond, arg, ok := t.ftsFilter(b)
 		if !ok {
 			if !t.fts {
-				return nil, fmt.Errorf("The full-text index is not enabled in the current instance, so the text cannot be searched")
+				return nil, fmt.Errorf("full-text search is disabled on this instance")
 			}
-			return nil, fmt.Errorf("Text search keyword at least required %d Characters (current) %d pieces)", minTrigram, utf8.RuneCountInString(b))
+			return nil, fmt.Errorf("text search needs at least %d characters (got %d)", minTrigram, utf8.RuneCountInString(b))
 		}
 		q += ` AND ` + cond
 		args = append(args, arg)
@@ -1966,12 +1967,12 @@ func (t *Traffic) query(host, contains, bodyContains string, page, limit int) ([
 func normalizeSearchHost(raw string) (host, port string, err error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return "", "", errors.New("host Fills parameters as required")
+		return "", "", errors.New("host is required")
 	}
 	if strings.Contains(raw, "://") {
 		u, parseErr := url.Parse(raw)
 		if parseErr != nil || u.Host == "" {
-			return "", "", fmt.Errorf("Unable to parse host:%q", raw)
+			return "", "", fmt.Errorf("could not parse host: %q", raw)
 		}
 		host, port = u.Hostname(), u.Port()
 	} else if h, p, splitErr := net.SplitHostPort(raw); splitErr == nil {
@@ -1983,12 +1984,12 @@ func normalizeSearchHost(raw string) (host, port string, err error) {
 	}
 	host = strings.Trim(strings.TrimSpace(host), "[]")
 	if host == "" {
-		return "", "", fmt.Errorf("Unable to parse host:%q", raw)
+		return "", "", fmt.Errorf("could not parse host: %q", raw)
 	}
 	if port != "" {
 		p, parseErr := strconv.Atoi(port)
 		if parseErr != nil || p < 1 || p > 65535 {
-			return "", "", fmt.Errorf("Port is invalid:%q", port)
+			return "", "", fmt.Errorf("invalid port: %q", port)
 		}
 		port = strconv.Itoa(p)
 	}
@@ -2010,10 +2011,10 @@ func (t *Traffic) Tools() []actool.CoreTool {
 			"type": "object",
 			"properties": map[string]any{
 				"host":          map[string]any{"type": "string", "description": "Filter by host (required; if '107.172.96.177','107.172.96.177:8082' or 'http://107.172.96.177:8082/path')"},
-				"contains":      map[string]any{"type": "string", "description": "URL Substring Filter (optional, if 'api' / 'login')"},
-				"body_contains": map[string]any{"type": "string", "description": "Full text search (optional, at least) 3 Characters), matching request/Response head and text, e.g. 'password' / 'root:x:0' / 'Innernet testing'"},
-				"limit":         map[string]any{"type": "integer", "description": "Number of articles per page, default 3,Max 10"},
-				"page":          map[string]any{"type": "integer", "description": "Page number from 0 Start, default 0(Press ts Invert Page)"},
+				"contains":      map[string]any{"type": "string", "description": "URL substring filter (optional, for example 'api' or 'login')"},
+				"body_contains": map[string]any{"type": "string", "description": "Full-text search (optional, at least 3 characters) across request and response headers and text bodies, for example 'password', 'root:x:0', or 'intranet test'"},
+				"limit":         map[string]any{"type": "integer", "description": "Results per page; default 3, maximum 10"},
+				"page":          map[string]any{"type": "integer", "description": "Page number starting at 0 (default). Results are ordered by timestamp, newest first"},
 			},
 			"required": []any{"host"},
 		},
@@ -2028,16 +2029,16 @@ func (t *Traffic) Tools() []actool.CoreTool {
 			}
 			_ = json.Unmarshal(in, &a)
 			if strings.TrimSpace(a.Host) == "" {
-				return actool.Errorf("host Required parameters: Specify the naked host, host:Port or integrity URL,Avoid Full Library Scan."), nil
+				return actool.Errorf("host is required: pass a bare host, host:port, or a full URL so the search does not scan the whole store"), nil
 			}
 			rows, err := t.query(a.Host, a.Contains, a.BodyContains, a.Page, a.Limit)
 			if err != nil {
 				return actool.Errorf(err.Error()), nil
 			}
 			if len(rows) == 0 {
-				return actool.Text("No matching flow."), nil
+				return actool.Text("No matching traffic."), nil
 			}
-			// Streamlined to a minimum index: only fields required for positioning are retained + Response code/Length, without any response.
+			// Keep the row minimal: only the fields needed to locate an exchange, plus status and response length. No body.
 			type liteRow struct {
 				ID      string `json:"id"`
 				Method  string `json:"method"`
@@ -2056,10 +2057,10 @@ func (t *Traffic) Tools() []actool.CoreTool {
 
 	get := actool.Build(actool.Spec{
 		Name:        "traffic_get",
-		Description: "Press id Take a request for traffic./Response in original (interrupted by the General Assembly). Cooperation traffic_search Use it, avoid it. curl.",
+		Description: "Fetch one captured exchange by id, with the request and response truncated. Use it with traffic_search instead of curling the target again.",
 		Schema: map[string]any{
 			"type":       "object",
-			"properties": map[string]any{"id": map[string]any{"type": "string", "description": "traffic_search Returned id"}},
+			"properties": map[string]any{"id": map[string]any{"type": "string", "description": "id returned by traffic_search"}},
 			"required":   []any{"id"},
 		},
 		ReadOnly:    ro,
@@ -2104,11 +2105,11 @@ func (t *Traffic) Tools() []actool.CoreTool {
 				return actool.Errorf(err.Error()), nil
 			}
 			if len(data) == 0 {
-				return actool.Text(fmt.Sprintf("Offset %d Excess of content (total) %d Bytes).", a.Offset, total)), nil
+				return actool.Text(fmt.Sprintf("offset %d is past the end of the content (%d bytes)", a.Offset, total)), nil
 			}
-			head := fmt.Sprintf("[offset=%d This time.=%d Chief=%d]\n", a.Offset, len(data), total)
+			head := fmt.Sprintf("[offset=%d length=%d total=%d]\n", a.Offset, len(data), total)
 			if isBinaryBody("", data) {
-				return actool.Text(head + "Binary content displayed in hexadecimal Front 512 Bytes:\n" + hex.EncodeToString(clipBytes(data, 512))), nil
+				return actool.Text(head + "binary content; first 512 bytes in hexadecimal:\n" + hex.EncodeToString(clipBytes(data, 512))), nil
 			}
 			return actool.Text(head + truncateUTF8(data, len(data))), nil
 		},
@@ -2126,5 +2127,5 @@ func clip(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
-	return s[:max] + fmt.Sprintf("\n... [Cut it out. %d bytes;complete in flow file tree] ...", len(s))
+	return s[:max] + fmt.Sprintf("\n... [truncated %d bytes; the rest is in the traffic file tree] ...", len(s))
 }

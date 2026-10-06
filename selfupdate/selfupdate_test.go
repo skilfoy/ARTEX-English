@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// testPaths Make a separate upgrade catalogue. It can't be used directly. ResolvePaths()——It'll point to the test.
-// The binary itself, you run. go test The enforceable file has been renamed..
+// testPaths builds an isolated upgrade directory. ResolvePaths() cannot be used
+// directly — it would point at the test binary itself and rename the go test executable.
 func testPaths(t *testing.T) Paths {
 	t.Helper()
 	dir := t.TempDir()
@@ -25,13 +25,13 @@ func testPaths(t *testing.T) Paths {
 	}
 }
 
-// fakeBin Write an enforceable shell script to pretend artex.smokeTest Just use it. -h Pull it up to see the exit code.,
-// Scripts are perfect and faster than a true binary..
+// fakeBin writes an executable shell script that stands in for artex. smokeTest
+// only runs it with -h and checks the exit code, so a script is enough and much faster than a real binary.
 func fakeBin(t *testing.T, path, marker string, exitCode int) {
 	t.Helper()
 	script := "#!/bin/sh\necho " + marker + "\nexit " + itoa(exitCode) + "\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
-		t.Fatalf("Writing false binary %s: %v", path, err)
+		t.Fatalf("write fake binary %s: %v", path, err)
 	}
 }
 
@@ -42,16 +42,16 @@ func itoa(n int) string {
 	return string(rune('0' + n))
 }
 
-// stage handle bin Set"Saved pending replacement"Look: Write it. artex.new And check it out..
+// stage lays out bin as "staged and waiting to be swapped": artex.new plus its checksum.
 func stage(t *testing.T, p Paths, marker string, exitCode int) {
 	t.Helper()
 	fakeBin(t, p.New, marker, exitCode)
 	sum, err := fileSHA256(p.New)
 	if err != nil {
-		t.Fatalf("Calculate checksum: %v", err)
+		t.Fatalf("compute checksum: %v", err)
 	}
 	if err := os.WriteFile(p.Sum, []byte(sum), 0o644); err != nil {
-		t.Fatalf("Write Checksum: %v", err)
+		t.Fatalf("write checksum: %v", err)
 	}
 }
 
@@ -59,7 +59,7 @@ func readAll(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("Read %s: %v", path, err)
+		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(b)
 }
@@ -67,7 +67,7 @@ func readAll(t *testing.T, path string) string {
 func requireUnix(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("It's a fake binary. sh Script,Windows Can't get up.")
+		t.Skip("the fake binary is a shell script and cannot run on Windows")
 	}
 }
 
@@ -80,11 +80,11 @@ func TestCompareVersions(t *testing.T) {
 		{"0.3.7", "0.3.8", -1, true},
 		{"0.3.8", "0.3.7", 1, true},
 		{"0.3.7", "0.3.7", 0, true},
-		{"v0.3.7", "0.3.8", -1, true}, // build.sh Get rid of it. v,tag With v,Both sides.
+		{"v0.3.7", "0.3.8", -1, true}, // build.sh strips v; tags keep it; both forms must be accepted
 		{"0.3.7", "v0.3.7", 0, true},
-		{"0.9.0", "0.10.0", -1, true}, // By Number rather than Dictionary
+		{"0.9.0", "0.10.0", -1, true}, // numeric comparison, not lexicographic
 		{"1.0.0", "0.99.99", 1, true},
-		// The development build must be classified as non-comparison, otherwise the unsubmitted changes will be covered by the official version.
+		// A development build must be incomparable, or a release would overwrite uncommitted changes.
 		{"dev", "0.3.8", 0, false},
 		{"0.3.7-2-gabc1234", "0.3.8", 0, false},
 		{"0.3.7-dirty", "0.3.8", 0, false},
@@ -94,11 +94,11 @@ func TestCompareVersions(t *testing.T) {
 	for _, c := range cases {
 		got, ok := CompareVersions(c.a, c.b)
 		if ok != c.comparable {
-			t.Errorf("CompareVersions(%q,%q) comparable=%v, Expectations %v", c.a, c.b, ok, c.comparable)
+			t.Errorf("CompareVersions(%q,%q) comparable=%v, want %v", c.a, c.b, ok, c.comparable)
 			continue
 		}
 		if ok && got != c.want {
-			t.Errorf("CompareVersions(%q,%q)=%d, Expectations %d", c.a, c.b, got, c.want)
+			t.Errorf("CompareVersions(%q,%q)=%d, want %d", c.a, c.b, got, c.want)
 		}
 	}
 }
@@ -108,17 +108,17 @@ func TestResolvePathsNaming(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolvePaths: %v", err)
 	}
-	// Key non-variant: All upgrade documents are in the same directory as implementable documents. Fall CWD It'll make service run.
-	// (Work catalogue could be /)It's completely disabled..
+	// Invariant: every upgrade file lives beside the executable. Falling back to
+	// CWD would break the swap when the service runs with a working directory of /.
 	for name, path := range map[string]string{"New": p.New, "Sum": p.Sum, "Old": p.Old, "Marker": p.Marker} {
 		if filepath.Dir(path) != p.Dir {
-			t.Errorf("%s Not in the executable directory: %s (Expectations %s)", name, path, p.Dir)
+			t.Errorf("%s is not beside the executable: %s (want %s)", name, path, p.Dir)
 		}
 	}
-	// Windows on .new/.old Must keep .exe,Otherwise, smoke tests and refitting will fail..
+	// On Windows, .new and .old must keep .exe, or the smoke test and the swapped binary both fail.
 	if runtime.GOOS == "windows" {
 		if !strings.HasSuffix(p.New, ".exe") || !strings.HasSuffix(p.Old, ".exe") {
-			t.Errorf("Windows on .new/.old I have to. .exe End: new=%s old=%s", p.New, p.Old)
+			t.Errorf("Windows .new/.old must end in .exe: new=%s old=%s", p.New, p.Old)
 		}
 	}
 }
@@ -128,20 +128,20 @@ func TestVerifyStagedRejectsTamperedBinary(t *testing.T) {
 	p := testPaths(t)
 	stage(t, p, "new", 0)
 
-	// Check and write before changing files. Simulate download damage / It's switched..
+	// Rewrite the file after the checksum is stored, simulating a damaged or swapped download.
 	fakeBin(t, p.New, "tampered", 0)
 	if err := verifyStaged(p); err == nil {
-		t.Fatal("Expectations SHA256 No match was rejected, but passed.")
+		t.Fatal("expected a SHA256 mismatch to be rejected, but it passed")
 	}
 }
 
 func TestVerifyStagedRejectsUnrunnableBinary(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
-	stage(t, p, "broken", 1) // Can execute but quit. 0
+	stage(t, p, "broken", 1) // executable, but exits non-zero
 
 	if err := verifyStaged(p); err == nil {
-		t.Fatal("The expectation of a failed smoke test was rejected and passed.")
+		t.Fatal("expected a failed smoke test to be rejected, but it passed")
 	}
 }
 
@@ -151,31 +151,31 @@ func TestApplyStagedHappyPath(t *testing.T) {
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
 	if err := writeMarker(p.Marker, marker{From: "0.3.7", To: "0.3.8"}); err != nil {
-		t.Fatalf("Write Tags: %v", err)
+		t.Fatalf("write marker: %v", err)
 	}
 
 	action, st := applyStaged(p)
 	if action != Restart {
-		t.Fatalf("Expectations Restart,get %v", action)
+		t.Fatalf("want Restart, got %v", action)
 	}
 	if !st.Pending {
-		t.Error("After reloading state should read Pending")
+		t.Error("state after swap should be Pending")
 	}
 	if !strings.Contains(readAll(t, p.Current), "new") {
-		t.Error("artex Should have been replaced by a new version")
+		t.Error("artex should have been replaced by the new version")
 	}
 	if !strings.Contains(readAll(t, p.Old), "old") {
-		t.Error("Old version should be backed up to artex.old")
+		t.Error("old version should be backed up to artex.old")
 	}
 	if _, err := os.Stat(p.New); !os.IsNotExist(err) {
-		t.Error("When you change. artex.new Should have disappeared.")
+		t.Error("artex.new should be gone after the swap")
 	}
 	if _, err := os.Stat(p.Sum); !os.IsNotExist(err) {
-		t.Error("Checksum files after reloading should be cleared")
+		t.Error("checksum file should be removed after the swap")
 	}
-	// The tag must be kept, and the next launch will count and roll back if necessary..
+	// The marker must remain. The next start (the new binary) counts attempts from it and rolls back if needed.
 	if _, ok := readMarker(p.Marker); !ok {
-		t.Error("Upgrade mark after reloading should be kept")
+		t.Error("upgrade marker should be kept after the swap")
 	}
 }
 
@@ -184,20 +184,20 @@ func TestApplyStagedKeepsCurrentWhenVerifyFails(t *testing.T) {
 	p := testPaths(t)
 	fakeBin(t, p.Current, "old", 0)
 	stage(t, p, "new", 0)
-	fakeBin(t, p.New, "tampered", 0) // Disruption of checksum
+	fakeBin(t, p.New, "tampered", 0) // break the checksum
 
 	action, st := applyStaged(p)
 	if action != Continue {
-		t.Fatalf("Expectation when Verify Failed Continue,get %v", action)
+		t.Fatalf("want Continue when verification fails, got %v", action)
 	}
 	if !st.FailedStage {
-		t.Error("Status should be marked as FailedStage")
+		t.Error("state should be marked FailedStage")
 	}
 	if !strings.Contains(readAll(t, p.Current), "old") {
-		t.Fatal("The current version must not be used when verification failed")
+		t.Fatal("the current version must not be touched when verification fails")
 	}
 	if _, err := os.Stat(p.New); !os.IsNotExist(err) {
-		t.Error("temporary update file should be removed")
+		t.Error("failed staged file should be removed, or the next start will try it again")
 	}
 }
 
@@ -205,17 +205,17 @@ func TestSwapOverwritesPreviousBackup(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "v2", 0)
-	fakeBin(t, p.Old, "v1", 0) // Backup from previous upgrades
+	fakeBin(t, p.Old, "v1", 0) // backup left by a previous upgrade
 	stage(t, p, "v3", 0)
 
 	if err := swap(p); err != nil {
 		t.Fatalf("swap: %v", err)
 	}
 	if !strings.Contains(readAll(t, p.Current), "v3") {
-		t.Error("Should be replaced with v3")
+		t.Error("should have been replaced with v3")
 	}
 	if !strings.Contains(readAll(t, p.Old), "v2") {
-		t.Error("Backup should be updated to just changed v2")
+		t.Error("backup should now be the version that was just replaced, v2")
 	}
 }
 
@@ -226,39 +226,39 @@ func TestConfirmCountsAttemptsThenRollsBack(t *testing.T) {
 	fakeBin(t, p.Old, "good-old", 0)
 	m := marker{From: "0.3.7", To: "0.3.8"}
 
-	// Previous maxAttempts The only cumulative number of startups gives the new edition a chance to stand on its own. Steady..
+	// The first maxAttempts starts only count. They give the new binary a chance to stay up.
 	for i := 1; i <= maxAttempts; i++ {
 		action, st := confirmOrRollback(p, m)
 		if action != Continue {
-			t.Fatalf("No. %d A few attempts at expectations Continue,get %v", i, action)
+			t.Fatalf("attempt %d: want Continue, got %v", i, action)
 		}
 		if !st.Pending {
-			t.Errorf("No. %d The second attempt should read Pending", i)
+			t.Errorf("attempt %d should be Pending", i)
 		}
 		got, ok := readMarker(p.Marker)
 		if !ok || got.Attempts != i {
-			t.Fatalf("No. %d After a few attempts attempts=%d(ok=%v),Expectations %d", i, got.Attempts, ok, i)
+			t.Fatalf("after attempt %d: attempts=%d (ok=%v), want %d", i, got.Attempts, ok, i)
 		}
 		m = got
 	}
 
-	// One more trip and you're out of bounds..
+	// One more start exceeds the limit.
 	action, st := confirmOrRollback(p, m)
 	if action != Restart {
-		t.Fatalf("Expectations when exceeded Restart,get %v", action)
+		t.Fatalf("want Restart once the limit is exceeded, got %v", action)
 	}
 	if !st.RolledBack {
-		t.Error("Status should be marked as RolledBack")
+		t.Error("state should be marked RolledBack")
 	}
 	if !strings.Contains(readAll(t, p.Current), "good-old") {
-		t.Fatal("It should be rolling back to the old version.")
+		t.Fatal("should have rolled back to the old version")
 	}
 	if _, err := os.Stat(p.Marker); !os.IsNotExist(err) {
-		t.Error("Back-rolling tags should be cleared, or they'll roll back indefinitely.")
+		t.Error("marker should be cleared after rollback, or it would roll back forever")
 	}
-	// The version that doesn't get up is kept for a check, not deleted..
+	// The binary that would not start is kept for inspection, not deleted.
 	if _, err := os.Stat(p.Current + ".failed"); err != nil {
-		t.Error("The failed version should be retained as .failed For screening.")
+		t.Error("failed version should be kept as .failed for inspection")
 	}
 }
 
@@ -268,7 +268,7 @@ func TestManualRollbackIsReversible(t *testing.T) {
 	fakeBin(t, p.Current, "v2", 0)
 	fakeBin(t, p.Old, "v1", 0)
 
-	// Rollback() Go ResolvePaths(),This is where the syntax of the bottom is directly measured..
+	// Rollback() goes through ResolvePaths(); the swap itself is exercised directly here.
 	tmp := p.Current + ".swap"
 	if err := os.Rename(p.Current, tmp); err != nil {
 		t.Fatal(err)
@@ -280,10 +280,10 @@ func TestManualRollbackIsReversible(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(readAll(t, p.Current), "v1") {
-		t.Error("The current version after rolling back should read v1")
+		t.Error("current version after rollback should be v1")
 	}
 	if !strings.Contains(readAll(t, p.Old), "v2") {
-		t.Error("Backup should become v2,That way we can roll back.")
+		t.Error("backup should become v2, so the rollback itself can be undone")
 	}
 }
 
@@ -292,29 +292,29 @@ func TestParseSums(t *testing.T) {
 		linuxSum = "1111111111111111111111111111111111111111111111111111111111111111"
 		winSum   = "ABCDEF0000000000000000000000000000000000000000000000000000000000"
 	)
-	// sha256sum Output is bispaced;shasum -a 256 Filename given in binary mode Add *.
+	// sha256sum emits two spaces; shasum -a 256 in binary mode prefixes the filename with *.
 	raw := linuxSum + "  artex-0.3.8-linux-amd64.zip\n" +
 		winSum + " *artex-0.3.8-windows-amd64.zip\n" +
 		"\n" +
-		"garbage line\n" + // Just two fields, but the first is not a summary
-		"deadbeef  artex-0.3.8-darwin-arm64.zip\n" // Summary length is not correct
+		"garbage line\n" + // two fields, but the first is not a digest
+		"deadbeef  artex-0.3.8-darwin-arm64.zip\n" // digest is the wrong length
 
 	out := parseSums(raw)
 	if out["artex-0.3.8-linux-amd64.zip"] != linuxSum {
-		t.Errorf("linux Entry parsing error: %v", out)
+		t.Errorf("linux entry parsed wrong: %v", out)
 	}
-	// Summarize lowercases, not miscalculated by case..
+	// Digests are lowercased, so case must not matter.
 	if got := out["artex-0.3.8-windows-amd64.zip"]; got != strings.ToLower(winSum) {
-		t.Errorf("windows Entry Error(* Prefix should be removed, summary should be downwritten): %q", got)
+		t.Errorf("windows entry wrong (* prefix should be stripped and the digest lowercased): %q", got)
 	}
 	if len(out) != 2 {
-		t.Errorf("Empty lines, non-summarized lines and lines of incorrect length should be ignored and obtained %v", out)
+		t.Errorf("blank lines, non-digest lines, and wrong-length lines should be ignored, got %v", out)
 	}
 }
 
 func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("The name in the bag is Windows Top artex.exe,Use this example by Unix Named Structure")
+		t.Skip("the archive name is artex.exe on Windows; this case uses the Unix layout")
 	}
 	dir := t.TempDir()
 	zipPath := filepath.Join(dir, "release.zip")
@@ -324,7 +324,7 @@ func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	zw := zip.NewWriter(f)
-	// Structure of the real release package:artex-<version>-<os>-<arch>/artex,Plus a few jamming files..
+	// Real release layout: artex-<version>-<os>-<arch>/artex, plus a few unrelated files.
 	for name, body := range map[string]string{
 		"artex-0.3.8-linux-amd64/README.md":           "readme",
 		"artex-0.3.8-linux-amd64/skills/a.md":         "skill",
@@ -349,14 +349,14 @@ func TestExtractBinaryFindsNestedEntry(t *testing.T) {
 		t.Fatalf("extractBinary: %v", err)
 	}
 	if got := readAll(t, dst); !strings.Contains(got, "exit 0") {
-		t.Errorf("It's not a relief. artex Executable: %q", got)
+		t.Errorf("extracted file is not the artex executable: %q", got)
 	}
 	info, err := os.Stat(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm()&0o111 == 0 {
-		t.Error("The depressed binary must be accompanied by an execution slot")
+		t.Error("extracted binary must be executable")
 	}
 }
 
@@ -374,39 +374,39 @@ func TestExtractBinaryMissingEntry(t *testing.T) {
 	f.Close()
 
 	if err := extractBinary(zipPath, filepath.Join(dir, "out")); err == nil {
-		t.Fatal("Mistake when there is no enforceable document in the bag")
+		t.Fatal("expected an error when the archive has no executable")
 	}
 }
 
 func TestCheckURLRejectsNonGitHub(t *testing.T) {
 	bad := []string{
-		"http://github.com/x",           // Not HTTPS
-		"https://evil.com/artex.zip",    // Domain names are not on the white list
-		"https://github.com.evil.com/x", // Post-fix disguise
+		"http://github.com/x",           // not HTTPS
+		"https://evil.com/artex.zip",    // host is not on the allowlist
+		"https://github.com.evil.com/x", // suffix disguise
 		"https://raw.githubusercontent.com.evil.com/x",
 	}
 	for _, raw := range bad {
 		u := mustParse(t, raw)
 		if err := checkURL(u); err == nil {
-			t.Errorf("checkURL(%q) It should be rejected.", raw)
+			t.Errorf("checkURL(%q) should be rejected", raw)
 		}
 	}
 	good := []string{
 		"https://api.github.com/repos/x/releases/latest",
 		"https://objects.githubusercontent.com/blah",
-		"https://GitHub.com/x", // Domain Name Case Insensitive
+		"https://GitHub.com/x", // host match is case-insensitive
 	}
 	for _, raw := range good {
 		u := mustParse(t, raw)
 		if err := checkURL(u); err != nil {
-			t.Errorf("checkURL(%q) You should let go, but you're wrong.: %v", raw, err)
+			t.Errorf("checkURL(%q) should be allowed, got %v", raw, err)
 		}
 	}
 }
 
 func TestAssetNameMatchesBuildScript(t *testing.T) {
-	// build.sh of package_binary Yes. artex-<version>-<os>-<arch>.zip,and version number
-	// It's gone. v Prefix. There's one character wrong here. All platform updates will never find an asset..
+	// build.sh package_binary emits artex-<version>-<os>-<arch>.zip with the v
+	// prefix stripped. One wrong character here and no platform will ever find its asset.
 	if got := AssetName("v0.3.8", "linux", "amd64"); got != "artex-0.3.8-linux-amd64.zip" {
 		t.Errorf("AssetName = %q", got)
 	}
@@ -419,7 +419,7 @@ func mustParse(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)
 	if err != nil {
-		t.Fatalf("Analysis %q: %v", raw, err)
+		t.Fatalf("parse %q: %v", raw, err)
 	}
 	return u
 }
@@ -436,15 +436,15 @@ func TestSettleClearsMarkerAndStopsRollback(t *testing.T) {
 	settle(p)
 
 	if _, err := os.Stat(p.Marker); !os.IsNotExist(err) {
-		t.Fatal("Confirm that the post-stabilization upgrade mark must be removed.")
+		t.Fatal("upgrade marker must be removed once the new version is confirmed stable")
 	}
-	// The tags are gone, the next normal reboot will not accumulate and will not trigger the rollback by mistake..
+	// With the marker gone, the next ordinary start neither counts an attempt nor rolls back by mistake.
 	if _, ok := readMarker(p.Marker); ok {
-		t.Error("Tag Read Should Failed")
+		t.Error("reading the marker should fail")
 	}
-	// Keep the backup. Users can roll back manually..
+	// Keep the backup so the user can still roll back manually.
 	if _, err := os.Stat(p.Old); err != nil {
-		t.Error("The previous version of the backup should be retained after stabilization")
+		t.Error("previous-version backup should be kept after the upgrade is confirmed")
 	}
 }
 
@@ -452,8 +452,8 @@ func TestSettleIsNoopWithoutMarker(t *testing.T) {
 	requireUnix(t)
 	p := testPaths(t)
 	fakeBin(t, p.Current, "cur", 0)
-	settle(p) // Normal start path, shouldn't. panic I shouldn't have moved any papers.
+	settle(p) // ordinary start: must not panic and must not touch any files
 	if _, err := os.Stat(p.Current); err != nil {
-		t.Error("When not marked settle No documents should be affected.")
+		t.Error("settle with no marker should not affect any files")
 	}
 }
