@@ -13,8 +13,10 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// assetInterceptCandidates Extract a domain name to insert into the asset entry/IP/URL Candidate string for asset intercept matching.
-// URL of host ♪ will tear out the categories and make ♪[Only URL]Services/End-point assets can also be used by domain names/IP Rules hit..
+// assetInterceptCandidates extracts the domain, IP, and URL candidates from one
+// asset about to be inserted, for asset-intercept matching.
+// A URL's host is split out and classified, so a service or endpoint that
+// carries only a URL can still match a domain or IP rule.
 func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string) {
 	add := func(dst *[]string, s string) {
 		if s = strings.TrimSpace(s); s != "" {
@@ -42,7 +44,7 @@ func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string)
 	return domains, ips, urls
 }
 
-// assetInputLabel Return a short identifier of the asset to be inserted to intercept the description.
+// assetInputLabel returns a short label for an asset about to be inserted, used in intercept messages.
 func assetInputLabel(item assetInputItem) string {
 	typ := strings.TrimSpace(item.Type)
 	var target string
@@ -122,15 +124,16 @@ type assetInputItem struct {
 func (t *ToolSet) insertAssets() actool.CoreTool {
 	return writeTool(
 		"insert_assets",
-		"Batch registration of newly discovered assets, which can be mixed in multiple types at a time(type See enumeration).\n"+
-			"Fields for All Types:root_domain→domain;ip→ip(shall be IPv4/IPv6,Non-host name);subdomain→domain;app→app_name;service(HTTP)→url;service(NotHTTP)→service_name+port(ip/domain At least one.);endpoint→url+method.For the rest of the fields, see the respective notes..\n"+
-			"auth/technologies/params To Add Merge(append),Do not overwrite original value.\n"+
-			"Return:{results:[{index,id,type}], errors:[{index,error}]}",
+		"Register newly discovered assets in a batch. One call may mix several types (see the type enum).\n"+
+			"Required fields by type: root_domain→domain; ip→ip (must be an IPv4 or IPv6 address, not a hostname); subdomain→domain; app→app_name; service (HTTP)→url; service (non-HTTP)→service_name+port (fill at least one of ip or domain); endpoint→url+method. See each field's description for the rest.\n"+
+			"auth, technologies, and params are merged by append and do not overwrite existing values.\n"+
+			"Returns {results:[{index,id,type}], errors:[{index,error}]}",
 		obj(map[string]any{
-			// task_id Not exposed to models:worker Which one? task By process SetTaskID Authority(See handler).
+			// task_id is not exposed to the model: which task a worker belongs to is set
+			// authoritatively by SetTaskID (see the handler).
 			"assets": map[string]any{
 				"type":        "array",
-				"description": "Asset arrays, one asset record for each element",
+				"description": "Asset array; each element is one asset record",
 				"items": obj(map[string]any{
 					"type": map[string]any{
 						"type":        "string",
@@ -138,63 +141,63 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						"description": "Asset type",
 					},
 					// root_domain / subdomain
-					"domain":      str("Root domain name or subdomain name(root_domain/subdomain Required)"),
-					"icp":         str("ICP Record number (optional))"),
-					"record_type": str("DNS Analysis type:A/AAAA/CNAME/MX etc.(subdomain Optional)"),
+					"domain":      str("Root domain or subdomain (required for root_domain and subdomain)"),
+					"icp":         str("ICP filing number (optional)"),
+					"record_type": str("DNS record type: A, AAAA, CNAME, MX, and so on (optional for subdomain)"),
 					"record_value": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "DNS Parsing Value List(subdomain Optional [\"1.2.3.4\",\"2.3.4.5\"])",
+						"description": "DNS record values (optional for subdomain, for example [\"1.2.3.4\",\"2.3.4.5\"])",
 					},
 					// ip
-					"ip": str("IP Address, must be IPv4/IPv6 Address, cannot fill hostname (hostname requested) type=subdomain of domain Field);ip Type to fill;service/endpoint Type to fill in for association IP"),
+					"ip": str("IP address. Must be an IPv4 or IPv6 address, not a hostname (put a hostname in domain with type=subdomain). Required for type=ip. Optional for service and endpoint, where it links an IP."),
 					"bound_domains": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "The IP List of bound domain names(ip Type Optional)",
+						"description": "Domain names bound to this IP (optional for type=ip)",
 					},
 					"open_ports": map[string]any{
 						"type":        "array",
-						"description": "Open Port List(ip Type Optional)",
+						"description": "Open ports (optional for type=ip)",
 						"items": obj(map[string]any{
-							"port":    intp("Port Number"),
-							"service": str("Name of service, e.g. http/ssh/mysql Wait (optional))"),
+							"port":    intp("Port number"),
+							"service": str("Service name, for example http, ssh, or mysql (optional)"),
 						}, "port"),
 					},
 					// app
-					"app_name":    str("Application name(app Type to fill)"),
-					"bundle_id":   str("Bundle ID(app Type Optional)"),
-					"category":    str("Apply classification (optional))"),
-					"description": str("Apply description (optional))"),
-					"app_icp":     str("Application ICP Recording (optional))"),
-					"company_id":  intp("Official enterprise id(app Type Optional;app I can't. scope Auto attribution with visible designation.id By add_company_scope Return)"),
+					"app_name":    str("Application name (required for type=app)"),
+					"bundle_id":   str("Bundle ID (optional for type=app)"),
+					"category":    str("Application category (optional)"),
+					"description": str("Application description (optional)"),
+					"app_icp":     str("Application ICP filing (optional)"),
+					"company_id":  intp("Owning company id (optional for type=app). An app cannot be attributed from scope, so set this explicitly. The id is returned by add_company_scope."),
 					// service (http)
-					"url":         str("Complete URL,Include protocols and ports(HTTP Service must be filled.;service_type Set As http)"),
-					"status_code": intp("HTTP Response status code, for example 200/301/403/404(Optional)"),
+					"url":         str("Full URL, including scheme and port (required for an HTTP service; service_type is set to http)"),
+					"status_code": intp("HTTP status code, for example 200, 301, 403, or 404 (optional)"),
 					"content_length": map[string]any{
 						"type":        "integer",
-						"description": "HTTP Response bytes (optional))",
+						"description": "HTTP response body size in bytes (optional)",
 					},
-					"page_title":   str("Page <title> Contents (optional)"),
-					"favicon_mmh3": str("favicon MMH3 Hash.)"),
+					"page_title":   str("Page <title> text (optional)"),
+					"favicon_mmh3": str("favicon MMH3 hash (optional)"),
 					"technologies": map[string]any{
 						"type":        "array",
 						"items":       map[string]any{"type": "string"},
-						"description": "Fingerprint/List of technology stacks, if [\"Nginx\",\"Vue\",\"Bootstrap\"](Optional)",
+						"description": "Fingerprint or technology list, for example [\"Nginx\",\"Vue\",\"Bootstrap\"] (optional)",
 					},
 					"auth": map[string]any{
 						"type":        "array",
-						"description": "List of authentication information found, each containing type/username/password Parameters (optional, additional not covered))",
+						"description": "Authentication records found. Each entry has fields such as type, username, and password (optional; appended, not overwritten)",
 						"items":       map[string]any{"type": "object"},
 					},
-					// service (other,Not HTTP)
-					"service_name": str("Name of service, e.g. ssh/mysql/redis(service Not HTTP Always.)"),
-					"port":         intp("Port Number(service Not HTTP Always.)"),
+					// service (other, non-HTTP)
+					"service_name": str("Service name, for example ssh, mysql, or redis (required when the service is not HTTP)"),
+					"port":         intp("Port number (required when the service is not HTTP)"),
 					// endpoint
-					"method": str("HTTP Method:GET/POST/PUT/PATCH/DELETE etc.(endpoint Required)"),
+					"method": str("HTTP method: GET, POST, PUT, PATCH, DELETE, and so on (required for endpoint)"),
 					"params": map[string]any{
 						"type":        "array",
-						"description": "Request list of parameters, each containing location(query/body/header/path)/name/value/type(Optional, Add Uncovered)",
+						"description": "Request parameters. Each entry has location (query, body, header, or path), name, value, and type (optional; appended, not overwritten)",
 						"items":       map[string]any{"type": "object"},
 					},
 				}, "type"),
@@ -202,7 +205,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 		}, "assets"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("insert_assets Not enabled: AssetStore Not initialized"), nil
+				return actool.Errorf("insert_assets is not enabled: AssetStore is not initialized"), nil
 			}
 			var a struct {
 				Assets []assetInputItem `json:"assets"`
@@ -210,8 +213,10 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			if err := json.Unmarshal(in, &a); err != nil {
 				return actool.Errorf("invalid input: " + err.Error()), nil
 			}
-			// task_id Valued by program authority(worker: SetTaskID),No model entry accepted——Avoid Model Leaking/Error
-			// As a result, assets were not returned to or misdirected. Caller without task context(auto/pentest/chat)Other t.taskID=0.
+			// task_id is set authoritatively by the program (worker: SetTaskID) and is not
+			// accepted from the model, so a missing or wrong value cannot leave an asset
+			// unassigned or assigned to the wrong task. Callers without a task context
+			// (auto, pentest, chat) have t.taskID=0.
 			taskID := t.taskID
 
 			type result struct {
@@ -227,8 +232,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			var results []result
 			var errs []errEntry
 
-			// Asset gate rules are entered once; reading failure skips the decision (without blocking insertion)).
-			// Interception rules = Global ∪ Task level block;Allow rules = Task level allow.
+			// Load asset-gate rules once. If the read fails, skip the decision and do not block the insert.
+			// Block rules = global ∪ task-level block; allow rules = task-level allow.
 			blockRules, _ := t.as.ListAssetInterceptRules()
 			var allowRules []db.AssetInterceptRule
 			if t.taskID > 0 {
@@ -239,12 +244,13 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			}
 
 			for i, item := range a.Assets {
-				// Asset gates: Interception before permission is granted and rejected assets are prohibited from insertion (jumping) Upsert and subsequent side effects).
+				// Asset gate: block first, then allow. A rejected asset must not be inserted
+				// (skip Upsert and the later side effects).
 				domains, ips, urls := assetInterceptCandidates(item)
 				if d := db.EvaluateAssetGate(blockRules, allowRules, domains, ips, urls); !d.Allowed {
 					errs = append(errs, errEntry{
 						Index: i,
-						Error: fmt.Sprintf("Assets %s %s,Inserting is prohibited", assetInputLabel(item), d.Reason),
+						Error: fmt.Sprintf("asset %s %s; insertion is forbidden", assetInputLabel(item), d.Reason),
 					})
 					continue
 				}
@@ -346,16 +352,20 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						nodeID := t.ownerNode
 						sourceNodeID = &nodeID
 					}
-					summary := "Agent Pass insert_assets Register"
+					summary := "Agent recorded via insert_assets"
 					if t.ownerNode > 0 {
-						summary = fmt.Sprintf("Worker Intention #%d Pass insert_assets Register", t.ownerNode)
+						summary = fmt.Sprintf("Worker intent #%d recorded via insert_assets", t.ownerNode)
 					}
 					_ = t.as.SetTaskAssetSource(taskID, id, "agent", summary, sourceNodeID)
 				}
-				// Auto-test range(source='auto'):Only worker This top-level visible insertion, press this
-				// Type with Conservative Scope;side-effect The derived assets are not here, so they are not blindly expanded..taskID=0 Timeless.
-				// It's not about covering switches.:task_scope It's the mission boundary.(list/Filter benchmarks for queries),
-				// The overlay switch only determines whether to use it as a denominator to calculate the indicator, not whether to accumulate the range itself..
+				// Auto-add to the test scope (source='auto'): only this top-level item a
+				// worker explicitly inserted, using a conservative scope for its type.
+				// Side-effect derived assets do not pass through here, so the scope does
+				// not widen blindly. No-op when taskID=0.
+				// Independent of the coverage switch: task_scope is the task boundary
+				// (the filter baseline for list and query). The coverage switch only
+				// decides whether that boundary is the denominator for metrics, not
+				// whether the scope itself is accumulated.
 				{
 					svcIP := item.ServiceIP
 					if svcIP == "" {
@@ -377,20 +387,20 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 func (t *ToolSet) addCompanyScope() actool.CoreTool {
 	return writeTool(
 		"add_company_scope",
-		"Organisation/IP/CIDR/ICPRecord/Enterprise keyword to join a company[Asset scope]——Domain name, network andICPAssets will be automatically claimed, and keywords will only be providedAgentAs a range hint.\n"+
-			"Company names are unique. Create a new company when needed, or add scope to an existing company.\n"+
-			"scope One line, automatic system recognition: root domain name / URL / Single IP / CIDR Network segment / ICPRecord / Enterprise keyword.\n"+
-			"It must be. reason Description of the basis of attribution(whois/Certificate/ASN etc.).\n"+
-			"Guard: Refuse nudity TLD With a wide band(IPv4Prefix to/16-/32,IPv6Prefix to/32-/128),Illegal practices can be bypassed and errors Return.",
+		"Add a domain, IP, CIDR, ICP filing, or company keyword to a company's asset scope. Domains, networks, and ICP filings automatically claim matching assets. Keywords are only hints for the agent.\n"+
+			"Company names are unique: create the company if it does not exist, or reuse it and merge the scope in if it does.\n"+
+			"scope is one entry per line. Each line is classified as a root domain, URL, single IP, CIDR, ICP filing, or company keyword.\n"+
+			"Always give reason: the basis for attribution (whois, certificate, ASN, and so on).\n"+
+			"Guardrail: bare TLDs and overly wide networks are refused (an IPv4 prefix must be /16 through /32; an IPv6 prefix must be /32 through /128). Invalid lines are skipped and returned in errors.",
 		obj(map[string]any{
-			"company": str("Unique company name"),
-			"scope":   str("Scope of assets, one row: domain name / URL / IP / CIDR / ICPRecord / Enterprise keyword"),
-			"reason":  str("Basis of attribution(Evidence/source),Always fill"),
-			"logo":    str("Company Icon URL(optional; effective on start-up only)"),
+			"company": str("Company name (created if missing, reused if present; names are unique)"),
+			"scope":   str("Asset scope, one entry per line: domain / URL / IP / CIDR / ICP filing / company keyword"),
+			"reason":  str("Basis for attribution (evidence or source). Always fill this in"),
+			"logo":    str("Company icon URL (optional; applied only when the company is created)"),
 		}, "company", "scope"),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.cs == nil {
-				return actool.Errorf("add_company_scope Not enabled: CompanyStore Not initialized"), nil
+				return actool.Errorf("add_company_scope is not enabled: CompanyStore is not initialized"), nil
 			}
 			var a struct {
 				Company string `json:"company"`
@@ -402,11 +412,11 @@ func (t *ToolSet) addCompanyScope() actool.CoreTool {
 				return actool.Errorf(err.Error()), nil
 			}
 			if strings.TrimSpace(a.Company) == "" {
-				return actool.Errorf("company Cannot be empty"), nil
+				return actool.Errorf("company cannot be empty"), nil
 			}
 			companyID, _, err := t.cs.UpsertCompany(a.Company, a.Logo)
 			if err != nil {
-				return actool.Errorf("Create/Failed to get company: " + err.Error()), nil
+				return actool.Errorf("failed to create or look up the company: " + err.Error()), nil
 			}
 			lines := splitLines(a.Scope)
 			added, skipped, invalid, errMsgs := t.cs.AddScope(companyID, lines, a.Reason)
@@ -431,23 +441,23 @@ func (t *ToolSet) addCompanyScope() actool.CoreTool {
 func (t *ToolSet) addTaskScope() actool.CoreTool {
 	return writeTool(
 		"add_task_scope",
-		"Add the test range.[This task]——This is the authorized boundary of this mission and the denominator of the asset-test coverage..\n"+
-			"kind Support:company(The entire company's assets.) / root_domain(Entire root domain, including all sub-areas) / subdomain(Single Accuracy Sublevel) / ip / cidr / icp / keyword.\n"+
-			"Instructions:worker One-on-one, the main opportunity is being systematically encountered.[Automatic]Add Range(Accurate subarea);This tool is used for[Proactive expansion]——Put the whole root field/Entire company included or additionally assigned a sub-area/IP.\n"+
-			"value:company Call the company name or id(The company has to exist.);root_domain/subdomain Domain Name;ip/cidr Pass IP Or a segment;icp/keyword File number or business keyword.\n"+
-			"It must be. reason Statement of basis(Auditable).Multiple entries array.",
+		"Add test scope to this task. This is the task's authorization boundary and the denominator for asset-test coverage.\n"+
+			"kind may be: company (every asset under that company) / root_domain (the whole root domain, including every subdomain) / subdomain (one exact subdomain) / ip / cidr / icp / keyword.\n"+
+			"Hosts a worker encounters are added to scope automatically as exact subdomains. Use this tool to widen scope on purpose: pull in a whole root domain or a whole company, or add a specific subdomain or IP.\n"+
+			"value: for company, the company name or id (the company must already exist); for root_domain or subdomain, the domain; for ip or cidr, the IP or network; for icp or keyword, the filing number or company keyword.\n"+
+			"Always give reason, the auditable basis. Pass several entries in the entries array.",
 		obj(map[string]any{
-			"entries": map[string]any{"type": "array", "description": "Batch:[{kind, value}].kind∈company/root_domain/subdomain/ip/cidr/icp/keyword.", "items": map[string]any{"type": "object"}},
-			"kind":    str("[Single] company / root_domain / subdomain / ip / cidr / icp / keyword"),
-			"value":   str("[Single] Company name orid / Domain name / IP / CIDR / ICP / Keywords"),
-			"reason":  str("Basis for accession(For audit),Always fill"),
+			"entries": map[string]any{"type": "array", "description": "Batch: [{kind, value}]. kind is one of company, root_domain, subdomain, ip, cidr, icp, or keyword.", "items": map[string]any{"type": "object"}},
+			"kind":    str("[single] company / root_domain / subdomain / ip / cidr / icp / keyword"),
+			"value":   str("[single] company name or id / domain / IP / CIDR / ICP / keyword"),
+			"reason":  str("Basis for adding this scope (for audit). Always fill this in"),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("add_task_scope Not enabled: AssetStore Not initialized"), nil
+				return actool.Errorf("add_task_scope is not enabled: AssetStore is not initialized"), nil
 			}
 			if t.taskID <= 0 {
-				return actool.Errorf("add_task_scope Task context required(Current None task)"), nil
+				return actool.Errorf("add_task_scope requires a task context (there is no current task)"), nil
 			}
 			type scopeEntry struct {
 				Kind  string `json:"kind"`
@@ -455,7 +465,7 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 			}
 			var a struct {
 				Entries    []scopeEntry `json:"entries"`
-				scopeEntry              // Single Bar Mode
+				scopeEntry              // single-entry mode
 				Reason     string       `json:"reason"`
 			}
 			_ = json.Unmarshal(in, &a)
@@ -487,20 +497,20 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 func (t *ToolSet) listUntestedAssets() actool.CoreTool {
 	return readTool(
 		"list_untested_assets",
-		"Query[This mandate and its direct link]Assets within the range, not covered by the de facto anchor.).\n"+
-			"Optional Filter by Asset Type:root_domain/subdomain/service/app/endpoint/ip.\n"+
-			"Page:page from 1 from,page_size Default 10.Return {assets:[{id,type,label}], total, page, page_size}.Task context only available.",
+		"List assets in this task and its directly related tasks that are not yet covered by a fact anchor. Related scope is read-only: use it to decide whether you should test more. It does not decide for you.\n"+
+			"Optional type filter: root_domain, subdomain, service, app, endpoint, or ip.\n"+
+			"Pagination: page starts at 1 and page_size defaults to 10. Returns {assets:[{id,type,label}], total, page, page_size}. Available only with a task context.",
 		obj(map[string]any{
-			"type":      str("Asset type filter (optional)):root_domain/subdomain/service/app/endpoint/ip"),
-			"page":      intp("Page number from 1 Start (default) 1)"),
-			"page_size": intp("Number per page (default) 10)"),
+			"type":      str("Optional asset-type filter: root_domain, subdomain, service, app, endpoint, or ip"),
+			"page":      intp("Page number, starting at 1 (default 1)"),
+			"page_size": intp("Page size (default 10)"),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
-				return actool.Errorf("list_untested_assets Not enabled: AssetStore Not initialized"), nil
+				return actool.Errorf("list_untested_assets is not enabled: AssetStore is not initialized"), nil
 			}
 			if t.taskID <= 0 || t.ts == nil {
-				return actool.Errorf("list_untested_assets Task context required"), nil
+				return actool.Errorf("list_untested_assets requires a task context"), nil
 			}
 			var a struct {
 				Type     string `json:"type"`
@@ -530,18 +540,18 @@ func (t *ToolSet) listUntestedAssets() actool.CoreTool {
 func (t *ToolSet) listAssets() actool.CoreTool {
 	return readTool(
 		"list_assets",
-		"Search assets within this task and its direct scope by DSL expression or asset ID. Results are paginated.\n"+
-			"DSL operators: field=value for a case-insensitive partial match, field==value for an exact match, and field!=value for exclusion. Numeric fields support >, >=, <, and <=. Bare words search across fields. Combine expressions with AND, OR, and parentheses; AND has higher precedence. Use the separate type parameter to filter asset types.\n"+
-			"Provide dsl, id, or ids. Unfiltered queries are not allowed.\n"+
-			"Fields: domain, root_domain, ip, url, page_title, icp, service_name, app_name, method, service_type, record_type, technology, port, status_code, and company_id.\n"+
+		"Search the asset store by a DSL expression, or fetch assets directly by id or ids. Results are paginated. Only assets inside this task and its directly related tasks' test scope are returned.\n"+
+			"DSL: field=value is a case-insensitive partial match (ILIKE); field==value is exact; field!=value excludes; numeric fields support >, >=, <, and <=; a bare word is a full-text fuzzy match. Combine with AND and OR (AND has higher precedence) and group with parentheses. Filter asset type with the separate type parameter; do not put type inside the DSL.\n"+
+			"When id and ids are omitted, dsl must be non-empty. An unfiltered query of every asset is not allowed.\n"+
+			"Fields: domain (root, subdomain, or service domain), root_domain, ip, url, page_title, icp, service_name, app_name, method (for example GET or POST), service_type (http or other), record_type (for example A or CNAME), technology (an array: = is partial, == is exact), and the integers port, status_code, and company_id.\n"+
 			"Examples: status_code>=400 AND technology=shiro; (port==80 OR port==443) AND technology=nginx",
 		obj(map[string]any{
-			"dsl":    str("Asset search expression. Required when id and ids are absent."),
-			"type":   str("Optional asset type: root_domain, ip, subdomain, app, service, or endpoint."),
-			"id":     intp("Optional ID of one asset."),
-			"ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Optional IDs of several assets."},
-			"limit":  intp("Maximum number of results. Default: 10."),
-			"offset": intp("Number of results to skip. Default: 0."),
+			"dsl":    str("DSL query. Syntax and fields are in the tool description. Required when id and ids are omitted."),
+			"type":   str("Asset type filter: root_domain, ip, subdomain, app, service, or endpoint. A separate field that can be combined with dsl. type alone is not enough to query; dsl is still required."),
+			"id":     intp("Fetch one asset by id (optional; mutually exclusive with dsl and type)."),
+			"ids":    map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Fetch several assets by id (optional; mutually exclusive with dsl and type)."},
+			"limit":  intp("Maximum number of results. Default 10. Optional."),
+			"offset": intp("Pagination offset. Default 0. Optional."),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.as == nil {
@@ -570,10 +580,10 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 			case a.DSL != "":
 				assets, err = t.as.QueryDSLInScope(a.DSL, a.Type, t.taskID, a.Limit, a.Offset)
 			default:
-				return actool.Errorf("Unsigned id/ids hour dsl Unable to empty: Unconditional search of all assets is not allowed, please provide conditions for searching"), nil
+				return actool.Errorf("when id and ids are omitted, dsl cannot be empty: an unfiltered query of every asset is not allowed; provide a search condition"), nil
 			}
 			if err != nil {
-				return actool.Errorf("DSL Error: " + err.Error()), nil
+				return actool.Errorf("DSL error: " + err.Error()), nil
 			}
 			return jsonResult(map[string]any{
 				"count":  len(assets),
@@ -587,15 +597,14 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 func (t *ToolSet) listCompanies() actool.CoreTool {
 	return readTool(
 		"list_companies",
-		"Listing of assets in the inventory[Enterprise/Company]and scope of its assets(scope)Compared to the number of assets attributed.,"+
-			"Get it company_id(insert_assets Association app,list_assets Press company_id Use while filtering)."+
-			"Optional search Filter by company name(Case sensitive),Free Return All.",
+		"List companies in the asset store, each with its asset scope and the number of attributed assets. Use this to see which companies exist and to obtain company_id (for linking an app in insert_assets, or filtering list_assets by company_id). "+
+			"Optional search filters company names case-insensitively. Leave it empty to return every company.",
 		obj(map[string]any{
-			"search": str("Filter by company name(Optional, Caseless);Free Return All"),
+			"search": str("Case-insensitive filter on company name (optional). Leave empty to return every company"),
 		}),
 		func(_ context.Context, in json.RawMessage) (actool.Result, error) {
 			if t.cs == nil {
-				return actool.Errorf("list_companies Not enabled: CompanyStore Not initialized"), nil
+				return actool.Errorf("list_companies is not enabled: CompanyStore is not initialized"), nil
 			}
 			var a struct {
 				Search string `json:"search"`
@@ -603,7 +612,7 @@ func (t *ToolSet) listCompanies() actool.CoreTool {
 			_ = json.Unmarshal(in, &a)
 			cos, err := t.cs.ListCompanies()
 			if err != nil {
-				return actool.Errorf("Failed to query company: " + err.Error()), nil
+				return actool.Errorf("failed to query companies: " + err.Error()), nil
 			}
 			q := strings.ToLower(strings.TrimSpace(a.Search))
 			type companyOut struct {
@@ -643,20 +652,24 @@ func splitLines(s string) []string {
 // WorkerTools returns the tool set for a work agent.
 func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		// list_findings Reservations: Check this mandate before reporting any gaps and avoid reporting the same..
+		// list_findings stays: before reporting a vulnerability, check this task's
+		// confirmed findings so the same one is not reported twice.
 		t.listFindings(),
 		t.addFinding(), t.recordFact(),
 		// asset management (handlers guard nil store internally).
-		// add_company_scope I won't. worker:Defining the scope of enterprise assets as planning/Master/Auto Duties,worker Only explore..
+		// add_company_scope is not given to the worker: defining company asset scope
+		// belongs to planning, the main agent, or Auto. The worker only explores.
 		t.insertAssets(), t.listAssets(),
-		// Cross work Look back.:worker It can be reused. work Watch and avoid duplication of effort.
-		// search_all_worker_traces:I don't need to know. intent_id,Global hit by keyword;
-		// get_worker_trace:Lock something work Next steps/Search everywhere./Take Full Contents.
+		// Cross-work lookback: a worker may reuse observations from other work and avoid repeating effort.
+		// search_all_worker_traces: no need to know intent_id first; search steps globally by keyword.
+		// get_worker_trace: once a work item is identified, list its steps, search in place, or fetch the full content.
 		t.searchAllWorkerTraces(), t.getWorkerTrace(),
-		// node_detail:worker Get it intent_id/node id Then you can check the full details of the node. Look.).
+		// node_detail: after the worker has an intent_id or node id, it can read that
+		// node's full detail (pairs with the lookback above).
 		t.nodeDetail(),
-		// The following tools remain[I won't.]worker,I'll leave it to you. planner/main(Read context, cross work Rewinding is a planning function.,
-		// worker Only execution and writing back of a single intent.):list_facts / list_companies / list_worker_traces.
+		// The tools below are still NOT given to the worker; they stay with planner/main.
+		// Reading context and reviewing across work is a planning job. The worker only
+		// executes and writes back a single intent: list_facts / list_companies / list_worker_traces.
 	}
 }
 
@@ -666,17 +679,21 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
 		t.expandDigest(), // cold-digest §6.1
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.addHint(), t.addIntent(),
-		// steer_work:A person can be expected to run an article(work)Real time injection of correction instructions (no interruption, no loss of progress)).
+		// steer_work: a person can inject a real-time correction into a running intent
+		// (work) without interrupting it or losing progress.
 		t.steerWorkTool(),
-		// set_goals:A person can add a new ultimate objective to the mission at the time of its operation.).
+		// set_goals: a person can add a new final goal to this task at runtime.
+		// The planner then re-judges whether it is met.
 		t.setGoals(),
-		// set_constraints:You can supplement this task while running/Change Operating Constraints(allow/deny),Constraints planner/worker The Exploration of Borders.
+		// set_constraints: a person can add or change operation constraints (allow/deny)
+		// at runtime, bounding what the planner and workers may explore.
 		t.setConstraints(),
 		// asset management (handlers guard nil store internally)
 		t.insertAssets(), t.addCompanyScope(), t.listAssets(),
 		t.addFinding(), t.recordFact(),
 		t.addTaskScope(),
-		// list_untested_assets:Unscheduled assets under this mandate(Type+Page),Make up your mind..
+		// list_untested_assets: on demand, list untested assets in this task's scope
+		// (type and pagination) and decide whether to test them.
 		t.listUntestedAssets(),
 	}
 }

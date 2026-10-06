@@ -34,18 +34,19 @@ import (
 // independent of the traffic-recording MITM proxy — set it when the search endpoint
 // is only reachable via a VPN/SOCKS proxy. Empty = direct.
 //
-// Attention. deepseek The back end is different from the other three.:DeepSeek No direct search interface,
-// Search exists only in it. Anthropic Compatible messages Internal interface(web_search_20250305 server
-// tool),So each search consumes a model call and the search request is made by DeepSeek Service Delivery——
-// Not by now. Proxy,I don't want to get into traffic..
+// Note: the deepseek backend is different from the other three. DeepSeek has no
+// search API you can call directly. Search exists only inside its Anthropic-compatible
+// messages API (the web_search_20250305 server tool), so each search spends one model
+// call and the search request is sent by the DeepSeek service — not through the local
+// Proxy, and it is not recorded in traffic.
 type WebSearchOpts struct {
 	Enabled   bool
 	Backend   string
 	BraveKey  string
 	TavilyKey string
 	Proxy     string
-	// DeepSeek* From Current Activated LLM Configuration(Only anthropic Formatted DeepSeek Official peer),
-	// Other Organiser LLM Configure Switches.
+	// DeepSeek* comes from the currently active LLM config (official DeepSeek endpoints
+	// in Anthropic format only). There is no separate switch; it follows the LLM config.
 	DeepSeekBaseURL string
 	DeepSeekAPIKey  string
 	DeepSeekModel   string
@@ -224,7 +225,7 @@ func proxyEnv(proxyAddr, caCert string) []string {
 }
 
 // workerDefaultTmpl is the built-in EDITABLE body (section [A]) of the worker system
-// prompt, seeded into agent_prompts. The trafficTool block and the Intermediate output regulations
+// prompt, seeded into agent_prompts. The trafficTool block and the intermediate-artifact output spec
 // are NOT here — they are code-owned and appended by workerSystem after rendering
 // (section [B]/[C]), so editing the DB body can never drop them.
 const workerDefaultTmpl = `You are the worker in an authorized security assessment. Execute the single intent assigned to you, record the result, and stop. Respond in English.
@@ -312,7 +313,7 @@ func intentAssetIDs(intent *db.Node) []int64 {
 }
 
 func renderIntentTask(intent *db.Node) string {
-	return fmt.Sprintf("\n\nAssigned intent (your only task; record results and stop):\n%s\nIntent ID: %d. Pass this ID to record_fact and report_finding.", string(intent.Payload), intent.ID)
+	return fmt.Sprintf("\n\nAssigned intent (your only task this run: do only this one, record facts, and stop when done):\n%s\nIntent ID: %d. Pass this ID when writing back with record_fact or report_finding.", string(intent.Payload), intent.ID)
 }
 
 // renderWorkerGraphOverview folds the global situational snapshot into the worker's
@@ -321,17 +322,18 @@ func renderIntentTask(intent *db.Node) string {
 // purpose is letting the worker read context (existing facts/assets/hints)
 // so it avoids redundant work and doesn't re-derive what others already found.
 func renderWorkerGraphOverview(data map[string]any) string {
-	// coverage It's for planners.[What kind? / Should I extend it?]The signal, with worker[Only what you get.
-	// Don't go after the uncovered spots.]The line of duty is at odds. → from worker Remove from View.data This time. worker
-	// Unique New map,Delete key does not affect planner.
+	// coverage tells the planner which kinds are thinly tested and whether to widen
+	// scope. That conflicts with the worker's job: do only the assigned intent and
+	// do not chase uncovered points. Drop it from the worker view. data is a new map
+	// for this worker, so deleting the key does not affect the planner.
 	delete(data, "coverage")
 	b, err := json.Marshal(data)
 	if err != nil {
 		return "" // fall back silently: the worker just won't have the global context
 	}
-	return "\n\nGlobal exploration overview (read-only context for your assigned intent):\n" +
-		"Review other workers' findings to avoid duplicate work and recognize connections to your intent.\n" +
-		"You may reason broadly about the evidence, but execute only your assigned intent. Record valuable leads outside that intent as facts for the planner to assess.\n" +
+	return "\n\nGlobal exploration overview (read-only; use it to place your assigned intent in the bigger picture):\n" +
+		"This is the current exploration overview for the whole task. Use it for two things: see what others have already found so you do not repeat it, and relate this intent to the global picture while you work it.\n" +
+		"Thinking broadly is useful: while you explore this intent, reason deeply and make connections. The only boundary is that you must not actually execute another intent — that belongs to other workers and is scheduled by the planner. If you notice a valuable lead (a cross-asset connection, a possible entry to another exploitation chain, or a suspicious point at the global level), write it as a fact for the planner. That is important output, not optional. It is better to report one extra lead for the planner to judge than to keep it to yourself.\n" +
 		string(b)
 }
 
@@ -367,25 +369,31 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	}
 	tsx.SetOwnerNode(intent.ID)         // assets this worker discovers anchor to its intent → visible to the task
 	tsx.SetEnrich(enr)                  // async DNS/HTTP auto-completion for assets this worker writes
-	tsx.SetNotifyFinding(notifyFinding) // report_finding Wake up on the spot when you drop in. planner,Take it.[Which one?+finding]
+	tsx.SetNotifyFinding(notifyFinding) // when report_finding is stored, wake the planner immediately with which intent and finding
 	// base = built-in worker tools ∪ host tools (traffic) ∪ default tools (incl. Bash);
 	// then augment with the agent's visible skills/MCP. During the SDK settlement
 	// phase, Bash is hidden via Settlement.DisabledTools (no local gating needed).
 	base := append(tsx.WorkerTools(), w.extraTools...)
-	// worker I don't want to. MultiEdit/Glob/Grep:Document Refinement Edit,Retrieve. Bash(grep/find),
-	// Repress tools and reduce low-value calls. Other SDK Default tool(Read/Write/Edit/LS/Bash/Sleep)As usual..
+	// The worker deliberately does not get MultiEdit, Glob, or Grep: refine a file with
+	// Edit, and search with Bash (grep/find). That narrows the tool surface and cuts
+	// low-value calls. The other SDK defaults (Read/Write/Edit/LS/Bash/Sleep) stay.
 	base = append(base, defaultToolsExcept("MultiEdit", "Glob", "Grep")...)
 	ctx = WithRunInfo(ctx, RunInfo{TaskID: taskID, ExplorationID: explorationID(ts), IntentID: intent.ID})
 	tools, def, cleanup := AugmentTools(ctx, "worker", base)
 	defer cleanup()
 
-	// The intention is... worker of[It's the only responsibility, the whole thing. run Non variable]→ With a start-up order, intended anchoring of target assets.
-	// Original data added together system prompt:system Every time run It's all over again. compaction Press it.,
-	// Long run It's always there. It doesn't depend on running. transcript It's not like history is keeping that message. The price is... system
-	// Mixed per-intent Variability of data, loss of cross-intensity cache reuse; this is deliberate trade-off (intention to lose ratio) token A lot worse.).
-	// With planner[Posture Block user turn]It's intentional.:planner There's no single one. mandate,
-	// worker Yes. Only[Global situation overview]Stay with startup user In the message——It can be downgraded, tolerated. stale,Put it down..
-	// An exclusive working directory of this intent <workDir>/tasks/<taskID>/i<intentID>,Set the side of the engine..
+	// The intent is the worker's only duty and is invariant for the whole run, so it
+	// goes in the system prompt together with the startup instruction and the raw
+	// target assets the intent anchors. system is rebuilt on every run and is never
+	// compacted, so a long run and a resume still have the intent even if transcript
+	// history drops the first message. The cost is that system mixes in per-intent
+	// data and loses cross-intent cache reuse. That tradeoff is deliberate: losing
+	// the intent is much worse than spending tokens.
+	// This diverges from the planner on purpose. The planner produces intents and has
+	// no single mandate, so its situation block stays on the user turn. The worker
+	// has one mandate. Only the global overview stays in the startup user message —
+	// it can be degraded, it can go stale, and compacting it does no harm.
+	// This intent's working directory is <workDir>/tasks/<taskID>/i<intentID>. The engine creates it first.
 	runDir := ensureRunDir(w.workDir, taskID, intent.ID)
 	// The run-wide intent is not the current tool action. Do not forward it or
 	// inherit a parent run's background into the action reviewer.
@@ -393,20 +401,22 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	overview := renderWorkerGraphOverview(tsx.graphOverviewData())
 	sysBody := workerSystem(w.proxyAddr, w.proxyCACert, w.workDir, runDir)
 	if w.wantConstraints() {
-		sysBody += constraintBlock(ts) // Operational constraints(If there is.)Injection system hint,worker Strict compliance with implementation
+		sysBody += constraintBlock(ts) // operation constraints, if any, are injected into the system prompt; the worker must follow them
 	}
-	// Intent Block → Attempted to anchor asset blocks → Commencing command, attach it in order. system End (with constraintBlock Same set of supplementary laws).
+	// Intent block, then the assets the intent anchors, then the startup instruction,
+	// appended to the end of system (same append pattern as constraintBlock).
 	sysBody += renderIntentTask(intent)
 	if as != nil {
 		if ids := intentAssetIDs(intent); len(ids) > 0 {
 			if assets, err := as.GetByIDs(ids); err == nil && len(assets) > 0 {
 				if b, err := json.Marshal(assets); err == nil {
-					sysBody += "\n\nTarget assets referenced by this intent's asset_ids:\n" + string(b)
+					sysBody += "\n\nTarget assets for this intent's asset_ids:\n" + string(b)
 				}
-				// Assets intended to be specifically targeted → Automatically include in task test (and insertAssets Same thing.
-				// Conservative Gravity).upsertTaskScope of ON CONFLICT DO NOTHING + uq_task_scope
-				// Only index ensures that no duplicates are added; run again/It's the same as trying again. no-op.
-				// No more cumulative test range when asset overlay functionality is closed(Factor).
+				// These assets are what the intent explicitly targets, so add them to the
+				// task test scope (same conservative grain as insertAssets).
+				// upsertTaskScope's ON CONFLICT DO NOTHING plus the uq_task_scope unique
+				// index prevents duplicates; a rerun or retry is an idempotent no-op.
+				// When asset coverage is off, do not keep accumulating test scope (the denominator).
 				if coverageEnabled {
 					for _, a := range assets {
 						_ = as.AddAutoScope(taskID, a.Type, a.Domain, a.URL, a.IP)
@@ -415,9 +425,10 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 			}
 		}
 	}
-	sysBody += "\n\nExecute only the assigned intent. Record any new assets, facts, and verified findings, then stop."
+	sysBody += "\n\nStart executing the intent above: do only that, and record only facts, assets, and findings, then stop."
 	system, boundary := deferredSystem(sysBody, def)
-	// Task level deadline(Sutra ctx Injection)Snatchbook. run The Wall Bell Budget + I decided to close the sentence.(See taskclock.go).
+	// The task-level deadline (injected via ctx) clamps this run's wall-clock budget
+	// and chooses the wrap-up wording (see taskclock.go).
 	tc := taskClockFrom(ctx)
 	maxDur, clamped := clampMaxDuration(tc.DeadlineUnix, w.runTimeout)
 	settle := wrapupSettlement("worker", []string{"Bash"})
@@ -432,13 +443,14 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 		DeferredTools:   def.Deferred,
 		UnlockSet:       def.Unlock,
 		PermissionMode:  permission.ModeBypass,
-		// WebFetch Go to the record agent. HTTP With curl Same mark;loading agent CA Make way. MITM
-		// Resigned HTTPS Certificate[Normal check passed.](Not turn off the verification.).proxy It's empty..
+		// WebFetch goes through the recording proxy, so its HTTP is logged like curl.
+		// Loading the proxy CA lets MITM-resigned HTTPS certificates verify normally
+		// (verification is not disabled). An empty proxy means a direct connection.
 		EnableWebFetch: true,
 		WebFetchProxy:  w.proxyAddr,
 		WebFetchCACert: w.proxyCACert,
-		// Network Search(Optional).ddgs No need key;brave-free Required BraveKey;tavily Required TavilyKey.
-		// WebSearchProxy It's an independent export agent.(http/https/socks5),With the traffic recorded MITM Agent is irrelevant; empty is direct.
+		// Optional web search. ddgs needs no key; brave-free needs BraveKey; tavily needs TavilyKey.
+		// WebSearchProxy is a separate egress proxy (http/https/socks5), unrelated to the traffic-recording MITM proxy. Empty means a direct connection.
 		EnableWebSearch:       w.webSearch.Enabled,
 		WebSearchBackend:      w.webSearch.Backend,
 		BraveSearchAPIKey:     w.webSearch.BraveKey,
@@ -447,24 +459,27 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 		DeepSeekSearchAPIKey:  w.webSearch.DeepSeekAPIKey,
 		DeepSeekSearchModel:   w.webSearch.DeepSeekModel,
 		WebSearchProxy:        w.webSearch.Proxy,
-		// Bash Sub-order. HTTP Default Walk Record Agent + Trust it. CA(Tools not needed -x/-k).
+		// Bash child-process HTTP uses the recording proxy and trusts its CA by default (tools need no -x or -k).
 		BashEnv:    proxyEnv(w.proxyAddr, w.proxyCACert),
 		WorkingDir: runDir,
 		MaxTurns:   w.maxTurns, // 0 = unlimited (configurable in agent management)
-		// Wall clock budget,Round boundaries,Don't interrupt.;0 = Unlimited. Task level deadline The clock's coming. min(Self-budget,
-		// Distance deadline Remaining),Jean Ben. run It ends when the mission arrives.(See taskclock.go).
+		// Wall-clock budget, checked at round boundaries, without cutting a round in half.
+		// 0 = unlimited. With a task deadline, clamp to min(own budget, time remaining)
+		// so this run enters wrap-up when the task is due (see taskclock.go).
 		MaxDuration: maxDur,
-		// Hit budget(Round OR Length)→ SDK Run one round to finish(Hide Bash),Write back the identified,Avoid the tail..
-		// clamped(Tasked deadline Cracker.)Used when PromptByReason:Because it's time out.=Mission to Point→Task timeout,
-		// Step=We'll run out of steps in the trap window.→Fall Back per-run Words. Not clamped Keep it pure. per-run.
+		// Hitting the budget (turns OR duration) makes the SDK run one wrap-up round
+		// (Bash hidden) and write back what was already identified, instead of trailing off.
+		// When clamped by the task deadline, PromptByReason is used: a timeout means the
+		// task is due and uses the task-timeout wording; exhausting steps inside the clamped
+		// window falls back to the per-run wording. When not clamped, stay on the pure per-run wording.
 		Settlement: settle,
 		// large tool output spills to cmd-output/ with a head + pointer (SDK tool.Capture);
-		// full output preserved on disk. Cut cap SDK Default(30000 Characters).
+		// full output preserved on disk. The spill cap is the SDK default (30000 characters).
 		ToolOutputDir: cmdOutDir(runDir),
 		Compaction:    compactionConfig(w.compactionWindow()), // long tool-heavy runs stay within the window
-		Todos:         actool.NewTodoStore(),                  // Session-level temporary to-do(TodoWrite),It's for pure planning.
-		NonStreaming:  w.nonStreaming(),                       // The profile Walk when choosing non-stream Provider.Complete
-		MaxTokens:     w.maxTokens(),                          // 0 = No limit,By the server default
+		Todos:         actool.NewTodoStore(),                  // Session-level scratch to-do (TodoWrite), for planning only; discarded when the session ends.
+		NonStreaming:  w.nonStreaming(),                       // When the profile selects non-streaming, the run uses Provider.Complete
+		MaxTokens:     w.maxTokens(),                          // 0 = no cap; the server default applies
 	}
 	if hooks != nil { // typed-nil guard: only set when concrete (avoids harness panic)
 		opts.Hooks = hooks
@@ -480,15 +495,17 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 			emit(r)
 		}
 	}
-	// Intention / Start Command / The intent to anchor the asset is in place. system prompt Release (see above) sysBody assembly).
-	// This one starts. user Messages Only[Global situation overview]——You can downgrade the information..
-	// overview Very rare. marshal When failure is empty, turn back on the start and avoid the first round empty user Message.
+	// The intent, the startup instruction, and the assets the intent anchors are already
+	// in the system prompt (see the sysBody assembly above). This startup user message
+	// carries only the global overview — situational awareness that can be degraded,
+	// and compacting it does no harm. If overview is empty because marshal failed,
+	// fall back to a startup line so the first turn is not an empty user message.
 	input := overview
 	if strings.TrimSpace(input) == "" {
-		input = "Execute the intent in the system prompt. Record its results, then stop."
+		input = "Start executing the intent assigned in the system prompt: do only that, and record only facts, assets, and findings, then stop."
 	}
 
-	// Experimental features:Open by noa Take over context compression(Archive concentrated. <workDir>/noa/<SessionID> Down,Durable).
+	// Experimental: when enabled, noa takes over context compression (archives live under <workDir>/noa/<SessionID> and persist).
 	noaSession := WorkerSessionID(ts.ID(), intent.ID)
 	enableNoa(&opts, w.noaEnabledFn, w.workDir, noaSession, noaWarn(noaSession))
 	ctx = attachSideCapture(ctx, &opts)

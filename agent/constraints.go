@@ -35,15 +35,15 @@ func constraintBlock(ts *db.ExplorationStore) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("\n\n[Task operation constraints. Apply these to every proposed direction and action.]")
+	b.WriteString("\n\n[Operation constraints (highest priority; they override every exploration and scope-expansion heuristic below. Before generating any intent or taking any action, check that you would not violate them. If you would, do not proceed.)]:")
 	if len(allow) > 0 {
-		b.WriteString("\nAllowed Operations:\n")
+		b.WriteString("\nAllowed operations:\n")
 		b.WriteString(strings.Join(allow, "\n"))
 	}
 	if len(deny) > 0 {
-		b.WriteString("\nProhibited Operations:\n")
+		b.WriteString("\nProhibited operations:\n")
 		b.WriteString(strings.Join(deny, "\n"))
 	}
-	b.WriteString("\nNewly discovered targets and ports remain outside the approved scope unless explicitly included above. Record them as out-of-scope observations without acting on them.")
+	b.WriteString("\n(Discovering a new target, port, or host outside these constraints is not authorization. Unless it falls inside the allowed scope above, record it as an out-of-scope fact and skip it. Do not derive an intent for it or act on it.)")
 	return b.String()
 }

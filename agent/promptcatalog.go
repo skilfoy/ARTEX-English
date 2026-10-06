@@ -1,11 +1,14 @@
 package agent
 
-// This document contains agent of[Default hint body](section [A]) It turns into a listable, serviceable, etc.
-// Seeding agent_prompts Table of contents —— Mirror toolcatalog.go of BuiltinToolSeeds().
+// This file turns each built-in agent's default prompt body (section [A]) into a
+// catalog the server can enumerate and idempotently seed into the agent_prompts
+// table — the mirror of BuiltinToolSeeds() in toolcatalog.go.
 //
-// Include only[Editable body]:section [B] trafficTool Paragraph [C] The intermediate output protocol is code-fixed.
-// Injection(See worker.go of workerTrafficBlock/artifactSpec),No library, no editing, therefore
-// Not in the seed. Feed text Go Templates in place({{.Goal}} etc.),Fill in running-period variables when rendering.
+// Only the editable body is included. Section [B] trafficTool and section [C] the
+// intermediate-artifact output spec are injected by code (workerTrafficBlock and
+// artifactSpec in worker.go). They are not stored, not editable, and therefore not
+// in the seed. Seed text uses Go template placeholders ({{.Goal}} and the rest),
+// filled with runtime variables when rendered.
 
 // autoDefaultTmpl is the built-in "Auto" platform-operator agent's prompt. Auto
 // runs via the chat page and drives the platform through tools: task ops
@@ -36,7 +39,7 @@ Compare verified results with the task goals. Stop active testing on a wrap-up s
 // agents — they have no per-key in-code default. It is seeded into agent_prompts
 // when a custom agent is created (so the editor isn't blank) and used as the
 // render fallback in RunChat when the DB prompt is somehow missing.
-const DefaultAssistantPrompt = `You are a helpful AI assistant. Please answer user questions in concise and accurate English; use available tools when needed to complete the task. Only do what users ask for and don]t make up information.`
+const DefaultAssistantPrompt = `You are a helpful AI assistant. Please answer user questions in concise and accurate English; use available tools when needed to complete the task. Only do what users ask for and don't make up information.`
 
 // ReporterDefaultPrompt is the seeded prompt for the "Report writing"(reporter) custom
 // agent — triggered when report_finding fires. It gathers the finding's full

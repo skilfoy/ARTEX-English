@@ -78,7 +78,7 @@ func (c *ChatAgent) SetGuard(g *guard.Guard) { c.guard = g }
 // agent's system prompt. Mirrors artifactSpec but without pentest-specific
 // wording ("payload", "Capture Response") that would be odd in a general assistant.
 func chatWorkDirSpec(workDir string) string {
-	return "\n\n**File Output Statute**:If you need to write a file, write to the work directory " + workDir + "(This is the default. CWD,This is where the relative path is, and it can be used.)——Don't write. /tmp or other absolute path."
+	return "\n\n**File output**: When you need to write a file, write it in the working directory " + workDir + " (this is the default CWD; a relative path lands here, and you may also use this absolute path). Do not write to /tmp or any other absolute path."
 }
 
 // chatSystem renders the DB-managed prompt body for agentKey. Custom agents have
@@ -132,11 +132,11 @@ func (c *ChatAgent) Chat(ctx context.Context, agentKey, sessionID, message strin
 		DeferredTools:   def.Deferred,
 		UnlockSet:       def.Unlock,
 		PermissionMode:  permission.ModeBypass,
-		EnableWebFetch:  true, // Walking records agent leaves marks;loading agent CA Verification MITM Resigned HTTPS Certificate
+		EnableWebFetch:  true, // WebFetch goes through the recording proxy and is logged like curl; the proxy CA lets MITM-resigned HTTPS certificates verify normally
 		WebFetchProxy:   c.proxyAddr,
 		WebFetchCACert:  c.proxyCACert,
-		// Network Search(Optional).ddgs No need key;brave-free Required BraveKey;tavily Required TavilyKey.
-		// WebSearchProxy It's an independent export agent.(http/https/socks5),With the traffic recorded MITM Agent is irrelevant; empty is direct.
+		// Optional web search. ddgs needs no key; brave-free needs BraveKey; tavily needs TavilyKey.
+		// WebSearchProxy is a separate egress proxy (http/https/socks5), unrelated to the traffic-recording MITM proxy. Empty means a direct connection.
 		EnableWebSearch:       ws.Enabled,
 		WebSearchBackend:      ws.Backend,
 		BraveSearchAPIKey:     ws.BraveKey,
@@ -145,20 +145,21 @@ func (c *ChatAgent) Chat(ctx context.Context, agentKey, sessionID, message strin
 		DeepSeekSearchAPIKey:  ws.DeepSeekAPIKey,
 		DeepSeekSearchModel:   ws.DeepSeekModel,
 		WebSearchProxy:        ws.Proxy,
-		BashEnv:               proxyEnv(c.proxyAddr, c.proxyCACert), // Bash Sub-order default proxy+Trust CA
+		BashEnv:               proxyEnv(c.proxyAddr, c.proxyCACert), // Bash child processes use the recording proxy by default and trust its CA
 		WorkingDir:            sessionWorkDir,
 		MaxTurns:              maxTurns,
 		MaxDuration:           maxDuration,
 		Compaction:            compactionConfig(c.window),
 		Todos:                 actool.NewTodoStore(),
 		// large tool output spills to cmd-output/ under the session dir.
-		// Cut cap SDK Default(tool.Capture of 30000 Characters).
+		// The spill cap is the SDK default (tool.Capture, 30000 characters).
 		ToolOutputDir: filepath.Join(sessionWorkDir, "cmd-output"),
-		// Hit budget(Steps)→ SDK End of the run.:Output sentence summary.Prompt And the number of tailing wheels, in book form agent key Editable backstage
-		// (Customized agent One each.;Leave blank/0 Use General Default:10 wheel).
+		// Hitting the step budget makes the SDK run wrap-up and emit a one-line summary.
+		// The prompt and wrap-up turn count are editable per agent key in the admin UI
+		// (each custom agent has its own; blank or 0 uses the shared default of 10 turns).
 		Settlement:   wrapupSettlement(agentKey, nil),
-		NonStreaming: c.nonStreaming(), // The profile Walk when choosing non-stream Provider.Complete
-		MaxTokens:    c.maxTokens(),    // 0 = No limit,By the server default
+		NonStreaming: c.nonStreaming(), // When the profile selects non-streaming, the run uses Provider.Complete
+		MaxTokens:    c.maxTokens(),    // 0 = no cap; the server default applies
 	}
 	if c.guard != nil {
 		opts.Hooks = c.guard.Hooks()
@@ -167,7 +168,7 @@ func (c *ChatAgent) Chat(ctx context.Context, agentKey, sessionID, message strin
 		opts.Transcript = c.tx
 		opts.SessionID = sessionID
 	}
-	// Experimental features:Open by noa Take over context compression(Archive concentrated. <workDir>/noa/<SessionID> Down,Durable).
+	// Experimental: when enabled, noa takes over context compression (archives live under <workDir>/noa/<SessionID> and persist).
 	enableNoa(&opts, c.noaEnabledFn, c.workDir, "chat-"+sessionID, noaWarn("chat-"+sessionID))
 	ctx = attachSideCapture(ctx, &opts)
 	s := agentcore.NewSession(opts)

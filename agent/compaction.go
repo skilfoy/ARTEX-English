@@ -80,17 +80,19 @@ func (c *Compactor) OnPlannerRound(ctx context.Context, ts *db.ExplorationStore)
 		return
 	}
 	if !c.tryStart(ts.ID()) {
-		return // already running, or within cooldown —It's the same as the rest of the world.
+		return // already running, or within cooldown — derived state converges eventually; compress again next round
 	}
 	go func() {
 		defer c.finish(ts.ID())
 		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.maxDur)
 		defer cancel()
-		// Compression is naked. provider Call(compress Straight in. prov.Complete),No way. agentcore
-		// session cycle, so ctx No, not at all. session id;Press session-id Header prompt cache/Sticky
-		// Route gateway(opencode zen Missing x-opencode-session Direct 400)I can't get it..
-		// Here's one that's stable by exploration. id:All the condensed requests from the same exploration share it, both with a head.,
-		// Also llmrec We can get this call. token Attribution back to the exploration.).
+		// Compression is a bare provider call (compress calls prov.Complete directly) and
+		// does not go through the agentcore session loop, so ctx has no session id.
+		// Gateways that cache prompts or stick routes on a session-id header (opencode zen
+		// returns 400 when x-opencode-session is missing) never see that header.
+		// Attach an id that is stable per exploration: every compression request for the
+		// same exploration shares it, so the header is present and llmrec can attribute
+		// this call's tokens back to the exploration (previously they were not recorded).
 		bg = transcript.WithSessionID(bg, fmt.Sprintf("exp%d-compactor", ts.ID()))
 		if needMajor {
 			c.major(bg, ts)
@@ -188,7 +190,7 @@ func (c *Compactor) minor(ctx context.Context, ts *db.ExplorationStore) {
 }
 
 // major re-derives the whole grouping from source over ALL eligible-cold nodes
-// (§5.1 Return pressure), then reconciles against the active digests by signature:
+// (§5.1 recompress from source), then reconciles against the active digests by signature:
 // unchanged blocks keep their digest (no LLM), stale digests are superseded, and
 // new/changed blocks are compressed afresh. This is where tiered fragments of one
 // direction merge and where "later became connected" blocks unify (§5.2).

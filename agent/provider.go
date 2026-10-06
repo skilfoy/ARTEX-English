@@ -45,56 +45,62 @@ type Config struct {
 	// ContextWindowK is the model's context window in K tokens (user-configured),
 	// used to size compaction thresholds. 0 = default; see CompactionWindow.
 	ContextWindowK int
-	// ThinkingType Independent control thinking.[Switch]Field(thinking.type):
-	//   "" = Do not send(Default,Compatible models that do not support the field); "disabled" = Active Close;
-	//   "enabled" = Open. With ReasoningEffort Complete decoupling——Some interfaces are not available thinking Field,
-	//   Only strength parameters can activate thinking.,So the two can be set separately..
+	// ThinkingType independently controls the thinking on/off field (thinking.type):
+	//   "" = do not send (default; compatible with models that lack the field); "disabled" = explicitly off;
+	//   "enabled" = on. Fully decoupled from ReasoningEffort — some APIs have no thinking
+	//   field and activate thinking from the effort parameter alone, so the two can be set separately.
 	ThinkingType string
-	// ReasoningEffort Independent control thinking.[Strength]Field:
-	//   "" = Do not send(Default); "low"/"medium"/"high"/"xhigh"/"max" = Correlation intensity.
-	//   OpenAI Map to Top reasoning_effort;Anthropic Map to output_config.effort.
+	// ReasoningEffort independently controls the thinking effort field:
+	//   "" = do not send (default); "low"/"medium"/"high"/"xhigh"/"max" = that effort.
+	//   OpenAI maps this to top-level reasoning_effort; Anthropic maps it to output_config.effort.
 	ReasoningEffort string
-	// Stream Control the profile Whether to use current(SSE)Interface.true(Default)= Streaming;false = True·
-	// Non-streaming(Fa stream:false,One-time complete. JSON,Go Provider.Complete).Non-streamable bypasses
-	// Some gateways are bad. SSE Achieved(Empty frame, think field drop frame),At the cost of losing real-time progress on the run/Real time
-	// token Count. Map to agentcore.Options.NonStreaming = !Stream.
+	// Stream controls whether this profile uses the streaming (SSE) API. true (default) = streaming;
+	// false = truly non-streaming (send stream:false, receive one complete JSON, via Provider.Complete).
+	// Non-streaming can avoid a gateway's broken SSE implementation (empty frames, dropped thinking
+	// fields) at the cost of live progress and live token counts. Maps to agentcore.Options.NonStreaming = !Stream.
 	Stream bool
-	// MaxTokens is the output limit for a single reply(token).0 = Do not send the field,By the server default
-	// (Historical behaviour).With ContextWindowK Different.:The latter is the total model capacity.,Only locally used to calculate compression thresholds,
-	// Not in the request.;This value is issued with each request. Map to agentcore.Options.MaxTokens.
+	// MaxTokens is the output cap for a single reply, in tokens. 0 = do not send the field; the
+	// server default applies (historical behavior). Unlike ContextWindowK, which is the model's
+	// total capacity and is used only locally to compute compaction thresholds and is not sent
+	// on the request, this value is sent with every request. Maps to agentcore.Options.MaxTokens.
 	MaxTokens int
-	// MaxTokensField Choose MaxTokens Which requested field name,Only for format=openai Effective:
-	//   "" = max_tokens(Default); "max_completion_tokens" = New field.
-	// OpenAI Logic Model(o Series/GPT-5)Only the latter.,Received max_tokens Will report directly
-	// unsupported_parameter;And most compatible gateways only recognize the former.,So I don't make automatic inferences.,Send to user by endpoint.
+	// MaxTokensField chooses which request field carries MaxTokens. Only format=openai:
+	//   "" = max_tokens (default); "max_completion_tokens" = the newer field.
+	// OpenAI reasoning models (o-series / GPT-5) accept only the latter and reject max_tokens
+	// with unsupported_parameter. Most compatible gateways accept only the former, so this is
+	// not inferred; the user picks it per endpoint.
 	MaxTokensField string
-	// SessionHeaderKey,Non-empty hours,Let each time LLM Request to bring a custom HTTP head,Headname Value,
-	// Header value is[of the current session session id](chat session=conv-<id>,worker=exp<x>-worker-i<intent>
-	// etc.,See WorkerSessionID).For some presses session-id Header prompt cache/Gateway for sticky routing.
-	// Empty = Don't send. Value by transcript.WithSessionID Hang on request context on,By RoundTripper
-	// Read Fill,So share the same. provider It'll give you a different head value by session..
+	// SessionHeaderKey, when non-empty, adds a custom HTTP header to every LLM request. The
+	// header name is this value and the header value is the current session id (chat = conv-<id>,
+	// worker = exp<x>-worker-i<intent>, and so on; see WorkerSessionID). Used by gateways that
+	// key prompt cache or sticky routing on a session-id header.
+	// Empty = do not send. The value is attached to the request context by transcript.WithSessionID
+	// and filled in by the RoundTripper, so one shared provider can still send a different header per session.
 	SessionHeaderKey string
-	// Retry is the re-test parameter after the profile(profile override → Global strategy → Internal Default,By
-	// server Side Resolution).See you on the third floor. RetryConfig;zero value = Full use of built-in defaults.
+	// Retry is the resolved retry configuration for this profile (profile override → global
+	// policy → built-in default, resolved on the server side). See RetryConfig for the three
+	// layers. The zero value means use the built-in defaults entirely.
 	Retry RetryConfig
 }
 
-// RetryConfig Yes. LLM Configures the retry parameters for walking. Every floor.[Number of times]Unified semantics:
-// 0 = Use internal default number;Negative = Close this layer and try again;>0 = Use that value. Every floor.[interval]:
-// 0 = Use the original index of the layer to retreat.;>0 = Use this fixed interval..
+// RetryConfig is the retry configuration that travels with one LLM profile. For each layer,
+// attempt count means: 0 = built-in default count; negative = disable that layer; >0 = use
+// this count. Interval means: 0 = that layer's original exponential backoff; >0 = this fixed interval.
 type RetryConfig struct {
-	// ConnectAttempts/ConnectInterval:SDK Retry establishing connection(Connection reset/Timeout/429/5xx,Before the stream starts),
-	// Map directly to llm.Config.MaxRetries / RetryInterval.Default 3 times,0.5s Start index(Top 8s).
+	// ConnectAttempts/ConnectInterval: SDK connection retries (reset, timeout, 429, 5xx,
+	// before the stream starts). Mapped directly to llm.Config.MaxRetries / RetryInterval.
+	// Default 3 attempts, exponential from 0.5s, capped at 8s.
 	ConnectAttempts int
 	ConnectInterval time.Duration
-	// EmptyAttempts/EmptyInterval:SDK Retry with empty response(Completed but none content block,Only openai
-	// Format),Map to llm.Config.EmptyResponseRetries / EmptyResponseInterval.
-	// Default 2 Second, same gradient.
+	// EmptyAttempts/EmptyInterval: SDK empty-response retries (completed with no content
+	// block; OpenAI format only). Mapped to llm.Config.EmptyResponseRetries / EmptyResponseInterval.
+	// Default 2 attempts, same exponential schedule.
 	EmptyAttempts int
 	EmptyInterval time.Duration
-	// StreamAttempts/StreamInterval:Same provider Safe window retry——Here's the project. SDK It's on top.
-	// First floor,Only in[No output to caller yet.]Time out./Overload/Fluent 429.SDK Can't see it.,
-	// By server/task_llm.go Consumption. Default 2 times,0.5s Start index(Top 4s).
+	// StreamAttempts/StreamInterval: same-provider safe-window retry — a layer this project
+	// adds above the SDK. It replays a dropped stream, overload, or in-stream 429 only when
+	// nothing has been delivered to the caller yet. The SDK does not see it; server/task_llm.go
+	// consumes it. Default 2 attempts, exponential from 0.5s, capped at 4s.
 	StreamAttempts int
 	StreamInterval time.Duration
 }
@@ -265,14 +271,15 @@ func (c Config) NewProvider() (llm.Provider, error) {
 		Model:      c.Model,
 		HTTPClient: client,
 	}
-	// Think twice about the switch and the strength.(Empty = This field is not sent).The two are decorated.:
-	// But it's only going. thinking.type,Only effort,All or nothing..
+	// Thinking on/off and effort are passed through independently (empty = do not send that field).
+	// They are decoupled: send only thinking.type, only effort, both, or neither.
 	lc.ThinkingType = c.ThinkingType
 	lc.ReasoningEffort = c.ReasoningEffort
-	// Output limit field name selection(Empty = Use max_tokens).Upper limit[Value]It's not here.:It follows every wheel.
-	// agentcore.Options.MaxTokens Go,provider Just decide which key to stick it in..
+	// Which field name carries the output cap (empty = max_tokens). The cap's value is not
+	// set here: each turn sends agentcore.Options.MaxTokens, and the provider only chooses the key.
 	lc.MaxTokensField = c.MaxTokensField
-	// Retry Parameters and SDK Same semantics(Number of times 0=Default/Negative=Close,interval 0=Index Refuse/>0=Fixed),As it is..
+	// Retry parameters use the same semantics as the SDK (count 0 = default, negative = off;
+	// interval 0 = exponential backoff, >0 = fixed) and are passed through as-is.
 	lc.MaxRetries = c.Retry.ConnectAttempts
 	lc.RetryInterval = c.Retry.ConnectInterval
 	lc.EmptyResponseRetries = c.Retry.EmptyAttempts
@@ -401,7 +408,7 @@ func quotaAwareHTTPClient(proxy, sessionHeaderKey string) (*http.Client, error) 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	proxy = strings.TrimSpace(proxy)
 	if proxy == "" {
-		transport.Proxy = nil // Leave blank=Direct connection,No retreat. HTTP_PROXY/HTTPS_PROXY Environmental variables
+		transport.Proxy = nil // empty = direct connection; do not fall back to HTTP_PROXY or HTTPS_PROXY
 	} else {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
@@ -427,7 +434,7 @@ func quotaAwareHTTPClient(proxy, sessionHeaderKey string) (*http.Client, error) 
 func logTestConnection(c Config, capt *llmrec.Capture) {
 	attempts := capt.Attempts()
 	if len(attempts) == 0 {
-		log.Printf("[llm-test] %s / %s @ %s — No dispatch HTTP Request(Configure parsing or networking failed)",
+		log.Printf("[llm-test] %s / %s @ %s — no HTTP request was sent (config parsing or connecting failed before a request)",
 			c.Provider(), c.Model, c.BaseURL)
 		return
 	}
@@ -442,11 +449,11 @@ func logTestConnection(c Config, capt *llmrec.Capture) {
 func clipBody(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "(Empty)"
+		return "(empty)"
 	}
 	const max = 4096
 	if len(s) > max {
-		return s[:max] + fmt.Sprintf("…(Cut,Total %d Bytes)", len(s))
+		return s[:max] + fmt.Sprintf("...(truncated, %d bytes total)", len(s))
 	}
 	return s
 }
@@ -461,41 +468,46 @@ func TestConnection(ctx context.Context, c Config) (time.Duration, string, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	// Capture Original wire Information:The most important thing to see from the connection test is what's back on the gateway.(Status code+Response),
-	// And norma Decode the response. StreamEvent And then all of this went away..quotaAwareTransport Yes.
-	// context Lee found this. Capture & Fill in every time HTTP Try the status code with body.
+	// Capture the raw wire exchange. A connection test most needs to see what the gateway
+	// actually returned (status code and body). norma decodes the response into StreamEvents
+	// and that raw detail is gone afterward. quotaAwareTransport finds this Capture on the
+	// context and fills in the status code and body of each HTTP attempt.
 	ctx, capt := llmrec.NewCapture(ctx)
 	defer logTestConnection(c, capt)
-	// Connection testing is a single-shot path.,No way. agentcore Session Cycle,That's why nobody's coming. context Top
-	// session id.Match. SessionHeaderKey Peer(As opencode zen Force Requirements
-	// x-opencode-session head,It's missing. 400 MissingSessionID),This could lead to..."Dialogue normal.,
-	// Click on the test but... 400"The difference. A one-time random patch here. session id,Let the test go with the real conversation.
-	// A head start logic.;Not matched SessionHeaderKey The endpoint does not read it,No side effects.
+	// A connection test is a one-shot path and does not go through the agentcore session
+	// loop, so nothing puts a session id on the context. Endpoints configured with
+	// SessionHeaderKey (for example opencode zen, which requires x-opencode-session and
+	// returns 400 MissingSessionID when it is missing) then show "chat works, but Test
+	// returns 400". Attach a one-time random session id here so the test uses the same
+	// header logic as a real conversation. Endpoints without SessionHeaderKey ignore it.
 	ctx = transcript.WithSessionID(ctx, "conntest-"+transcript.NewSessionID())
 	start := time.Now()
-	// MaxTokens To give enough: the reasoning model(As deepseek-v4-pro)You'll have a big part of it before you give an answer.
-	// Thinking(It's true. "ping" It can burn. ~2900 token).If only 32,The model will be stuck."Thinking phase"
-	// I hit the output limit.(finish=length),Cut off.,The connection test is still working.(err=nil)But show it as
-	// "Interrupted/length/resume" What a mess. Give the budget enough to make it work. OK Clean out.(finish=stop).
-	// EscalateMaxTokens Hold false:Do not try again because of cut-off.,Avoid resume Cyclical fire.
+	// MaxTokens must be large enough. A reasoning model (for example deepseek-v4-pro) emits
+	// a long thinking trace before the answer (a measured "ping" can burn ~2900 tokens).
+	// With only 32 the model stays in the thinking phase until it hits the output cap
+	// (finish=length) and is truncated. The test still "succeeds" (err=nil) but displays
+	// as a mess of interrupted/length/resume. Give enough budget for a clean OK (finish=stop).
+	// EscalateMaxTokens stays false: do not raise the cap and retry on truncation, or a
+	// resume loop burns tokens for nothing.
 	reply, err := agentcore.Run(ctx, agentcore.Options{
 		Provider:       prov,
-		SystemPrompt:   []string{"You're a connection test. Directly output two characters OK All right, don't think, don't explain, don't say anything else.."},
+		SystemPrompt:   []string{"You are a connection test. Output exactly the two characters OK. Do not think, explain, or say anything else."},
 		PermissionMode: acperm.ModeBypass,
 		MaxTurns:       1,
 		MaxTokens:      8192,
-		NonStreaming:   !c.Stream, // Use it. profile The real mode of incoming and outgoing is the connection test.
+		NonStreaming:   !c.Stream, // Test the connection in this profile's real streaming mode.
 	}, "ping")
 	lat := time.Since(start)
 	if err != nil {
 		return lat, "", err
 	}
-	// err==nil It's not enough: the request came through, but the model didn't spit.(Think about burning up the budget.,
-	// The text was swallowed up by the security strategy. content I lost it.).This configuration is in the session."No answer.",
-	// The test was successful.——It is the gap that this subparagraph is about to close. You fail without the text..
+	// err==nil is not enough. The request can succeed while the model emits no text
+	// (thinking burns the budget, a safety policy swallows the body, or a compatibility
+	// layer drops content). That configuration would not answer in a real session, yet
+	// the test would report success — the gap this check closes. No visible text is a failure.
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
-		return lat, "", fmt.Errorf("Model does not reply to content (request is passed but no text is returned)")
+		return lat, "", fmt.Errorf("model returned no content (the request succeeded, but no text was returned)")
 	}
 	return lat, reply, nil
 }
