@@ -23,14 +23,14 @@ func bulkRecord(tr *Traffic, host string, n, size int) {
 func TestNewIndexEnablesIncrementalVacuum(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.incrementalVacuum {
-		t.Fatal("New Index Library Unenabled incremental recovery")
+		t.Fatal("a new index should enable incremental vacuum")
 	}
 	var mode int
 	if err := tr.DB().QueryRow(`PRAGMA auto_vacuum`).Scan(&mode); err != nil {
 		t.Fatal(err)
 	}
 	if mode != autoVacuumIncremental {
-		t.Fatalf("auto_vacuum=%d,For %d", mode, autoVacuumIncremental)
+		t.Fatalf("auto_vacuum=%d, want %d", mode, autoVacuumIncremental)
 	}
 }
 
@@ -45,17 +45,17 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 	bulkRecord(tr, host, 30, 200*1024)
 	grown := tr.indexBytes()
 	if grown < 5<<20 {
-		t.Fatalf("Index only %d Bytes. Samples are not sufficient to verify recovery", grown)
+		t.Fatalf("index is only %d bytes; not enough data to verify reclamation", grown)
 	}
 
 	if n, err := tr.DeleteHostsExact([]string{host}); err != nil || n != 30 {
-		t.Fatalf("DeleteHostsExact=(%d,%v),For (30,nil)", n, err)
+		t.Fatalf("DeleteHostsExact=(%d,%v), want (30,nil)", n, err)
 	}
-	tr.reaping.Wait() // Recycle in backstage segment
+	tr.reaping.Wait() // wait for background reclamation
 
 	after := tr.indexBytes()
 	if after > grown/4 {
-		t.Fatalf("The index after deletion still stands %d Bytes (before delete) %d),Space is not returned to file system", after, grown)
+		t.Fatalf("index after deletion is still %d bytes (was %d); space was not returned to the filesystem", after, grown)
 	}
 	// A handful of pages incremental_vacuum could not move to the end of the file
 	// is a normal residual; the ~1500 that the deletion freed must be gone.
@@ -64,7 +64,7 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 		t.Fatal(err)
 	}
 	if free > 64 {
-		t.Fatalf("Still. %d Free Page Unrecovered", free)
+		t.Fatalf("still %d free pages unreclaimed", free)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestDeleteReclaimsIndexSpace(t *testing.T) {
 func TestReclaimMergesFTSTombstones(t *testing.T) {
 	tr, _ := openTraffic(t)
 	if !tr.fts {
-		t.Skip("Driver Not Enabled FTS5")
+		t.Skip("driver was not built with FTS5")
 	}
 	// Deleted in batches, which is what leaves tombstones spread over many
 	// segments rather than emptying the index in one shot.
@@ -98,11 +98,11 @@ func TestReclaimMergesFTSTombstones(t *testing.T) {
 		t.Fatal(err)
 	}
 	if exchanges != 0 {
-		t.Fatalf("There's nothing left. %d traffic", exchanges)
+		t.Fatalf("expected no exchanges left, found %d", exchanges)
 	}
 	// A fully merged, empty contentless index keeps only its structure rows.
 	if segments > 8 {
-		t.Fatalf("Full Text Index Residues %d Line Data,tombstone Not consolidated", segments)
+		t.Fatalf("full-text index still has %d segment rows; tombstones were not merged", segments)
 	}
 }
 
@@ -134,15 +134,15 @@ func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 	}
 	t.Cleanup(func() { tr.Close() })
 	if tr.incrementalVacuum {
-		t.Fatal("The old library should not report the use of incremental recovery")
+		t.Fatal("a legacy database must not report incremental vacuum")
 	}
 
 	const host = "legacy.example.com"
 	bulkRecord(tr, host, 8, 200*1024)
 	if n, err := tr.DeleteHostsExact([]string{host}); err != nil || n != 8 {
-		t.Fatalf("DeleteHostsExact=(%d,%v),For (8,nil)", n, err)
+		t.Fatalf("DeleteHostsExact=(%d,%v), want (8,nil)", n, err)
 	}
-	tr.reaping.Wait() // It has to be contained. It can't be stuck in the budget.
+	tr.reaping.Wait() // must finish; it must not stall for the whole budget
 
 	// The freelist stays populated: that is the whole reason a compaction entry
 	// point is needed for pre-existing databases.
@@ -151,7 +151,7 @@ func TestReclaimOnLegacyIndexIsHarmless(t *testing.T) {
 		t.Fatal(err)
 	}
 	if free == 0 {
-		t.Fatal("The old library recovered the empty pages, suggesting that the tests were not really built up. Library")
+		t.Fatal("legacy database returned free pages, so this was not actually an old-format database")
 	}
 }
 
@@ -176,7 +176,7 @@ func TestDeleteAllPurgesAndCompacts(t *testing.T) {
 	}
 	grown := tr.indexBytes()
 	if grown < 5<<20 {
-		t.Fatalf("Index only %d Bytes, not enough samples", grown)
+		t.Fatalf("index is only %d bytes, not enough data", grown)
 	}
 
 	deleted, reclaimed, err := tr.DeleteAll()
@@ -184,15 +184,15 @@ func TestDeleteAllPurgesAndCompacts(t *testing.T) {
 		t.Fatalf("DeleteAll: %v", err)
 	}
 	if deleted != 22 {
-		t.Fatalf("deleted=%d,For 22", deleted)
+		t.Fatalf("deleted=%d, want 22", deleted)
 	}
 	tr.reaping.Wait()
 
 	if reclaimed < grown/2 {
-		t.Fatalf("Only recycled. %d bytes (pre-deleted index) %d)", reclaimed, grown)
+		t.Fatalf("reclaimed only %d bytes (index was %d before delete)", reclaimed, grown)
 	}
 	if after := tr.indexBytes(); after > grown/8 {
-		t.Fatalf("The index is still empty. %d Bytes (before delete) %d)", after, grown)
+		t.Fatalf("index is still %d bytes after delete (was %d); expected it to shrink", after, grown)
 	}
 	for _, q := range []string{
 		`SELECT COUNT(*) FROM exchanges`,
@@ -204,16 +204,16 @@ func TestDeleteAllPurgesAndCompacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		if c != 0 {
-			t.Fatalf("%s = %d,For 0", q, c)
+			t.Fatalf("%s = %d, want 0", q, c)
 		}
 	}
 	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
-		t.Fatalf("Isolated History host Directory not cleared:%v", err)
+		t.Fatalf("orphaned historical host directory was not removed: %v", err)
 	}
 	// Recording must keep working against the freshly rewritten file.
 	tr.record(newFlow("d.example.com", "GET", "/after", nil, []byte("Recorded after emptying")))
 	if n, err := tr.Count(); err != nil || n != 1 {
-		t.Fatalf("After clearing up, Count=(%d,%v),For (1,nil)", n, err)
+		t.Fatalf("after clear, Count=(%d,%v), want (1,nil)", n, err)
 	}
 }
 
@@ -233,7 +233,7 @@ func TestDeleteAllConvertsLegacyIndex(t *testing.T) {
 	}
 	t.Cleanup(func() { tr.Close() })
 	if tr.incrementalVacuum {
-		t.Fatal("The old library should not report the use of incremental recovery")
+		t.Fatal("a legacy database must not report incremental vacuum")
 	}
 
 	bulkRecord(tr, "legacy.example.com", 10, 200*1024)
@@ -241,7 +241,7 @@ func TestDeleteAllConvertsLegacyIndex(t *testing.T) {
 		t.Fatalf("DeleteAll: %v", err)
 	}
 	if !tr.incrementalVacuum {
-		t.Fatal("The old library was not converted to incremental recovery mode after emptying")
+		t.Fatal("emptying did not convert the old database to incremental vacuum")
 	}
 
 	// The converted database now reclaims on an ordinary host deletion.
@@ -252,6 +252,6 @@ func TestDeleteAllConvertsLegacyIndex(t *testing.T) {
 	}
 	tr.reaping.Wait()
 	if after := tr.indexBytes(); after > grown/4 {
-		t.Fatalf("Normal delete after conversion is not recovered:%d Bytes (before delete) %d)", after, grown)
+		t.Fatalf("delete after conversion did not reclaim space: %d bytes (was %d before delete)", after, grown)
 	}
 }
