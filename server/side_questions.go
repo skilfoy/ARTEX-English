@@ -168,7 +168,7 @@ func (s *Server) drainTaskSideQuestions(ctx context.Context, taskID string) erro
 	defer s.side.mu.Unlock()
 	for _, snap := range s.side.pending {
 		if snap.Parent.TaskID == id {
-			return errors.New("Unsaved sideways, please try again")
+			return errors.New("Side-question context is not saved yet; try again")
 		}
 	}
 	return nil
@@ -193,7 +193,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 		// Validate the persisted reference even if a previous provider is cached.
 		current, exists := s.loadProfileConfig(model.ProfileID)
 		if !exists || sideModel(current, model.ProfileID, model.Name).Identity != model.Identity {
-			return nil, errors.New("Model configuration deleted or changed, start with main Agent Update Context")
+			return nil, errors.New("The model profile was deleted or changed; run the main agent first to refresh context")
 		}
 		p, cfg, ok = s.providerForProfile(model.ProfileID)
 	} else {
@@ -202,7 +202,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 		s.cfgMu.Unlock()
 	}
 	if !ok || p == nil || sideModel(cfg, model.ProfileID, model.Name).Identity != model.Identity {
-		return nil, errors.New("Model configuration deleted or changed, start with main Agent Update Context")
+		return nil, errors.New("The model profile was deleted or changed; run the main agent first to refresh context")
 	}
 	return p, nil
 }
@@ -210,7 +210,7 @@ func (s *Server) sideProvider(model sidequestion.Model) (llm.Provider, error) {
 func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string) (sidequestion.Parent, bool) {
 	p := sidequestion.Parent{}
 	if s.side == nil || s.m.pg == nil {
-		writeErr(w, 503, "No bypass service available.")
+		writeErr(w, 503, "Side-question service is unavailable")
 		return p, false
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -242,7 +242,7 @@ func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string)
 		return p, false
 	}
 	if pt == nil || s.engine.IsDeleting(t.ID) {
-		writeErr(w, 409, "Tasks archived or being deleted")
+		writeErr(w, 409, "Task is archived or being deleted")
 		return p, false
 	}
 	p.TaskID, p.ExplorationID = id, t.ExpID
@@ -262,7 +262,7 @@ func (s *Server) sideParent(w http.ResponseWriter, r *http.Request, kind string)
 			return p, false
 		}
 		if n.State == "stopped" {
-			writeErr(w, 409, "Worker Deleted")
+			writeErr(w, 409, "Worker was deleted")
 			return p, false
 		}
 		p.IntentID = iid
@@ -349,13 +349,13 @@ func (s *Server) handleSideQuestions(w http.ResponseWriter, r *http.Request, p s
 	}
 	in.Question = strings.TrimSpace(in.Question)
 	if in.Question == "" || len([]rune(in.Question)) > 4000 || !validWorkerMessageRequestID(in.ClientID) {
-		writeErr(w, 400, "The question must be: 1–4000 Character and provide valid request ID")
+		writeErr(w, 400, "The question must be 1–4000 characters and include a valid request id")
 		return
 	}
 	s.side.commands.Lock()
 	defer s.side.commands.Unlock()
 	if p.TaskID > 0 && s.engine.IsDeleting(strconv.FormatInt(p.TaskID, 10)) {
-		writeErr(w, 409, "Tasks are archived or deleted")
+		writeErr(w, 409, "Task is being archived or deleted")
 		return
 	}
 	if existing, err := s.m.pg.ExistingSideRequest(r.Context(), key, in.ClientID); err != nil {
@@ -363,14 +363,14 @@ func (s *Server) handleSideQuestions(w http.ResponseWriter, r *http.Request, p s
 		return
 	} else if existing != nil {
 		if existing.Question != in.Question {
-			writeErr(w, 409, "Same request ID Not for different issues.")
+			writeErr(w, 409, "The same request id cannot be reused for a different question")
 			return
 		}
 		writeJSON(w, 200, existing)
 		return
 	}
 	if snap == nil {
-		writeErr(w, 409, "No context snapshot, please run the master first Agent")
+		writeErr(w, 409, "No context snapshot yet; run the main agent first")
 		return
 	}
 	provider, err := s.sideProvider(snap.Model)
@@ -488,10 +488,10 @@ func (s *Server) runSide(ctx context.Context, cancel context.CancelFunc, e sideq
 	e.Status = "completed"
 	if ctx.Err() != nil {
 		e.Status = "cancelled"
-		e.Error = "Answer has stopped."
+		e.Error = "The answer was stopped"
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			e.Status = "failed"
-			e.Error = "Overruled by the sidewalk. 120 Seconds, stopped"
+			e.Error = "Side answer exceeded 120 seconds and was stopped"
 		}
 	} else if runErr != nil {
 		e.Status = "failed"

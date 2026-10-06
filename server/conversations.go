@@ -30,7 +30,7 @@ func decodeConversationRequest(w http.ResponseWriter, r *http.Request, value any
 	if err := decode(r, value); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -85,11 +85,11 @@ func (s *Server) pgCreateConversation(w http.ResponseWriter, r *http.Request) {
 	}
 	req.AgentKey = strings.TrimSpace(req.AgentKey)
 	if req.AgentKey == "" {
-		writeErr(w, 400, "agent_key Cannot be empty")
+		writeErr(w, 400, "agent_key cannot be empty")
 		return
 	}
 	if utf8.RuneCountInString(req.AgentKey) > maxConversationAgentKeyRunes {
-		writeErr(w, 400, fmt.Sprintf("agent_key Max %d characters", maxConversationAgentKeyRunes))
+		writeErr(w, 400, fmt.Sprintf("agent_key must be at most %d characters", maxConversationAgentKeyRunes))
 		return
 	}
 	a, err := pg.GetAgentByKey(req.AgentKey)
@@ -103,7 +103,7 @@ func (s *Server) pgCreateConversation(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LLMProfileID != nil {
 		if _, ok := s.loadProfileConfig(*req.LLMProfileID); !ok {
-			writeErr(w, 400, "Assigned LLM Configure does not exist or is not set API Key")
+			writeErr(w, 400, "The selected LLM profile does not exist or has no API key")
 			return
 		}
 	}
@@ -112,7 +112,7 @@ func (s *Server) pgCreateConversation(w http.ResponseWriter, r *http.Request) {
 		title = "New conversation"
 	}
 	if utf8.RuneCountInString(title) > maxConversationTitleRunes {
-		writeErr(w, 400, fmt.Sprintf("Most Titles %d characters", maxConversationTitleRunes))
+		writeErr(w, 400, fmt.Sprintf("Title must be at most %d characters", maxConversationTitleRunes))
 		return
 	}
 	c, err := pg.CreateConversation(req.AgentKey, title, req.LLMProfileID)
@@ -136,7 +136,7 @@ func (s *Server) pgUpdateConversation(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LLMProfileID != nil {
 		if _, ok := s.loadProfileConfig(*req.LLMProfileID); !ok {
-			writeErr(w, 400, "Assigned LLM Configure does not exist or is not set API Key")
+			writeErr(w, 400, "The selected LLM profile does not exist or has no API key")
 			return
 		}
 	}
@@ -183,7 +183,7 @@ func (s *Server) pgRenameConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Title == nil && req.Pinned == nil {
-		writeErr(w, 400, "At least it needs to be provided title or pinned")
+		writeErr(w, 400, "Provide at least title or pinned")
 		return
 	}
 	if req.Title != nil {
@@ -193,7 +193,7 @@ func (s *Server) pgRenameConversation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if utf8.RuneCountInString(title) > maxConversationTitleRunes {
-			writeErr(w, 400, fmt.Sprintf("Most Titles %d characters", maxConversationTitleRunes))
+			writeErr(w, 400, fmt.Sprintf("Title must be at most %d characters", maxConversationTitleRunes))
 			return
 		}
 		req.Title = &title
@@ -260,7 +260,7 @@ func (s *Server) pgDeleteConversationsBatch(w http.ResponseWriter, r *http.Reque
 	seen := make(map[int64]struct{}, len(request.IDs))
 	for _, id := range request.IDs {
 		if id <= 0 {
-			writeErr(w, http.StatusBadRequest, "Dialogue id Invalid")
+			writeErr(w, http.StatusBadRequest, "Invalid conversation id")
 			return
 		}
 		if _, exists := seen[id]; exists {
@@ -270,7 +270,7 @@ func (s *Server) pgDeleteConversationsBatch(w http.ResponseWriter, r *http.Reque
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 || len(ids) > maxConversationDeleteBatch {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("ids Quantity must be 1-%d", maxConversationDeleteBatch))
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("ids must contain 1-%d items", maxConversationDeleteBatch))
 		return
 	}
 	for _, id := range ids {
@@ -392,7 +392,7 @@ func (s *Server) pgSendConversationMessage(w http.ResponseWriter, r *http.Reques
 	}
 	var req struct {
 		Message     string           `json:"message"`
-		Attachments []chatAttachment `json:"attachments,omitempty"` // Way1 Uploading files(Path relative session working directory)
+		Attachments []chatAttachment `json:"attachments,omitempty"` // files uploaded ahead of the message (paths relative to the session work directory)
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, 400, err.Error())
@@ -443,7 +443,7 @@ func (s *Server) pgSendConversationMessage(w http.ResponseWriter, r *http.Reques
 	if c.Title == "" || c.Title == "New conversation" {
 		title := firstLine(msg, 40)
 		if title == "" {
-			title = "Can not open message"
+			title = "Attachment message"
 		}
 		_ = pg.RenameConversation(c.ID, title)
 	}
@@ -503,7 +503,7 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 	}()
 	// Only the first turn executes a historical retest. Follow-up conversation
 	// turns may explain the sealed result; the result tool refuses to overwrite it.
-	finishStatus, finishReason := "failed", "Retrometry failed."
+	finishStatus, finishReason := "failed", "Retest failed to start"
 	if c.AgentKey == db.FindingRetestAgentKey {
 		// Read without the run cancellation so an immediate stop still seals pending.
 		r, err := s.m.pg.FindingRetestForConversation(context.Background(), c.ID)
@@ -511,7 +511,7 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 			// The sealing defer below needs r.ID, which we do not have here. Seal by
 			// conversation instead, otherwise the row stays 'pending' forever.
 			log.Printf("[conv %d] load retest: %v", c.ID, err)
-			if err := s.m.pg.FailPendingRetestForConversation(c.ID, "Repeat status reading failed, restart"); err != nil {
+			if err := s.m.pg.FailPendingRetestForConversation(c.ID, "Failed to read retest status; start the retest again"); err != nil {
 				log.Printf("[conv %d] seal retest: %v", c.ID, err)
 			}
 			return
@@ -519,7 +519,7 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 		if r != nil && r.Status == "pending" {
 			defer func() {
 				if ctx.Err() != nil {
-					finishStatus, finishReason = "stopped", "Retrometry stopped or services closed"
+					finishStatus, finishReason = "stopped", "Retest stopped or the service shut down"
 				}
 				s.finishRetest(r.ID, finishStatus, finishReason)
 			}()
@@ -564,7 +564,7 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 		finishReason = err.Error()
 		if ctx.Err() == nil {
 			_, _ = pg.AppendConvActivity(c.ID, db.Activity{Worker: c.AgentKey, Kind: "text", IsError: true,
-				Summary: "(Error:" + err.Error() + ")", Detail: err.Error()})
+				Summary: "(error: " + err.Error() + ")", Detail: err.Error()})
 		}
 	} else {
 		finishStatus, finishReason = "completed", ""
@@ -572,16 +572,16 @@ func (s *Server) runConversationTurn(ctx context.Context, cancel context.CancelC
 	_ = pg.TouchConversation(c.ID)
 }
 
-// triggerBehavior is an agent's cached P3 trigger post-processingStrategy (see the
+// triggerBehavior is an agent's cached P3 trigger post-processing strategy (see the
 // agents table trigger_* columns). Read once per fire in StartTriggeredRun so the
 // pump never touches the DB while holding queueMu.
 type triggerBehavior struct {
 	runMode     string // serial | parallel
-	mergeMode   string // by_task | all | none (serial Use;parallel Ignore,One session each)
-	maxParallel int    // parallel Every time I use it agent Concurrency upper limit;<=0=No limit
+	mergeMode   string // by_task | all | none (used in serial; parallel ignores it and opens one session per fire)
+	maxParallel int    // per-agent concurrency cap in parallel mode; <=0 means unlimited
 }
 
-// readTriggerBehavior loads an agent'sStrategy, falling back to safe defaults
+// readTriggerBehavior loads an agent's strategy, falling back to safe defaults
 // (serial / all / 5) on any error or unknown enum value.
 func (s *Server) readTriggerBehavior(agentKey string) triggerBehavior {
 	b := triggerBehavior{runMode: "serial", mergeMode: "all", maxParallel: 5}
@@ -604,7 +604,7 @@ func (s *Server) readTriggerBehavior(agentKey string) triggerBehavior {
 }
 
 // StartTriggeredRun enqueues a P3 trigger fire for agentKey and pumps the queue. The
-// agent'sStrategy decides concurrency + merge: serial → run one at a time (optionally
+// agent's strategy decides concurrency + merge: serial → run one at a time (optionally
 // merging by task / all / none); parallel → run each fire in its own concurrent
 // conversation up to trigger_max_parallel. Distinct agents always run concurrently.
 func (s *Server) StartTriggeredRun(agentKey, title, message string, taskID int64, mergeable bool, taskDesc, taskGoal string) {
@@ -707,7 +707,7 @@ func taskContextHeader(taskID int64, desc, goal string) string {
 		return ""
 	}
 	if goal != "" {
-		return fmt.Sprintf("[Task #%d %s(Target:%s)]", taskID, trunc(desc, 200), trunc(goal, 500))
+		return fmt.Sprintf("[Task #%d %s (goal: %s)]", taskID, trunc(desc, 200), trunc(goal, 500))
 	}
 	return fmt.Sprintf("[Task #%d %s]", taskID, trunc(desc, 200))
 }
@@ -779,7 +779,7 @@ func mergeAllRuns(items []triggeredRun) triggeredRun {
 		}
 		for _, it := range g {
 			seq++
-			fmt.Fprintf(&b, "\n── Trigger %d(task#%d)──\n%s\n", seq, tid, it.message)
+			fmt.Fprintf(&b, "\n── Trigger %d (task#%d) ──\n%s\n", seq, tid, it.message)
 		}
 	}
 	return triggeredRun{

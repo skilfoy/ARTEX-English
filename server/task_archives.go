@@ -129,7 +129,7 @@ func (s *Server) archiveTask(job *pgdb.TaskArchive) (runErr error) {
 	drainCtx, cancel := context.WithTimeout(s.ctx, taskDeleteDrainTimeout)
 	defer cancel()
 	if err := s.waitTaskQuiescent(drainCtx, taskID); err != nil {
-		return errors.New("Tasks still in operation Agent,Please pause and try again.")
+		return errors.New("The task still has a running agent; pause it and retry the archive")
 	}
 	if err := s.drainTaskSideQuestions(drainCtx, taskID); err != nil {
 		return err
@@ -170,7 +170,7 @@ func (s *Server) archiveTask(job *pgdb.TaskArchive) (runErr error) {
 		return err
 	}
 	if snapshot.ExplorationID != task.ExplorationID {
-		return errors.New("Mission Explorer Records Changed during Archiving Snapshots")
+		return errors.New("Task exploration records changed while the archive snapshot was being taken")
 	}
 	if s.m.traffic != nil && len(snapshot.Hosts) > 0 {
 		_ = s.m.pg.UpdateTaskArchiveProgress(job.ID, "snapshot_traffic", 38)
@@ -220,7 +220,7 @@ func (s *Server) archiveTask(job *pgdb.TaskArchive) (runErr error) {
 	removePackage = false
 	if trafficStage != nil {
 		if err := trafficStage.Commit(); err != nil {
-			warning := "Archiving completed, but sole flow heat storage clean-up failed (archiving package still recoverable)):" + err.Error()
+			warning := "Archive completed, but exclusive traffic hot-storage cleanup failed (the archive can still be restored): " + err.Error()
 			log.Printf("[task-archive] task %s: %s", taskID, warning)
 			_ = s.m.pg.AppendTaskArchiveWarning(job.ID, warning)
 		}
@@ -346,7 +346,7 @@ func (s *Server) restoreTaskArchivePayload(job *pgdb.TaskArchive, snapshot *pgdb
 	}
 	if len(warnings) > 0 {
 		if _, err := s.m.pg.Exploration(snapshot.ExplorationID).AppendActivity(pgdb.Activity{
-			Worker: "system", Kind: "system", Summary: "Mandate resumed, but partial association downgraded", Detail: strings.Join(warnings, "\n"),
+			Worker: "system", Kind: "system", Summary: "Task restored, but some links were downgraded", Detail: strings.Join(warnings, "\n"),
 		}); err != nil {
 			log.Printf("[task-archive] persist restore warnings for task %d: %v", job.TaskID, err)
 		}
@@ -430,7 +430,7 @@ func validateArchivePath(dataDir, candidate string) error {
 	}
 	relative, err := filepath.Rel(root, path)
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return errors.New("The archive package path is not in the directory Internal")
+		return errors.New("Archive package path is outside the managed directory")
 	}
 	return nil
 }
@@ -449,7 +449,7 @@ func (s *Server) listTaskArchives(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getTaskArchive(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Archive id Invalid")
+		writeErr(w, 400, "Invalid archive id")
 		return
 	}
 	item, err := s.m.pg.GetTaskArchive(id)
@@ -467,7 +467,7 @@ func (s *Server) getTaskArchive(w http.ResponseWriter, r *http.Request) {
 func (s *Server) queueTaskArchive(w http.ResponseWriter, r *http.Request) {
 	id, ok := canonicalTaskID(r.PathValue("id"))
 	if !ok {
-		writeErr(w, 400, "Task id Invalid")
+		writeErr(w, 400, "Invalid task id")
 		return
 	}
 	numeric, _ := strconv.ParseInt(id, 10, 64)
@@ -483,7 +483,7 @@ func (s *Server) queueTaskArchive(w http.ResponseWriter, r *http.Request) {
 func (s *Server) queueTaskArchiveRestore(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Archive id Invalid")
+		writeErr(w, 400, "Invalid archive id")
 		return
 	}
 	item, err := s.m.pg.QueueTaskArchiveRestore(id)
@@ -498,7 +498,7 @@ func (s *Server) queueTaskArchiveRestore(w http.ResponseWriter, r *http.Request)
 func (s *Server) queueTaskArchiveDelete(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt(r, "id")
 	if !ok {
-		writeErr(w, 400, "Archive id Invalid")
+		writeErr(w, 400, "Invalid archive id")
 		return
 	}
 	item, err := s.m.pg.QueueTaskArchiveDelete(id)
@@ -518,18 +518,18 @@ func (s *Server) queueTaskArchivesBatch(w http.ResponseWriter, r *http.Request) 
 	}
 	parsed := normalizeBatchTaskIDs(request.TaskIDs)
 	if len(parsed) == 0 {
-		writeErr(w, 400, "task_ids Cannot be empty")
+		writeErr(w, 400, "task_ids cannot be empty")
 		return
 	}
 	if len(parsed) > 100 {
-		writeErr(w, 400, "Up to once. 100 tasks")
+		writeErr(w, 400, "At most 100 tasks at a time")
 		return
 	}
 	ids := make([]string, 0, len(parsed))
 	items := make([]archiveBatchItem, 0, len(parsed))
 	for _, item := range parsed {
 		if !item.valid {
-			items = append(items, archiveBatchItem{ID: item.id, Error: "Task id Invalid"})
+			items = append(items, archiveBatchItem{ID: item.id, Error: "Invalid task id"})
 			continue
 		}
 		ids = append(ids, item.id)
@@ -592,16 +592,16 @@ func (s *Server) deleteTaskArchivesBatch(w http.ResponseWriter, r *http.Request)
 
 func normalizeArchiveIDs(ids []int64) ([]int64, error) {
 	if len(ids) == 0 {
-		return nil, errors.New("archive_ids Cannot be empty")
+		return nil, errors.New("archive_ids cannot be empty")
 	}
 	if len(ids) > 100 {
-		return nil, errors.New("Up to once. 100 Archives")
+		return nil, errors.New("At most 100 archives at a time")
 	}
 	seen := map[int64]bool{}
 	out := make([]int64, 0, len(ids))
 	for _, id := range ids {
 		if id <= 0 {
-			return nil, fmt.Errorf("Archive id %d Invalid", id)
+			return nil, fmt.Errorf("Invalid archive id %d", id)
 		}
 		if !seen[id] {
 			seen[id] = true

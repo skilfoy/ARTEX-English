@@ -24,7 +24,7 @@ func decodeTaskCategoryRequest(w http.ResponseWriter, r *http.Request) (*taskCat
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -35,7 +35,7 @@ func decodeTaskCategoryRequest(w http.ResponseWriter, r *http.Request) (*taskCat
 		return nil, false
 	}
 	if utf8.RuneCountInString(strings.TrimSpace(*request.Name)) > db.MaxTaskCategoryNameRunes {
-		writeErr(w, http.StatusBadRequest, "Most classified names 80 characters")
+		writeErr(w, http.StatusBadRequest, "Category name must be at most 80 characters")
 		return nil, false
 	}
 	return &request, true
@@ -134,7 +134,7 @@ func parseCategoryIDField(w http.ResponseWriter, raw json.RawMessage) (*int64, b
 	}
 	var id int64
 	if err := json.Unmarshal(raw, &id); err != nil || id <= 0 {
-		writeErr(w, http.StatusBadRequest, "Task classification id Invalid")
+		writeErr(w, http.StatusBadRequest, "Invalid task category id")
 		return nil, false
 	}
 	return &id, true
@@ -187,7 +187,7 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -199,7 +199,7 @@ func (s *Server) updateTasksCategoryBatch(w http.ResponseWriter, r *http.Request
 	}
 	taskIDs := normalizeBatchTaskIDs(request.TaskIDs)
 	if len(taskIDs) == 0 || len(taskIDs) > db.MaxTaskCategoryBatchSize {
-		writeErr(w, http.StatusBadRequest, fmt.Sprintf("task_ids Quantity must be 1-%d", db.MaxTaskCategoryBatchSize))
+		writeErr(w, http.StatusBadRequest, fmt.Sprintf("task_ids must contain 1-%d items", db.MaxTaskCategoryBatchSize))
 		return
 	}
 	items := make([]batchCategoryItem, 0, len(taskIDs))

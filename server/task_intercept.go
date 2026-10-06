@@ -7,8 +7,8 @@ import (
 	"github.com/skilfoy/ARTEX-English/db"
 )
 
-// Task-level asset interception/Allow rules CRUD.Rules task_id Attribution, effective only for that mission:
-// action=block Interception(Testing prohibited),action=allow Allow(whitelist).See for execution. db.EvaluateAssetGate.
+// CRUD for task-level asset intercept and allow rules. Rules belong to a task_id and apply only to that task:
+// action=block intercepts (do not test); action=allow is an allowlist. Matching is db.EvaluateAssetGate.
 
 type taskInterceptRuleReq struct {
 	Enabled bool   `json:"enabled"`
@@ -18,23 +18,23 @@ type taskInterceptRuleReq struct {
 	Note    string `json:"note"`
 }
 
-// validateTaskInterceptRuleReq co-validation;renewal of global rules kind/pattern Verifyer.
+// validateTaskInterceptRuleReq normalizes and checks the request, reusing the global kind/pattern validator.
 func validateTaskInterceptRuleReq(req *taskInterceptRuleReq) error {
 	if req.Action == "" {
 		req.Action = "block"
 	}
 	if req.Action != "block" && req.Action != "allow" {
-		return fmt.Errorf("action Must be. block or allow")
+		return fmt.Errorf("action must be block or allow")
 	}
 	v := assetInterceptRuleReq{Enabled: req.Enabled, Kind: req.Kind, Pattern: req.Pattern, Note: req.Note}
 	if err := validateAssetInterceptRuleReq(&v); err != nil {
 		return err
 	}
-	req.Pattern = v.Pattern // Already trim
+	req.Pattern = v.Pattern // already trimmed
 	return nil
 }
 
-// buildTaskInterceptRules Verify the task level rules entered on creation and convert them to db Enter Form.
+// buildTaskInterceptRules validates task-level rules supplied at creation and converts them to the db input shape.
 func buildTaskInterceptRules(reqs []taskInterceptRuleReq) ([]db.TaskInterceptRuleInput, error) {
 	if len(reqs) == 0 {
 		return nil, nil

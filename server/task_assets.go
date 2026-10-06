@@ -36,7 +36,7 @@ func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 	if err := decode(r, &request); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			writeErr(w, http.StatusRequestEntityTooLarge, "The request is too big.")
+			writeErr(w, http.StatusRequestEntityTooLarge, "Request body is too large")
 		} else {
 			writeErr(w, http.StatusBadRequest, err.Error())
 		}
@@ -45,7 +45,7 @@ func (s *Server) attachTaskAssets(w http.ResponseWriter, r *http.Request) {
 	request.SourceSummary = strings.TrimSpace(request.SourceSummary)
 	taskID, _ := parseTaskID(task.ID)
 	if request.Scope != nil && len(request.AssetIDs) > 0 {
-		writeErr(w, http.StatusBadRequest, "scope With asset_ids Can not submit simultaneously")
+		writeErr(w, http.StatusBadRequest, "scope and asset_ids cannot both be set")
 		return
 	}
 	if request.Scope != nil {

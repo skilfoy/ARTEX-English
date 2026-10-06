@@ -503,7 +503,7 @@ func stageTaskArchivePackageDelete(archivePath string, archiveID int64) (string,
 	staged := archivePath + fmt.Sprintf(".deleting-%d", archiveID)
 	if _, err := os.Lstat(staged); err == nil {
 		if _, originalErr := os.Lstat(archivePath); originalErr == nil {
-			return staged, false, errors.New("Archiving package original and deleting pending files also exists")
+			return staged, false, errors.New("The original archive and the delete-staging file both exist")
 		} else if !os.IsNotExist(originalErr) {
 			return staged, false, originalErr
 		}
@@ -578,10 +578,12 @@ func writeTaskArchivePackage(path, payloadDir string, snapshot *pgdb.TaskArchive
 			return err
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			// Archive formatend-to-end only supports normal files and directories (unpackageend reporting errors directly to other types)),
-			// Unable to restore symbol link. Skip instead of whole package failed: do not read link targets(lstat,Do not cross the directory tree),
-			// Not written. symlink entries;the target file itself will still be individually returned when the link points to the tree Trail.
-			log.Printf("[task-archive] Skip symbol links (archives are not supported without affecting other files)):%s", current)
+			// The archive format supports only regular files and directories end to end
+			// (any other type is an error on extract) and cannot restore symlinks.
+			// Skip them instead of failing the whole archive: lstat only, do not read
+			// the link target (stay inside the tree), and do not write a symlink entry.
+			// If the link points inside the tree, the target is still archived on its own.
+			log.Printf("[task-archive] skipping symlink (archives do not support them; other files are unaffected): %s", current)
 			return nil
 		}
 		header, err := tar.FileInfoHeader(info, "")

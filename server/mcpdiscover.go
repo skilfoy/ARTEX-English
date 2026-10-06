@@ -25,22 +25,22 @@ func connectMCP(ctx context.Context, m *db.MCPServer) (mcpClient, error) {
 	switch m.Transport {
 	case "stdio":
 		if m.Command == "" {
-			return nil, fmt.Errorf("stdio Transfer missing command")
+			return nil, fmt.Errorf("stdio transport is missing a command")
 		}
 		return mcp.NewStdioClient(ctx, m.Name, m.Command, jsonStrMap(m.Env), jsonStrSlice(m.Args)...)
 	case "http":
 		if m.URL == "" {
-			return nil, fmt.Errorf("http Transfer Missing URL")
+			return nil, fmt.Errorf("http transport is missing a URL")
 		}
 		// env map doubles as HTTP headers (e.g. Authorization).
 		return mcphttp.New(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 	case "sse":
 		if m.URL == "" {
-			return nil, fmt.Errorf("sse Transfer Missing URL")
+			return nil, fmt.Errorf("sse transport is missing a URL")
 		}
 		return mcphttp.NewSSE(ctx, m.Name, m.URL, jsonStrMap(m.Env), m.Insecure)
 	default:
-		return nil, fmt.Errorf("Unknown Transfer %q", m.Transport)
+		return nil, fmt.Errorf("unknown transport %q", m.Transport)
 	}
 }
 
@@ -63,7 +63,7 @@ func (s *Server) discoverAndCacheMCP(ctx context.Context, m *db.MCPServer) error
 	if err := s.m.pg.SaveMCPTools(m.ID, tools); err != nil {
 		return err
 	}
-	log.Printf("[mcp] %s Discover %d A tool already cached", m.Name, len(tools))
+	log.Printf("[mcp] %s discovered %d tools and cached them", m.Name, len(tools))
 	return nil
 }
 
@@ -74,7 +74,7 @@ func (s *Server) discoverAndCacheMCP(ctx context.Context, m *db.MCPServer) error
 func (s *Server) discoverEmptyMCPsOnStartup() {
 	servers, err := s.m.pg.ListMCP()
 	if err != nil {
-		log.Printf("[mcp] Start Autodiscovery: Reading list failed: %v", err)
+		log.Printf("[mcp] startup discovery: failed to read the server list: %v", err)
 		return
 	}
 	for _, m := range servers {
@@ -83,7 +83,7 @@ func (s *Server) discoverEmptyMCPsOnStartup() {
 		}
 		ctx, cancel := context.WithTimeout(s.ctx, 90*time.Second)
 		if err := s.discoverAndCacheMCP(ctx, m); err != nil {
-			log.Printf("[mcp] Start Autodiscovery %s Failed: %v", m.Name, err)
+			log.Printf("[mcp] startup discovery of %s failed: %v", m.Name, err)
 		}
 		cancel()
 	}

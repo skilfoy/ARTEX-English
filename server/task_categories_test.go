@@ -45,7 +45,7 @@ func TestTaskCategoryBatchRoute(t *testing.T) {
 
 	// An empty selection is rejected before any database work.
 	if rec := post(`{"task_ids":[],"category_id":null}`); rec.Code != http.StatusBadRequest ||
-		!strings.Contains(rec.Body.String(), "task_ids Quantity must be") {
+		!strings.Contains(rec.Body.String(), "task_ids must contain") {
 		t.Fatalf("empty task_ids: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
