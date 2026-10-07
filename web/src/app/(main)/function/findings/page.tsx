@@ -629,12 +629,13 @@ export default function FindingsPage() {
     [refreshAfterMutation, setFindings, status],
   );
 
-  // Detailed report cache for in-row expansion is stored by global stable row key.report It's a big paragraph Markdown,List query does not take it,
-  // So click to expand finding_id Pull once;done And the text is empty = This vulnerability has not been reported yet.
+  // Inline report cache, keyed by the stable row id. A report is a long Markdown
+  // body, and the list query does not include it. Expanding a row fetches it once
+  // by finding_id. An empty body after that fetch means this finding has no report yet.
   const [reports, setReports] = React.useState<Record<string, FindingReport>>({});
 
-  // Inline editable buffer:The name of the currently expanded row/Category/Severity level,Initialize with this row of data when expanding,Close and clear.
-  // Single line expansion,So just one buffer is enough.
+  // Inline edit buffer: name, class, and severity of the expanded row. Filled when
+  // the row opens and cleared when it closes. Only one row is expanded, so one buffer is enough.
   const [edit, setEdit] = React.useState<FindingEdit | null>(null);
   const [saving, setSaving] = React.useState(false);
 
