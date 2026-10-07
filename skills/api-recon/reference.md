@@ -76,7 +76,7 @@ For each known endpoint, inspect its callsite, request wrapper, form validation,
 | Low | Inferred from response or validation error without a matching request. |
 | Untriggered | Candidate field exists in code, but its control was not reached. |
 
-A missing required field may be documented from a local validation response, with the response identified as evidence. Inspect nested `data`, `bizData`, or GraphQL `variables` before naming top level parameters. If encryption transforms a request, capture the pre-encryption values at the local function boundary and state that the wire representation differs.
+A missing required field may be recorded from a local validation response; identify that response as the evidence. Inspect nested `data`, `bizData`, or GraphQL `variables` before naming top-level parameters. If encryption transforms a request, capture the pre-encryption values at the local function boundary and state that the wire representation differs.
 
 ## Permission tree recovery
 
