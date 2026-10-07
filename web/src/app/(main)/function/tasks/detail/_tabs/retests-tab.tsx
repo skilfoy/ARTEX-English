@@ -73,7 +73,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>
-            Loading task vulnerability failed:{error}
+            Could not load findings: {error}
             <Button variant="outline" size="sm" onClick={refresh}>
               Retry
             </Button>
@@ -83,8 +83,8 @@ export function RetestsTab({ taskId }: { taskId: string }) {
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
         <Card className="min-w-0">
           <CardHeader>
-            <CardTitle>Select a vulnerability{data ? ` · ${data.total}` : ""}</CardTitle>
-            <CardDescription>View the retest record of the vulnerability in this task, or initiate a new retest.</CardDescription>
+            <CardTitle>Select a finding{data ? ` · ${data.total}` : ""}</CardTitle>
+            <CardDescription>Review retests for findings in this task, or start a new one.</CardDescription>
           </CardHeader>
           <CardContent className="flex max-h-[32rem] flex-col overflow-y-auto">
             {!loaded && !error ? <Skeleton className="h-24 w-full" /> : null}
@@ -94,7 +94,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
                 <Button
                   variant={finding.id === selectedId ? "secondary" : "ghost"}
                   className="h-auto w-full shrink-0 flex-col items-start gap-2 whitespace-normal py-3 text-left"
-                  aria-label={`Select a vulnerability:${findingLabel(finding)}`}
+                  aria-label={`Select finding: ${findingLabel(finding)}`}
                   aria-pressed={finding.id === selectedId}
                   onClick={() => setSelectedId(finding.id)}
                 >
@@ -109,8 +109,8 @@ export function RetestsTab({ taskId }: { taskId: string }) {
             {loaded && findings.length === 0 ? (
               <Empty>
                 <EmptyHeader>
-                  <EmptyTitle>No retest vulnerability yet</EmptyTitle>
-                  <EmptyDescription>After discovering a vulnerability in this task, you can manually initiate a retest here.</EmptyDescription>
+                  <EmptyTitle>No findings to retest yet</EmptyTitle>
+                  <EmptyDescription>When this task has a finding, you can start a retest here.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : null}
@@ -120,7 +120,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
               <Button
                 variant="outline"
                 size="icon-sm"
-                aria-label="Previous page vulnerability"
+                aria-label="Previous page"
                 disabled={page === 1}
                 onClick={() => setPage(page - 1)}
               >
@@ -132,7 +132,7 @@ export function RetestsTab({ taskId }: { taskId: string }) {
               <Button
                 variant="outline"
                 size="icon-sm"
-                aria-label="Next page vulnerability"
+                aria-label="Next page"
                 disabled={page * PAGE_SIZE >= data.total}
                 onClick={() => setPage(page + 1)}
               >

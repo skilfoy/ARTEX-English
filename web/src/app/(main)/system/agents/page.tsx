@@ -55,10 +55,10 @@ function AgentGridCard({
   async function del() {
     try {
       await api.deleteAgent(agent.key);
-      toast.success(`Deleted Agent "${agent.name}]`);
+      toast.success(`Deleted agent "${agent.name}"`);
       onDeleted();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
   return (
@@ -105,9 +105,9 @@ function AgentGridCard({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Agent[{agent.name}]?</AlertDialogTitle>
+              <AlertDialogTitle>Delete agent "{agent.name}"?</AlertDialogTitle>
               <AlertDialogDescription>
-                Its prompt words, variables, visibility and tool bindings will also be deleted. This action cannot be undone.
+                Its prompt, variables, visibility, and tool bindings will also be deleted. This cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -132,14 +132,14 @@ function CreateAgentDialog({ onCreated }: { onCreated: (key: string) => void }) 
     setBusy(true);
     try {
       const a = await api.createAgent(key.trim(), name.trim(), description.trim());
-      toast.success(`Agent has been created${a.name}]`);
+      toast.success(`Agent "${a.name}" created`);
       setOpen(false);
       setKey("");
       setName("");
       setDescription("");
       onCreated(a.key);
     } catch (e) {
-      toast.error("Creation failed:" + (e as Error).message);
+      toast.error("Creation failed: " + (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -271,7 +271,7 @@ export default function AgentsPage() {
                     </Badge>
                   )}
                 </SheetTitle>
-                <SheetDescription>{editing.description || "Prompt words, configuration, visible resources and tool bindings"}</SheetDescription>
+                <SheetDescription>{editing.description || "Prompt, configuration, visible resources, and tool bindings"}</SheetDescription>
               </SheetHeader>
               <AgentEditor agentKey={editing.key} onSaved={reload} />
             </>

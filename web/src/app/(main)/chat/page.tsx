@@ -395,7 +395,7 @@ function DraftChat({
       await api.sendConversationMessage(c.id, msg);
       onStarted(c);
     } catch (e) {
-      toast.error("Sending failed:" + (e as Error).message);
+      toast.error("Sending failed: " + (e as Error).message);
       setSending(false);
     }
   }
@@ -413,7 +413,7 @@ function DraftChat({
       const r = await api.chatUpload("session", `conv-${c.id}`, files);
       onStarted(c, { input, attachments: r.attachments });
     } catch (e) {
-      toast.error("Upload failed:" + (e as Error).message);
+      toast.error("Upload failed: " + (e as Error).message);
       setUploading(false);
     }
   }
@@ -450,7 +450,7 @@ function DraftChat({
         <div className="bg-primary/10 flex size-12 items-center justify-center rounded-full">
           <Bot className="text-primary size-6" />
         </div>
-        <div className="text-sm font-medium">Start and "{agent?.name ?? "Agent"}Dialogue</div>
+        <div className="text-sm font-medium">Start a conversation with "{agent?.name ?? "Agent"}"</div>
         {agent?.description && <p className="text-muted-foreground max-w-md text-xs">{agent.description}</p>}
       </div>
 
@@ -518,7 +518,7 @@ function ChatView({
       await api.updateConversationProfile(conv.id, id);
       onConvUpdated();
     } catch (e) {
-      toast.error("Switching LLM failed:" + (e as Error).message);
+      toast.error("Switching LLM failed: " + (e as Error).message);
     }
   }
 
@@ -716,7 +716,7 @@ function ChatView({
       const r = await api.chatUpload("session", `conv-${conv.id}`, files);
       setAttachments((prev) => [...prev, ...r.attachments]);
     } catch (e) {
-      toast.error("Upload failed:" + (e as Error).message);
+      toast.error("Upload failed: " + (e as Error).message);
     } finally {
       setUploading(false);
     }
@@ -736,7 +736,7 @@ function ChatView({
       // fetch avoids racing a separate post-send request against the poller.
       setRunning(true);
     } catch (e) {
-      toast.error("Sending failed:" + (e as Error).message);
+      toast.error("Sending failed: " + (e as Error).message);
       setInput(msg); // restore so the user doesn't lose their text
       setAttachments(atts); // and their attachments
     } finally {
@@ -753,7 +753,7 @@ function ChatView({
     try {
       await api.stopConversation(conv.id);
     } catch (e) {
-      toast.error("Stop failed:" + (e as Error).message);
+      toast.error("Stop failed: " + (e as Error).message);
     } finally {
       setStopping(false);
     }
@@ -797,7 +797,7 @@ function ChatView({
         <div className="min-w-0 max-w-full px-4 py-3" ref={contentRef}>
           {messages.length === 0 && !running ? (
             <div className="text-muted-foreground py-10 text-center text-sm">
-              Start and "{agent?.name ?? conv.agent_key}Dialogue
+              Start a conversation with "{agent?.name ?? conv.agent_key}"
             </div>
           ) : (
             <>
@@ -897,7 +897,7 @@ const ConversationItem = React.memo(function ConversationItem({
         <Checkbox
           checked={selectedForDelete}
           onCheckedChange={(checked) => onSelectedForDeleteChange(conv.id, checked === true)}
-          aria-label={`Choose conversation "${conv.title || "New conversation"}]`}
+          aria-label={`Choose conversation "${conv.title || "New conversation"}"`}
           className="ml-1 shrink-0"
         />
       )}
@@ -963,7 +963,7 @@ const ConversationItem = React.memo(function ConversationItem({
             variant="ghost"
             size="icon-sm"
             className="text-muted-foreground shrink-0"
-            aria-label={`Manage Dialogue[${conv.title || "New conversation"}]`}
+            aria-label={`Manage conversation ${conv.title || "New conversation"}`}
           >
             <MoreHorizontalIcon />
           </Button>
@@ -976,7 +976,7 @@ const ConversationItem = React.memo(function ConversationItem({
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onTogglePinned(conv)}>
               {pinned ? <PinOffIcon /> : <PinIcon />}
-              {pinned ? "Cancel pin" : "Pick it to the top"}
+              {pinned ? "Unpin" : "Pin"}
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
@@ -1022,7 +1022,7 @@ function AgentGroupHeader({
       type="button"
       onClick={() => onToggle(group.key)}
       aria-expanded={!collapsed}
-      title={collapsed ? `Expand "${group.name}]` : `Collapse "${group.name}]`}
+      title={collapsed ? `Expand "${group.name}"` : `Collapse "${group.name}"`}
       className={cn(
         "sticky top-0 z-10 flex min-w-0 items-center gap-1.5 rounded-md bg-card px-1.5 py-1 text-left font-medium text-[11px] transition-colors hover:bg-accent/50",
         collapsed && hasActive ? "text-foreground" : "text-muted-foreground",
@@ -1035,7 +1035,7 @@ function AgentGroupHeader({
         <span className="size-1.5 shrink-0 rounded-full bg-primary" title="The current conversation is within this group" />
       )}
       {group.runningCount > 0 && (
-        <Spinner className="size-3 shrink-0" aria-label={`${group.runningCount}Conversations running`} />
+        <Spinner className="size-3 shrink-0" aria-label={`${group.runningCount} conversations running`} />
       )}
       <span className="shrink-0 tabular-nums opacity-60">{group.conversations.length}</span>
     </button>
@@ -1214,7 +1214,7 @@ export default function ChatPage() {
       .sort((a, b) => a.name.localeCompare(b.name, "en-US"));
   }, [convs, chatAgents, agentByKey, agentFilter]);
   const conversationCountLabel =
-    agentFilter === null ? `Total${convs.length}indivual` : `${filteredConversations.length} / ${convs.length}indivual`;
+    agentFilter === null ? `${convs.length} total` : `${filteredConversations.length} / ${convs.length}`;
 
   function changeAgentFilter(key: string | null) {
     setAgentFilter(key);
@@ -1265,7 +1265,7 @@ export default function ChatPage() {
         });
         void reloadConvs();
       } catch (e) {
-        toast.error("Deletion failed:" + (e as Error).message);
+        toast.error("Deletion failed: " + (e as Error).message);
       }
     },
     [reloadConvs],
@@ -1282,7 +1282,7 @@ export default function ChatPage() {
         const result = await api.deleteConversations(ids.slice(offset, offset + 100));
         for (const item of result.items) {
           if (item.ok) deleted.add(item.id);
-          else failed.push({ id: item.id, error: item.error ?? "Dialogue does not exist" });
+          else failed.push({ id: item.id, error: item.error ?? "Conversation does not exist" });
         }
       }
       if (deleted.has(selectedId ?? -1)) selectConversation(null);
@@ -1291,13 +1291,13 @@ export default function ChatPage() {
         for (const id of deleted) next.delete(id);
         return next;
       });
-      if (deleted.size > 0) toast.success(`Deleted${deleted.size}conversations`);
+      if (deleted.size > 0) toast.success(`Deleted ${deleted.size} conversations`);
       if (failed.length > 0) {
         const details = failed
           .slice(0, 3)
           .map((item) => `#${item.id}(${item.error})`)
           .join(";");
-        toast.error(`${failed.length}Conversation deletion failed:${details}${failed.length > 3 ? "wait" : ""}`);
+        toast.error(`${failed.length} conversations could not be deleted: ${details}${failed.length > 3 ? "…" : ""}`);
       }
       setBulkDeleteOpen(false);
       // Fully successful → return to the clean list; keep selection mode on if
@@ -1305,7 +1305,7 @@ export default function ChatPage() {
       if (failed.length === 0) setSelectionMode(false);
       void reloadConvs();
     } catch (error) {
-      toast.error(`Batch deletion failed:${(error as Error).message}`);
+      toast.error(`Batch deletion failed: ${(error as Error).message}`);
       void reloadConvs();
     } finally {
       setBulkDeleting(false);
@@ -1319,7 +1319,7 @@ export default function ChatPage() {
         await api.pinConversation(conversation.id, !pinned);
         void reloadConvs();
       } catch (e) {
-        toast.error(`${pinned ? "Cancel pin" : "Pick it to the top"}Failed:${(e as Error).message}`);
+        toast.error(`${pinned ? "Unpin" : "Pin"} failed: ${(e as Error).message}`);
       }
     },
     [reloadConvs],
@@ -1338,7 +1338,7 @@ export default function ChatPage() {
         await api.renameConversation(id, title);
         void reloadConvs();
       } catch (e) {
-        toast.error("Rename failed:" + (e as Error).message);
+        toast.error("Rename failed: " + (e as Error).message);
       }
     },
     [reloadConvs],
@@ -1387,7 +1387,7 @@ export default function ChatPage() {
                     disabled={filteredConversations.length === 0 || bulkDeleting}
                   />
                   <span className="text-muted-foreground min-w-0 flex-1 text-xs tabular-nums">
-                    {selectedConversationCount > 0 ? `Selected${selectedConversationCount}indivual` : conversationCountLabel}
+                    {selectedConversationCount > 0 ? `${selectedConversationCount} selected` : conversationCountLabel}
                   </span>
                   {selectedConversationCount > 0 && (
                     <Button

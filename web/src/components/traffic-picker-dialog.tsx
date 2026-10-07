@@ -92,7 +92,7 @@ export function TrafficPickerDialog({
         [...selected].map((traffic_id) => ({ traffic_id })),
         contextTask,
       );
-      toast.success(`Bound${selected.size}traffic`);
+      toast.success(`Linked ${selected.size} traffic records`);
       onBound();
       onClose();
     } catch (e) {
@@ -204,7 +204,7 @@ export function TrafficPickerDialog({
                   <TableRow key={e.id}>
                     <TableCell>
                       <Checkbox
-                        aria-label={`Select traffic${e.id}`}
+                        aria-label={`Select traffic ${e.id}`}
                         checked={selected.has(e.id) || alreadyBound.has(e.id)}
                         disabled={busy || loading || alreadyBound.has(e.id)}
                         onCheckedChange={(checked) => toggle(e.id, checked === true)}
@@ -266,7 +266,7 @@ export function TrafficPickerDialog({
               Cancel
             </Button>
             <Button disabled={busy || selected.size === 0} onClick={() => void save()}>
-              {busy ? "Saving…" : `Binding${selected.size}traffic`}
+              {busy ? "Saving…" : `Link ${selected.size} traffic records`}
             </Button>
           </DialogFooter>
         </DialogContent>

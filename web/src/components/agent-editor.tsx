@@ -115,9 +115,9 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
   async function doPreview() {
     try {
       const r = await api.previewAgentPrompt(agentKey, prompt);
-      setPreview(r.error ? "Rendering error:" + r.error : r.rendered);
+      setPreview(r.error ? "Rendering error: " + r.error : r.rendered);
     } catch (e) {
-      setPreview("Preview failed:" + (e as Error).message);
+      setPreview("Preview failed: " + (e as Error).message);
     }
   }
   async function savePrompt() {
@@ -127,7 +127,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       reload();
       onSaved?.();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   async function resetPrompt() {
@@ -136,7 +136,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success(`Restored to built-in default (v${r.version})`);
       reload();
     } catch (e) {
-      toast.error("Restore failed:" + (e as Error).message);
+      toast.error("Restore failed: " + (e as Error).message);
     }
   }
   async function saveWrapup() {
@@ -146,7 +146,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success(wrapup.trim() || turns > 0 ? "Finishing configuration has been saved (will take effect next time)" : "Cleared, built-in default will be used");
       reload();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   async function resetWrapup() {
@@ -155,7 +155,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success("Restored to built-in default");
       reload();
     } catch (e) {
-      toast.error("Restore failed:" + (e as Error).message);
+      toast.error("Restore failed: " + (e as Error).message);
     }
   }
   async function saveTaskTimeoutWrapup() {
@@ -165,7 +165,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success("Task timeout ending configuration has been saved (will take effect next time)");
       reload();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   async function resetTaskTimeoutWrapup() {
@@ -174,7 +174,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success("Restored to built-in default");
       reload();
     } catch (e) {
-      toast.error("Restore failed:" + (e as Error).message);
+      toast.error("Restore failed: " + (e as Error).message);
     }
   }
   async function saveConfig() {
@@ -193,7 +193,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
       toast.success("The running configuration has been saved (effective immediately)");
       reload();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   // applyVis optimistically updates, persists, and toasts success/failure. On
@@ -210,7 +210,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     } catch (e) {
       setMcpVisible(prevMcp);
       setSkillVisible(prevSkill);
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   function toggleMcp(id: number) {
@@ -219,7 +219,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     applyVis(
       on ? mcpVisible.filter((x) => x !== id) : [...mcpVisible, id],
       skillVisible,
-      `${on ? "Cancelled" : "Already turned on"} MCP[${name}"visible`,
+      `${on ? "Hid" : "Showed"} MCP server ${name}`,
     );
   }
   function toggleSkill(name: string) {
@@ -227,7 +227,7 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
     applyVis(
       mcpVisible,
       on ? skillVisible.filter((x) => x !== name) : [...skillVisible, name],
-      `${on ? "Cancelled" : "Already turned on"} Skill[${name}"visible`,
+      `${on ? "Hid" : "Showed"} skill ${name}`,
     );
   }
   async function toggleTool(t: Tool) {
@@ -242,10 +242,10 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
         agents: nextAgents,
         enabled: t.enabled,
       });
-      toast.success(`${on ? "Unbound" : "Bound"}Tools${t.key}]`);
+      toast.success(`${on ? "Unbound" : "Bound"} tool ${t.key}`);
       onSaved?.(); // refresh the list so the card's Tools count stays in sync
     } catch (e) {
-      toast.error("Save tool binding failed:" + (e as Error).message);
+      toast.error("Save tool binding failed: " + (e as Error).message);
       reload();
       api.tools().then(setTools).catch(() => {});
     }
@@ -469,11 +469,11 @@ export function AgentEditor({ agentKey, onSaved }: { agentKey: string; onSaved?:
                   <Button variant="outline" size="sm" onClick={() => {
                     if (viewVer) { setDiffVer(viewVer); setViewVer(null); }
                   }}>
-                    <GitCompareIcon className="mr-1 size-3.5" /> Comparison with current version
+                    <GitCompareIcon className="mr-1 size-3.5" /> Compare with current version
                   </Button>
                 )}
                 <Button size="sm" onClick={() => {
-                  if (viewVer) { setPrompt(viewVer.template_text); setViewVer(null); toast.success(`Loaded v${viewVer.version}Go to the editor, confirm and click "Save as new version"`); }
+                  if (viewVer) { setPrompt(viewVer.template_text); setViewVer(null); toast.success(`Loaded v${viewVer.version} into the editor. Review it, then click "Save as new version".`); }
                 }}>
                   Load into editor
                 </Button>
@@ -751,7 +751,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
     try {
       await api.saveAgentConfig(agentKey, patch);
     } catch (e) {
-      toast.error("Failed to save policy:" + (e as Error).message);
+      toast.error("Failed to save policy: " + (e as Error).message);
     }
   }
   const [onInterval, setOnInterval] = React.useState(false);
@@ -888,7 +888,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
       });
       reload();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     }
   }
   async function del(id: number) {
@@ -897,17 +897,17 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
       if (editingId === id) resetForm();
       reload();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
 
   function condLabel(t: AgentTrigger): string {
     const parts: string[] = [];
-    if (t.interval_sec > 0) parts.push(`each${t.interval_sec}s`);
-    if (t.on_finding) parts.push("find finding");
+    if (t.interval_sec > 0) parts.push(`every ${t.interval_sec}s`);
+    if (t.on_finding) parts.push("New finding");
     if (t.on_goal_met) parts.push("Goal achieved");
     if (t.on_task_timeout) parts.push("Task timeout");
-    if (t.on_tool_call) parts.push(`Tool call(${t.tool_names.length})`);
+    if (t.on_tool_call) parts.push(`Tool call (${t.tool_names.length})`);
     if (t.on_task_create) parts.push("Task creation");
     return parts.join(" · ") || "(unconditional)";
   }
@@ -999,7 +999,7 @@ function AgentTriggersTab({ agentKey, agent }: { agentKey: string; agent?: Agent
       <div className="grid gap-3 rounded-md border p-3">
         <Label className="text-muted-foreground text-xs">
           {editingId != null
-            ? `Edit trigger #${editingId}(After making changes, click "Save Changes")`
+            ? `Edit trigger #${editingId} (save to apply changes)`
             : "New trigger (each condition can fill in its own user message)"}
         </Label>
 

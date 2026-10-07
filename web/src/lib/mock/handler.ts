@@ -261,7 +261,7 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
   const task = mockTasks.find((item) => item.id === taskID);
   if (!task) throw new Error("Task does not exist");
   if (!["paused", "done", "failed", "timeout"].includes(task.status) && !task.paused) {
-    throw new Error(task.queued ? "The tasks in the queue must be paused first" : "Running tasks must be paused first");
+    throw new Error(task.queued ? "Pause this queued task first" : "Pause running tasks first");
   }
   const existing = mockTaskArchives.find((item) => item.task_id === mockArchiveTaskID(taskID));
   if (existing) throw new Error("The task is already in the archive queue");
@@ -275,7 +275,7 @@ function mockArchiveTask(taskID: string): MockTaskArchive {
           (archive.state === "archive_queued" || archive.state === "archiving"),
       ),
   );
-  if (dependent) throw new Error(`The task is unarchived task #${dependent.id}Direct inheritance, cannot be archived yet`);
+  if (dependent) throw new Error(`Task #${dependent.id} still depends on this task, so it cannot be archived yet`);
 
   const numericTaskID = mockArchiveTaskID(taskID);
   const assetIDs = mockAssets.filter((asset) => asset.task_ids.includes(numericTaskID)).map((asset) => asset.id);
@@ -396,7 +396,7 @@ function mockDeleteArchive(archive: MockTaskArchive): void {
   const dependent = mockTaskArchives.find(
     (candidate) => candidate.id !== archive.id && candidate.source_task_ids.includes(archive.task_id),
   );
-  if (dependent) throw new Error(`Archiving is still tasked #${dependent.task_id}Dependent and cannot be permanently deleted`);
+  if (dependent) throw new Error(`Archive #${dependent.task_id} still depends on this archive, so it cannot be permanently deleted`);
   archive.state = "delete_queued";
   archive.phase = "Waiting for permanent deletion";
   archive.progress = 0;
@@ -1214,7 +1214,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       const company = mockCompanies.find((candidate) => candidate.id === asset.company_id);
       setMockTaskAssetSource(id, asset.id, {
         task_source: "company",
-        task_source_summary: `Associated enterprises when creating the task:${company?.name ?? `#${asset.company_id}`}`,
+        task_source_summary: `Company linked when the task was created: ${company?.name ?? `#${asset.company_id}`}`,
         task_source_node_id: undefined,
       });
     }
@@ -1655,7 +1655,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       const rules: CompanyScopeRule[] = b.scope.map((candidate, index) => {
         if (typeof candidate === "string") {
           const issue = classifyCompanyScopeLine(candidate, index + 1);
-          if (!issue.rule || issue.error) throw new Error(`No.${index + 1}Invalid bar range:${issue.error ?? "Unrecognized"}`);
+          if (!issue.rule || issue.error) throw new Error(`Line ${index + 1} has an invalid scope entry: ${issue.error ?? "Unrecognized"}`);
           return issue.rule;
         }
         const item = candidate as { kind?: unknown; value?: unknown };
@@ -1665,7 +1665,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
             ? { kind: item.kind, value }
             : classifyCompanyScopeLine(value, index + 1).rule;
         const error = rule ? companyScopeRuleError(rule) : "Unrecognized";
-        if (!rule || error) throw new Error(`No.${index + 1}Invalid bar range:${error}`);
+        if (!rule || error) throw new Error(`Line ${index + 1} has an invalid scope entry: ${error}`);
         return rule;
       });
       const mutation: TaskAssetScopeMutation = {

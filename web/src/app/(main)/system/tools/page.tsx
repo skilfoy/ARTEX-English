@@ -176,11 +176,11 @@ function ToolEditor({
         agents: bound,
         enabled,
       });
-      toast.success(`Saved tool "${tool.key}]`);
+      toast.success(`Saved tool "${tool.key}"`);
       onSaved();
       onClose();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -192,7 +192,7 @@ function ToolEditor({
       onSaved();
       onClose();
     } catch (e) {
-      toast.error("Restore failed:" + (e as Error).message);
+      toast.error("Restore failed: " + (e as Error).message);
     }
   }
 
@@ -341,7 +341,7 @@ function ToolGridCard({ tool, onClick }: { tool: Tool; onClick: () => void }) {
         <Badge
           variant="secondary"
           className="ml-auto px-1.5 py-0 text-[10px] tabular-nums"
-          title={`Cumulative calls${tool.calls ?? 0}Second-rate`}
+          title={`${tool.calls ?? 0} calls`}
         >
           Call {tool.calls ?? 0}
         </Badge>
@@ -428,8 +428,8 @@ export default function ToolsPage() {
               <CardTitle>System tools</CardTitle>
               <CardDescription>
                 {query.trim()
-                  ? `${systemTools.length} / ${allSystemCount}matches, click the card to edit the description, parameter default values and Agent binding`
-                  : `Total${allSystemCount}Click on the card to edit the description, parameter default values ​​and bind the Agent.`}
+                  ? `${systemTools.length} / ${allSystemCount} matches. Click a card to edit the description, parameter defaults, and agent binding`
+                  : `${allSystemCount} tools. Click a card to edit the description, parameter defaults, and agent binding.`}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -456,8 +456,8 @@ export default function ToolsPage() {
                   <CardTitle>Custom tools</CardTitle>
                   <CardDescription>
                     {query.trim()
-                      ? `shell/command/script/http,${customTools.length} / ${allCustomCount}matches, click card to edit`
-                      : `shell(bash statement)/command(command)/script(Python)/http(API), total${allCustomCount}, click on the card to edit`}
+                      ? `shell, command, script, or http. ${customTools.length} / ${allCustomCount} matches. Click a card to edit.`
+                      : `shell (bash), command, script (Python), or http (API). ${allCustomCount} total. Click a card to edit.`}
                   </CardDescription>
                 </div>
                 <Button size="sm" onClick={() => setCustomEdit("new")}>
@@ -634,7 +634,7 @@ function CustomToolDialog({
       toast.success(isNew ? "Custom tool created" : "Saved");
       onSaved();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -646,7 +646,7 @@ function CustomToolDialog({
       toast.success("Deleted");
       onSaved();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
   // runTest dry-runs the CURRENT form (unsaved) with the sample params, so a
@@ -678,8 +678,8 @@ function CustomToolDialog({
         className="flex flex-col gap-0 p-0 data-[side=right]:w-[45vw] data-[side=right]:sm:max-w-[45vw] data-[side=right]:min-w-[480px]"
       >
         <SheetHeader className="px-4">
-          <SheetTitle>{isNew ? "Create a new custom tool" : `Edit${tool?.key}`}</SheetTitle>
-          <SheetDescription>shell=bash environment statement (just name + description, inform the model that it can be called by bash); command/script/http needs to write execution specifications.</SheetDescription>
+          <SheetTitle>{isNew ? "Create a new custom tool" : `Edit ${tool?.key}`}</SheetTitle>
+          <SheetDescription>shell is a bash hint (name and description only; the model calls it through bash). command, script, and http need an execution spec.</SheetDescription>
         </SheetHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4">

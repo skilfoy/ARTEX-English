@@ -22,20 +22,20 @@ import type { AssetInterceptKind, AssetInterceptRule } from "@/lib/types";
 // ---- kind Meta information ----
 
 const KIND_OPTIONS: { value: AssetInterceptKind; label: string; group: string; placeholder: string }[] = [
-  { value: "exact_domain", label: "Domain name (congruent)", group: "Congruent match", placeholder: "example.gov.cn" },
-  { value: "exact_ip", label: "IP (congruent)", group: "Congruent match", placeholder: "203.0.113.10" },
-  { value: "exact_url", label: "URL (congruent)", group: "Congruent match", placeholder: "https://example.gov.cn/login" },
-  { value: "fuzzy_domain", label: "Domain name (fuzzy)", group: "Fuzzy matching", placeholder: ".gov.cn" },
-  { value: "fuzzy_ip", label: "IP (blurred)", group: "Fuzzy matching", placeholder: "203.0.113." },
-  { value: "fuzzy_url", label: "URL (blurred)", group: "Fuzzy matching", placeholder: "/admin" },
-  { value: "cidr", label: "CIDR network segment", group: "Network segment", placeholder: "192.168.0.0/16" },
+  { value: "exact_domain", label: "Domain (exact)", group: "Exact match", placeholder: "example.gov.cn" },
+  { value: "exact_ip", label: "IP (exact)", group: "Exact match", placeholder: "203.0.113.10" },
+  { value: "exact_url", label: "URL (exact)", group: "Exact match", placeholder: "https://example.gov.cn/login" },
+  { value: "fuzzy_domain", label: "Domain (fuzzy)", group: "Fuzzy match", placeholder: ".gov.cn" },
+  { value: "fuzzy_ip", label: "IP (fuzzy)", group: "Fuzzy match", placeholder: "203.0.113." },
+  { value: "fuzzy_url", label: "URL (fuzzy)", group: "Fuzzy match", placeholder: "/admin" },
+  { value: "cidr", label: "CIDR range", group: "Network range", placeholder: "192.168.0.0/16" },
 ];
 
 const KIND_LABEL: Record<AssetInterceptKind, string> = Object.fromEntries(
   KIND_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<AssetInterceptKind, string>;
 
-const KIND_GROUPS = ["Congruent match", "Fuzzy matching", "Network segment"];
+const KIND_GROUPS = ["Exact match", "Fuzzy match", "Network range"];
 
 function KindBadge({ kind }: { kind: AssetInterceptKind }) {
   const fuzzy = kind.startsWith("fuzzy_");
@@ -153,7 +153,7 @@ export default function AssetInterceptPage() {
   }
 
   async function handleDelete(rule: AssetInterceptRule) {
-    if (!window.confirm(`Confirm to delete the asset interception rule "${rule.pattern}]?`)) return;
+    if (!window.confirm(`Delete asset intercept rule "${rule.pattern}"?`)) return;
     try {
       await api.deleteAssetInterceptRule(rule.id);
       toast.success("Rule deleted");
@@ -182,15 +182,14 @@ export default function AssetInterceptPage() {
         <div>
           <h1 className="text-lg font-semibold leading-tight">Asset interception</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Global asset blacklist: The hit domain name/IP/URL/network segment will be blocked and no operations will be performed on it
+            Global asset blocklist. Matching domains, IPs, URLs, and networks are blocked and left alone.
           </p>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Supports congruent and fuzzy matching domain names/IPs/URLs, and CIDR network segments; built-in fuzzy interception by default for government (.gov/.gov.cn) and education (.edu/
-          .edu.cn) website
+          Exact and fuzzy matches for domains, IPs, and URLs, plus CIDR ranges. Government (.gov, .gov.cn) and education (.edu, .edu.cn) sites are fuzzy-blocked by default.
         </p>
         <Button onClick={openNew} size="sm" className="shrink-0">
           <PlusIcon className="h-4 w-4" />

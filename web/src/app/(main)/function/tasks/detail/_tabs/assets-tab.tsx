@@ -293,11 +293,11 @@ function AddTaskAssetsSheet({
     try {
       const result = await api.registerTaskAssetScopes(taskId, parsedScope.rules);
       const assetSummary = result.assets_linked + result.assets_existing;
-      toast.success(`Registered${result.requested}range, association${assetSummary}Domain name/IP assets`);
+      toast.success(`Registered ${result.requested} scope entries and linked ${assetSummary} domain or IP assets`);
       onAttached();
       onOpenChange(false);
     } catch (reason) {
-      toast.error(`Failed to add:${String((reason as Error)?.message ?? reason)}`);
+      toast.error(`Failed to add: ${String((reason as Error)?.message ?? reason)}`);
     } finally {
       setSaving(false);
     }
@@ -404,7 +404,7 @@ export function AssetsTab({ taskId }: { taskId: string }) {
           setRows([]);
           setTotal(0);
         } else {
-          toast.error(`Failed to load task assets:${message}`);
+          toast.error(`Failed to load task assets: ${message}`);
         }
       } finally {
         if (active && assetsRequestRef.current === request) {
@@ -438,11 +438,11 @@ export function AssetsTab({ taskId }: { taskId: string }) {
     setRemoving(true);
     try {
       await api.detachTaskAsset(taskId, removeTarget.id);
-      toast.success(`Already${assetLabel(removeTarget)}Remove current task`);
+      toast.success(`Removed ${assetLabel(removeTarget)} from this task`);
       setRemoveTarget(null);
       refresh();
     } catch (reason) {
-      toast.error(`Remove failed:${String((reason as Error)?.message ?? reason)}`);
+      toast.error(`Remove failed: ${String((reason as Error)?.message ?? reason)}`);
     } finally {
       setRemoving(false);
     }
@@ -453,7 +453,7 @@ export function AssetsTab({ taskId }: { taskId: string }) {
       variant="ghost"
       size="icon-sm"
       onClick={() => setRemoveTarget(asset)}
-      aria-label={`Transfer assets${assetLabel(asset)}Remove task`}
+      aria-label={`Remove ${assetLabel(asset)} from this task`}
       title="Remove task"
     >
       <Trash2Icon />

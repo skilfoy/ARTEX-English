@@ -118,10 +118,10 @@ export function ApprovalExecutionFocus({
     >
       <span className={error ? "text-destructive" : "text-muted-foreground"}>
         {error
-          ? `Unable to locate:${error}`
+          ? `Unable to locate: ${error}`
           : history.ready
-            ? `Approval has been started #${state.id}Corresponding tool call`
-            : `Loading approval #${state.id}Conversation location…`}
+            ? `Opened the tool call for approval #${state.id}`
+            : `Loading the conversation for approval #${state.id}…`}
       </span>
       <div className="flex gap-2">
         {error ? (

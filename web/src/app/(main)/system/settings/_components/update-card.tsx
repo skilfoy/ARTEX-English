@@ -54,13 +54,13 @@ export function UpdateCard() {
       .then((r) => {
         setInfo(r);
         if (!quiet) {
-          if (r.error) toast.error("Failed to check for updates:" + r.error);
-          else if (r.has_update) toast.success(`New version found${r.latest}`);
+          if (r.error) toast.error("Failed to check for updates: " + r.error);
+          else if (r.has_update) toast.success(`New version ${r.latest} found`);
           else if (r.comparable) toast.success("This is the latest version");
         }
       })
       .catch((e) => {
-        if (!quiet) toast.error("Failed to check for updates:" + (e as Error).message);
+        if (!quiet) toast.error("Failed to check for updates: " + (e as Error).message);
       })
       .finally(() => setChecking(false));
   }, []);
@@ -83,7 +83,7 @@ export function UpdateCard() {
         if (r.ok) {
           const j = (await r.json()) as { version?: string };
           if (j.version && j.version !== fromVersion) {
-            toast.success(`Updated to${j.version}, reloading page`);
+            toast.success(`Updated to ${j.version}. Reloading…`);
             await sleep(800);
             window.location.reload();
             return;
@@ -112,7 +112,7 @@ export function UpdateCard() {
         if (p.phase === "failed") {
           es.close();
           setBusy(false);
-          toast.error("Update failed:" + (p.error || p.message));
+          toast.error("Update failed: " + (p.error || p.message));
           return;
         }
         if (p.phase === "staged") {
@@ -134,7 +134,7 @@ export function UpdateCard() {
     if (!info) return;
     const from = info.current;
     const ok = window.confirm(
-      `Confirm to update to${info.latest}?\n\n` +
+      `Update to ${info.latest}?\n\n` +
         "The update will restart the program and running tasks will be interrupted." +
         (info.mode === "docker"
           ? "Note: In-container updates only replace the program itself, and will not update the playwright / nmap and other tool chains in the image;" +
@@ -150,7 +150,7 @@ export function UpdateCard() {
       es.close();
       setBusy(false);
       setProgress(null);
-      toast.error("Failed to start update:" + (e as Error).message);
+      toast.error("Failed to start update: " + (e as Error).message);
     });
   };
 
@@ -172,7 +172,7 @@ export function UpdateCard() {
       })
       .catch((e) => {
         setBusy(false);
-        toast.error("Rollback failed:" + (e as Error).message);
+        toast.error("Rollback failed: " + (e as Error).message);
       });
   };
 
@@ -294,7 +294,7 @@ export function UpdateCard() {
             disabled={busy || restarting || !info?.has_update || info?.asset_available === false}
           >
             <DownloadIcon className="size-4" />
-            {info?.has_update ? `Updated to${info.latest}` : "Update now"}
+            {info?.has_update ? `Updated to ${info.latest}` : "Update now"}
           </Button>
           {info?.has_backup && (
             <Button variant="ghost" size="sm" onClick={doRollback} disabled={busy || restarting}>

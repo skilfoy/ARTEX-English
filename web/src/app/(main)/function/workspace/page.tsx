@@ -85,7 +85,7 @@ export default function WorkspacePage() {
           setEntries(r.entries);
           setPath(r.path);
         })
-        .catch((e) => toast.error(`Failed to read directory:${(e as Error).message}`))
+        .catch((e) => toast.error(`Failed to read directory: ${(e as Error).message}`))
         .finally(() => setLoading(false));
     },
     [],
@@ -110,7 +110,7 @@ export default function WorkspacePage() {
     api
       .workspaceRead(e.path)
       .then((f) => setEdit({ file: f, content: f.content ?? "", dirty: false, saving: false }))
-      .catch((err) => toast.error(`Failed to open file:${(err as Error).message}`));
+      .catch((err) => toast.error(`Failed to open file: ${(err as Error).message}`));
   };
 
   const saveFile = () => {
@@ -124,20 +124,20 @@ export default function WorkspacePage() {
         load(path);
       })
       .catch((err) => {
-        toast.error(`Save failed:${(err as Error).message}`);
+        toast.error(`Save failed: ${(err as Error).message}`);
         setEdit((cur) => (cur ? { ...cur, saving: false } : cur));
       });
   };
 
   const del = (e: WorkspaceEntry) => {
-    if (!window.confirm(`Confirm deletion${e.dir ? "Table of contents" : "Documents"} [${e.name}]?${e.dir ? "(including all content below)" : ""}`)) return;
+    if (!window.confirm(`Delete ${e.dir ? "folder" : "file"} "${e.name}"?${e.dir ? " This also deletes everything inside it." : ""}`)) return;
     api
       .workspaceDelete(e.path)
       .then(() => {
         toast.success("Deleted");
         load(path);
       })
-      .catch((err) => toast.error(`Deletion failed:${(err as Error).message}`));
+      .catch((err) => toast.error(`Deletion failed: ${(err as Error).message}`));
   };
 
   const doUpload = (files: FileList | null) => {
@@ -145,10 +145,10 @@ export default function WorkspacePage() {
     api
       .workspaceUpload(path, Array.from(files))
       .then((r) => {
-        toast.success(`Uploaded${r.uploaded}files`);
+        toast.success(`Uploaded ${r.uploaded} files`);
         load(path);
       })
-      .catch((err) => toast.error(`Upload failed:${(err as Error).message}`))
+      .catch((err) => toast.error(`Upload failed: ${(err as Error).message}`))
       .finally(() => {
         if (uploadRef.current) uploadRef.current.value = "";
       });
@@ -166,7 +166,7 @@ export default function WorkspacePage() {
         setMkdirName("");
         load(path);
       })
-      .catch((err) => toast.error(`Creation failed:${(err as Error).message}`));
+      .catch((err) => toast.error(`Creation failed: ${(err as Error).message}`));
   };
 
   return (
@@ -258,7 +258,7 @@ export default function WorkspacePage() {
                           size="icon"
                           className="size-7"
                           title="Download"
-                          onClick={() => api.workspaceDownload(e.path).catch((err) => toast.error(`Download failed:${(err as Error).message}`))}
+                          onClick={() => api.workspaceDownload(e.path).catch((err) => toast.error(`Download failed: ${(err as Error).message}`))}
                         >
                           <DownloadIcon className="size-3.5" />
                         </Button>

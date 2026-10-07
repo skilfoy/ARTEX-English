@@ -196,7 +196,7 @@ export default function AssetsPage() {
       setSelected(new Set());
       refresh();
     } catch (e) {
-      toast.error("Deletion failed:" + String((e as Error)?.message ?? e));
+      toast.error("Deletion failed: " + String((e as Error)?.message ?? e));
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -215,7 +215,7 @@ export default function AssetsPage() {
       toast.success(msg);
       refresh();
     } catch (e) {
-      toast.error("Deletion failed:" + String((e as Error)?.message ?? e));
+      toast.error("Deletion failed: " + String((e as Error)?.message ?? e));
     } finally {
       setCompanyDeleting(false);
       setCompanyDeleteTarget(null);
@@ -395,7 +395,7 @@ export default function AssetsPage() {
                               setCompanyDeleteTarget(c);
                               setCompanyDeleteAssets(false);
                             }}
-                            aria-label={`Delete enterprise${c.name}`}
+                            aria-label={`Delete company ${c.name}`}
                           >
                             <Trash2Icon className="size-3.5" />
                           </Button>
@@ -406,7 +406,7 @@ export default function AssetsPage() {
                   {companies.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
-                        There are no businesses yet. Click "Add Enterprise" in the upper right corner and fill in the asset range. The system will automatically claim the hit assets.
+                        No companies yet. Click "Add Enterprise" in the upper right and enter an asset scope. Matching assets are claimed automatically.
                       </TableCell>
                     </TableRow>
                   )}
@@ -447,7 +447,7 @@ export default function AssetsPage() {
                     size="icon"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => openDelete([a.id])}
-                    aria-label={`Delete assets${a.domain || a.id}`}
+                    aria-label={`Delete asset ${a.domain || a.id}`}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -494,7 +494,7 @@ export default function AssetsPage() {
                     size="icon"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => openDelete([a.id])}
-                    aria-label={`Delete assets${a.ip || a.id}`}
+                    aria-label={`Delete asset ${a.ip || a.id}`}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -536,7 +536,7 @@ export default function AssetsPage() {
                     size="icon"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => openDelete([a.id])}
-                    aria-label={`Delete assets${a.domain || a.id}`}
+                    aria-label={`Delete asset ${a.domain || a.id}`}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -576,7 +576,7 @@ export default function AssetsPage() {
                     size="icon"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => openDelete([a.id])}
-                    aria-label={`Delete assets${a.app_name || a.id}`}
+                    aria-label={`Delete asset ${a.app_name || a.id}`}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -671,7 +671,7 @@ export default function AssetsPage() {
                       size="icon"
                       className="size-7 text-muted-foreground hover:text-destructive"
                       onClick={() => openDelete([a.id])}
-                      aria-label={`Delete assets${a.url || a.id}`}
+                      aria-label={`Delete asset ${a.url || a.id}`}
                     >
                       <Trash2Icon className="size-3.5" />
                     </Button>
@@ -723,7 +723,7 @@ export default function AssetsPage() {
                     size="icon"
                     className="size-7 text-muted-foreground hover:text-destructive"
                     onClick={() => openDelete([a.id])}
-                    aria-label={`Delete assets${a.url || a.id}`}
+                    aria-label={`Delete asset ${a.url || a.id}`}
                   >
                     <Trash2Icon className="size-3.5" />
                   </Button>
@@ -1006,7 +1006,7 @@ function CompanyDialog({ onSaved }: { onSaved: () => void }) {
     } catch (e) {
       const msg = String((e as Error)?.message ?? e);
       if (/:\s*409$/.test(msg)) toast.error("The company already exists, please change its name");
-      else toast.error(`Save failed:${msg}`);
+      else toast.error(`Save failed: ${msg}`);
     } finally {
       setBusy(false);
     }
@@ -1078,13 +1078,13 @@ function EditScopeDialog({ company, onSaved }: { company: Company; onSaved: () =
     try {
       const res = await api.updateCompanyScope(company.id, parsedScope.rules, reason);
       const errCount = res.invalid ?? 0;
-      if (errCount > 0) toast.warning(`Saved;${errCount}Invalid row`);
+      if (errCount > 0) toast.warning(`Saved with ${errCount} invalid rows`);
       else toast.success(`Scope updated with ${res.added} entries`);
       showScopeWarnings(res.warnings);
       setOpen(false);
       onSaved();
     } catch (e) {
-      toast.error(`Save failed:${String((e as Error)?.message ?? e)}`);
+      toast.error(`Save failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
     }
@@ -1161,13 +1161,13 @@ function AppendScopeDialog({ company, onSaved }: { company: Company; onSaved: ()
     try {
       const res = await api.addCompanyScope(company.id, parsedScope.rules, reason);
       const errCount = res.invalid ?? 0;
-      if (errCount > 0) toast.warning(`Saved;${errCount}Invalid row`);
+      if (errCount > 0) toast.warning(`Saved with ${errCount} invalid rows`);
       else toast.success(`Added ${res.added} scope entries`);
       showScopeWarnings(res.warnings);
       setOpen(false);
       onSaved();
     } catch (e) {
-      toast.error(`Save failed:${String((e as Error)?.message ?? e)}`);
+      toast.error(`Save failed: ${String((e as Error)?.message ?? e)}`);
     } finally {
       setBusy(false);
     }

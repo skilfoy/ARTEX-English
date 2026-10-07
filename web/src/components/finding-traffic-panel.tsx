@@ -176,7 +176,7 @@ export function FindingTrafficPanel({
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`Move evidence up${b.id}`}
+                          aria-label={`Move evidence ${b.id} up`}
                           disabled={busy || index === 0}
                           onClick={() => move(index, -1)}
                         >
@@ -185,7 +185,7 @@ export function FindingTrafficPanel({
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`Move down evidence${b.id}`}
+                          aria-label={`Move evidence ${b.id} down`}
                           disabled={busy || index === data.bindings.length - 1}
                           onClick={() => move(index, 1)}
                         >

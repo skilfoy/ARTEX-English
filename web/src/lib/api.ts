@@ -448,19 +448,19 @@ export const api = {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: fd,
     });
-    if (!r.ok) throw new Error(`Upload failed:${r.status}`);
+    if (!r.ok) throw new Error(`Upload failed: ${r.status}`);
     return r.json() as Promise<{ uploaded: number }>;
   },
   workspaceDownload: async (path: string) => {
     let blob: Blob;
     if (MOCK) {
-      blob = new Blob([`(demo)${path}Examples of download content.`], { type: "text/plain" });
+      blob = new Blob([`(demo) ${path}\nSample download.`], { type: "text/plain" });
     } else {
       const token = getToken();
       const r = await fetch(`/api/workspace/download?path=${encodeURIComponent(path)}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
-      if (!r.ok) throw new Error(`Download failed:${r.status}`);
+      if (!r.ok) throw new Error(`Download failed: ${r.status}`);
       blob = await r.blob();
     }
     const objUrl = URL.createObjectURL(blob);
@@ -899,7 +899,7 @@ export const api = {
       headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: fd,
     });
-    if (!r.ok) throw new Error(`Upload failed:${r.status} ${await r.text()}`);
+    if (!r.ok) throw new Error(`Upload failed: ${r.status} ${await r.text()}`);
     return r.json() as Promise<{ attachments: ChatAttachment[] }>;
   },
   stopChat: (taskId: string) => post<{ status: string }>(`/tasks/${taskId}/chat/stop`, {}),

@@ -3153,7 +3153,7 @@ export function agentDetail(key: string): AgentDetail {
   const a = agents.find((x) => x.key === key) ?? agents[1];
   return {
     agent: a,
-    prompt: `You are ARTEX's${a.name}".\nGoal: {{.Goal}}\nAsset summary: {{.AssetSummary}}\nRoute Hint: {{.RouteHint}}\nPlease proceed with the exploration based on the above information and write the results back to the graph through the tool.`,
+    prompt: `You are ARTEX's ${a.name}.\nGoal: {{.Goal}}\nAsset summary: {{.AssetSummary}}\nRoute hint: {{.RouteHint}}\nContinue the assessment from the information above and write results back to the graph with tools.`,
     variables: promptVars,
     versions: promptVersions,
     visibility: { mcp: [1, 2], skill: ["api-recon", "playwright-cli"] },

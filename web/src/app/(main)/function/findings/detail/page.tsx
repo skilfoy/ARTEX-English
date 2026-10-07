@@ -85,10 +85,10 @@ function FindingDetailInner() {
       try {
         const updated = await api.setFindingSeverity(id, next);
         setFinding(updated);
-        toast.success(`The severity level has been changed to "${statusMeta("severity", next).label}]`);
+        toast.success(`Severity set to "${statusMeta("severity", next).label}"`);
       } catch (e) {
         setFinding((cur) => (cur ? { ...cur, severity: prev } : cur));
-        toast.error("Update failed:" + (e as Error).message);
+        toast.error("Update failed: " + (e as Error).message);
       }
     },
     [finding, id],
@@ -102,10 +102,10 @@ function FindingDetailInner() {
       try {
         const updated = await api.setFindingStatus(id, next);
         setFinding(updated);
-        toast.success(`The processing status has been changed to "${statusMeta("finding", next).label}]`);
+        toast.success(`Status set to "${statusMeta("finding", next).label}"`);
       } catch (e) {
         setFinding((cur) => (cur ? { ...cur, status: prev } : cur));
-        toast.error("Update failed:" + (e as Error).message);
+        toast.error("Update failed: " + (e as Error).message);
       }
     },
     [finding, id],
@@ -114,7 +114,7 @@ function FindingDetailInner() {
   if (!finding) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-        <p className="text-muted-foreground">{loaded ? `No discovery found${id}` : "Loading…"}</p>
+        <p className="text-muted-foreground">{loaded ? `Finding ${id} was not found` : "Loading…"}</p>
         {loaded && (
           <Button asChild variant="outline">
             <Link href="/function/findings">

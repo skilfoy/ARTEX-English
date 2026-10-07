@@ -179,7 +179,7 @@ export default function FindingsPage() {
         setActiveRetests(Object.fromEntries(rows.map((item) => [item.finding_id, item])));
         failed = false;
       } catch (error) {
-        if (!disposed && !failed) toast.error(`Failed to load retest status:${(error as Error).message}`);
+        if (!disposed && !failed) toast.error(`Failed to load retest status: ${(error as Error).message}`);
         failed = true;
       } finally {
         if (!disposed) timer = setTimeout(() => void refreshRetests(), 3000);
@@ -292,7 +292,7 @@ export default function FindingsPage() {
       setExportOpen(false);
       toast.success("Started downloading export file");
     } catch (e) {
-      toast.error(`Export failed:${(e as Error).message}`);
+      toast.error(`Export failed: ${(e as Error).message}`);
     } finally {
       setExporting(false);
     }
@@ -362,7 +362,7 @@ export default function FindingsPage() {
     } catch (e) {
       if (request !== assetTreeRequest.current || activeFilterFingerprint.current !== requestFilter) return;
       setAssetTree((current) => ({ ...current, loading: false }));
-      toast.error(`Asset tree loading failed:${(e as Error).message}`);
+      toast.error(`Asset tree loading failed: ${(e as Error).message}`);
     }
   }, [filterFingerprint, severity, status, vulnclass, task, query, sort]);
 
@@ -607,7 +607,7 @@ export default function FindingsPage() {
       setFindings((cur) => cur.map((x) => (isSameFinding(x, f) ? { ...x, status: next } : x)));
       try {
         await api.setFindingStatus(f.finding_id, next);
-        toast.success(`Marked as "${statusMeta("finding", next).label}]`);
+        toast.success(`Marked as "${statusMeta("finding", next).label}"`);
         // refresh stat cards (pending count) and drop the row if it no longer matches the status filter
         api
           .findingStats()
@@ -623,7 +623,7 @@ export default function FindingsPage() {
         refreshAfterMutation(f);
       } catch (e) {
         setFindings((cur) => cur.map((x) => (isSameFinding(x, f) ? { ...x, status: prev } : x)));
-        toast.error(`Update failed:${(e as Error).message}`);
+        toast.error(`Update failed: ${(e as Error).message}`);
       }
     },
     [refreshAfterMutation, setFindings, status],
@@ -687,7 +687,7 @@ export default function FindingsPage() {
           });
         refreshAfterMutation(f);
       } catch (e) {
-        toast.error(`Save failed:${(e as Error).message}`);
+        toast.error(`Save failed: ${(e as Error).message}`);
       } finally {
         setSaving(false);
       }
@@ -720,7 +720,7 @@ export default function FindingsPage() {
           });
         refreshAfterMutation(f, true);
       } catch (e) {
-        toast.error(`Deletion failed:${(e as Error).message}`);
+        toast.error(`Deletion failed: ${(e as Error).message}`);
       }
     },
     [refreshAfterMutation, setFindings],
@@ -738,25 +738,25 @@ export default function FindingsPage() {
       const result = await api.deepenFinding(deepenFinding.finding_id, deepenDescription.trim());
       toast.success(
         result.queued
-          ? `Deep Intention #${result.intent_id}Entered the task queue`
-          : `High priority Worker intent # created${result.intent_id}`,
+          ? `Follow-up worker #${result.intent_id} entered the queue`
+          : `Created high-priority worker #${result.intent_id}`,
       );
       refreshAfterMutation(deepenFinding);
       setDeepenFinding(null);
       setDeepenDescription("");
     } catch (error) {
-      toast.error(`Submission failed:${(error as Error).message}`);
+      toast.error(`Submission failed: ${(error as Error).message}`);
     } finally {
       setDeepening(false);
     }
   }
 
   const statCards = [
-    { label: "Total number of discoveries", value: stats.total, icon: BugIcon },
+    { label: "Findings", value: stats.total, icon: BugIcon },
     { label: "Pending", value: stats.pending, tone: "text-amber-500", icon: ClockIcon },
-    { label: "Serious", value: stats.critical, tone: "text-rose-600", icon: ShieldAlertIcon },
+    { label: "Critical", value: stats.critical, tone: "text-rose-600", icon: ShieldAlertIcon },
     { label: "High risk", value: stats.high, tone: "text-red-500", icon: TriangleAlertIcon },
-    { label: "medium risk", value: stats.medium, tone: "text-amber-500", icon: TriangleAlertIcon },
+    { label: "Medium risk", value: stats.medium, tone: "text-amber-500", icon: TriangleAlertIcon },
     { label: "Low risk", value: stats.low, tone: "text-slate-500", icon: InfoIcon },
   ];
 
@@ -872,13 +872,13 @@ export default function FindingsPage() {
             {(
               [
                 ["all", "All"],
-                ["critical", "Serious"],
+                ["critical", "Critical"],
                 ["high", "High risk"],
-                ["medium", "medium risk"],
+                ["medium", "Medium risk"],
                 ["low", "Low risk"],
               ] as const
             ).map(([val, label]) => (
-              <ToggleGroupItem key={val} value={val} aria-label={`Press${label}Level filtering`}>
+              <ToggleGroupItem key={val} value={val} aria-label={`Filter by ${label}`}>
                 {label}
               </ToggleGroupItem>
             ))}
@@ -951,7 +951,7 @@ export default function FindingsPage() {
 
           <div className="ml-auto flex items-center gap-3">
             {selectedIds.size > 0 && (
-              <span className="text-xs text-muted-foreground tabular-nums">Selected {selectedIds.size} strip</span>
+              <span className="text-xs text-muted-foreground tabular-nums">Selected {selectedIds.size}</span>
             )}
             <Button size="sm" variant="outline" onClick={openExport}>
               <DownloadIcon /> Export
@@ -1008,7 +1008,7 @@ export default function FindingsPage() {
                     </button>
                   </React.Fragment>
                 ))}
-                <span className="ml-auto shrink-0 text-xs tabular-nums">Total {flat.total} strip</span>
+                <span className="ml-auto shrink-0 text-xs tabular-nums">Total {flat.total}</span>
               </div>
               {flatListCard}
             </div>

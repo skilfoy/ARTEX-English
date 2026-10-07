@@ -255,7 +255,7 @@ export default function TrafficPage() {
   const deleteTitle = deleteMode
     ? {
         all: "Clear all traffic records?",
-        selected: `Delete selected${selectedHosts.length}All traffic to a goal?`,
+        selected: `Delete all traffic for the ${selectedHosts.length} selected targets?`,
         filter: "Delete all traffic for this target?",
       }[deleteMode]
     : "";
@@ -284,15 +284,15 @@ export default function TrafficPage() {
         if (mode === "all") {
           // Reclaimed space is the whole point of compacting an emptied index, so say so.
           const reclaimed = r.reclaimed ?? 0;
-          const freed = reclaimed > 0 ? `, release${fmtBytes(reclaimed)}storage` : "";
-          toast.success(`Cleared${r.deleted}traffic${freed}`);
+          const freed = reclaimed > 0 ? `, freed ${fmtBytes(reclaimed)}` : "";
+          toast.success(`Cleared ${r.deleted} traffic records${freed}`);
         }
         setPage(0);
         setReloadTick((t) => t + 1);
       })
       .catch((e) => {
         // Keep the confirmation open so the user can retry a failed deletion.
-        if (mode === "all") toast.error(`Clear failed:${(e as Error).message}`);
+        if (mode === "all") toast.error(`Clear failed: ${(e as Error).message}`);
       })
       .finally(() => setDeleting(false));
   };
@@ -358,7 +358,7 @@ export default function TrafficPage() {
           </span>
           {traffic?.proxy && <span className="font-mono text-xs text-muted-foreground">{traffic.proxy}</span>}
           <span className="text-xs text-muted-foreground">
-            Total <span className="tabular-nums">{traffic?.count ?? 0}</span> strip
+            Total <span className="tabular-nums">{traffic?.count ?? 0}</span>
           </span>
         </div>
       </div>
@@ -396,7 +396,7 @@ export default function TrafficPage() {
                         {hostCountSortDirection === "desc" ? <ArrowDownWideNarrowIcon /> : <ArrowUpNarrowWideIcon />}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>By number of packets{hostCountSortDirection === "desc" ? "Reverse order" : "Normal sequence"}</TooltipContent>
+                    <TooltipContent>Packet count, {hostCountSortDirection === "desc" ? "descending" : "ascending"}</TooltipContent>
                   </Tooltip>
                 )}
                 {hosts.length > 0 && (
@@ -676,7 +676,7 @@ export default function TrafficPage() {
                   >
                     <TableCell>
                       <Checkbox
-                        aria-label={`Select traffic${e.id}`}
+                        aria-label={`Select traffic ${e.id}`}
                         checked={selectedFlows.has(e.id)}
                         onClick={(event) => event.stopPropagation()}
                         onCheckedChange={(checked) =>

@@ -42,9 +42,9 @@ export function FindingRetestDialog({ findingId, findingName, onClose, onStarted
       const result = await api.startFindingRetest(findingId, notes.trim());
       onStarted?.(result.retest);
       onClose();
-      toast.success(result.created ? "The retest has been started, you can click \"Retesting\" to view the session" : "This vulnerability is being retested, and existing sessions can be viewed");
+      toast.success(result.created ? "Retest started. Open \"Retesting\" to view the session." : "This finding is already being retested. You can open the existing session.");
     } catch (e) {
-      toast.error(`Failed to initiate retest:${(e as Error).message}`);
+      toast.error(`Failed to initiate retest: ${(e as Error).message}`);
     } finally {
       submitLock.current = false;
       setSubmitting(false);
@@ -55,11 +55,10 @@ export function FindingRetestDialog({ findingId, findingName, onClose, onStarted
     <Dialog open onOpenChange={(open) => !open && !submitLock.current && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Retest vulnerability #{findingId}</DialogTitle>
+          <DialogTitle>Retest finding #{findingId}</DialogTitle>
           <DialogDescription className="break-words">
             {findingName ? <span className="mb-2 block">{findingName}</span> : null}
-            Retest Agent
-            The original evidence and test constraints are read and targeted verification is performed in a separate session. After the retest is successfully completed and the fix is ​​confirmed, the vulnerability status is automatically changed to "Fixed" and other conclusions remain in their original status.
+            The retest agent reads the original evidence and constraints, then checks them in a separate session. If the retest confirms a fix, the finding status becomes "Fixed". Other conclusions stay as they are.
           </DialogDescription>
         </DialogHeader>
         <FieldGroup>

@@ -171,9 +171,9 @@ function relTime(ts: number, now: number): string {
   if (!now || !ts) return "";
   const sec = Math.max(0, (now - ts) / 1000);
   if (sec < 60) return "Just now";
-  if (sec < 3600) return `${Math.floor(sec / 60)}minutes ago`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}hours ago`;
-  return `${Math.floor(sec / 86400)}days ago`;
+  if (sec < 3600) return `${Math.floor(sec / 60)} minutes ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)} hours ago`;
+  return `${Math.floor(sec / 86400)} days ago`;
 }
 
 const dayFmt = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", weekday: "short" });

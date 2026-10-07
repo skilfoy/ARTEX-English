@@ -89,7 +89,7 @@ function JudgeSparkbars({ daily }: { daily: JudgeDayUsage[] }) {
         return (
           <div
             key={d.date}
-            title={`${d.date} · ${d.calls}Second-rate ·${fmtTokens(total)} tokens`}
+            title={`${d.date} · ${d.calls} calls · ${fmtTokens(total)} tokens`}
             className="min-w-[2px] flex-1 rounded-sm bg-violet-500/60 hover:bg-violet-500"
             style={{ height: `${h}%` }}
           />
@@ -228,7 +228,7 @@ function JudgeCard() {
       setCfg(j);
       setProfiles(ps);
     } catch (e) {
-      toast.error("Failed to load model configuration:" + (e as Error).message);
+      toast.error("Failed to load model configuration: " + (e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -254,7 +254,7 @@ function JudgeCard() {
       toast.success("The model configuration has been saved");
       await load(); // Read back:If the prompt word is cleared, the built-in template will be backfilled.
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -269,7 +269,7 @@ function JudgeCard() {
       setCfg(j);
       toast.success("The built-in default template has been restored");
     } catch (e) {
-      toast.error("Restore failed:" + (e as Error).message);
+      toast.error("Restore failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -286,9 +286,9 @@ function JudgeCard() {
         <div className="flex items-center gap-2.5">
           <BotIcon className={`h-5 w-5 shrink-0 ${cfg.enabled ? "text-violet-600" : "text-muted-foreground"}`} />
           <div>
-            <p className="text-sm font-semibold leading-tight">Model full approval</p>
+            <p className="text-sm font-semibold leading-tight">Model review</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              at<span className="font-medium text-foreground">Interception range</span>Within, and<span className="font-medium text-foreground">No interception rules hit</span>The model will make semantic judgment (release/transfer to manual/interception) only after the command is issued.
+              Inside the <span className="font-medium text-foreground">intercept scope</span>, when <span className="font-medium text-foreground">no intercept rule matches</span>, the model judges the command (allow, ask for approval, or block) before it runs.
             </p>
           </div>
         </div>
@@ -570,7 +570,7 @@ export default function InterceptPage() {
       setAllTools(tools);
       setEnabledTools(new Set(cfg.enabled_tools));
     } catch (e) {
-      toast.error("Loading failed:" + (e as Error).message);
+      toast.error("Loading failed: " + (e as Error).message);
     } finally {
       setScopeLoading(false);
     }
@@ -592,7 +592,7 @@ export default function InterceptPage() {
       setScopeTools([...enabledTools]);
       setScopeOpen(false);
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setScopeSaving(false);
     }

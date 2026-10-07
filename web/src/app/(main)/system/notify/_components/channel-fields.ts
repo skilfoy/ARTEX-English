@@ -82,7 +82,7 @@ export const CHANNEL_FIELDS: Record<string, FieldDef[]> = {
       kind: "textarea",
       help:
         "Leave blank to use the built-in default template. Variables: {{.Title}} {{.Batch}} {{.Count}} {{.HomeURL}} {{.SentAt}}," +
-        "And .Name/.VulnClass/.Severity/.Summary/.Assets/.DetailURL/.StatusLabel under range .Items." +
+        "and, inside range .Items: .Name, .VulnClass, .Severity, .Summary, .Assets, .DetailURL, and .StatusLabel. " +
         "Please use {{json .Xxx}} instead of {{.Xxx}} to insert a string, otherwise the quotation marks in the title will destroy the JSON.",
     },
   ],
@@ -94,7 +94,7 @@ export const CHANNEL_FIELDS: Record<string, FieldDef[]> = {
       label: "API address",
       kind: "text",
       placeholder: "https://api.telegram.org",
-      help: "Leave it blank and use the official address; fill it in when you create a self-built Bot API and reverse it.",
+      help: "Leave blank to use the official address. Set this for a self-hosted Bot API or a reverse proxy.",
     },
   ],
   email: [
@@ -104,22 +104,22 @@ export const CHANNEL_FIELDS: Record<string, FieldDef[]> = {
       label: "Port",
       kind: "number",
       placeholder: "587",
-      help: "587 Go to STARTTLS; 465 Please turn on \"Implicit TLS\"",
+      help: "Port 587 uses STARTTLS. For port 465, turn on \"Implicit TLS\".",
     },
     { key: "username", label: "Account", kind: "text" },
     { key: "password", label: "Password/Authorization code", kind: "password" },
     { key: "from", label: "Sender", kind: "text", placeholder: "artex@example.com" },
     { key: "to", label: "Recipient", kind: "list", help: "Multiple addresses separated by commas" },
-    { key: "tls", label: "Implicit TLS", kind: "switch", help: "465 port is open; 587 remains closed (will automatically STARTTLS)" },
+    { key: "tls", label: "Implicit TLS", kind: "switch", help: "Turn on for port 465. Leave off for port 587 (STARTTLS starts automatically)." },
   ],
 };
 
 export const SEVERITY_OPTIONS = [
   { value: "", label: "No limit" },
   { value: "low", label: "Low risk or above" },
-  { value: "medium", label: "Moderately dangerous or above" },
+  { value: "medium", label: "Medium risk or above" },
   { value: "high", label: "High risk or above" },
-  { value: "critical", label: "Severe only" },
+  { value: "critical", label: "Critical only" },
 ];
 
 export type ChannelForm = {

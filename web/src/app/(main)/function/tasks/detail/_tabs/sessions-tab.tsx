@@ -553,7 +553,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       const r = await api.chatUpload("task", taskId, Array.from(files));
       setAttachments((prev) => [...prev, ...r.attachments]);
     } catch (e) {
-      toast.error(`Upload failed:${(e as Error).message}`);
+      toast.error(`Upload failed: ${(e as Error).message}`);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -576,7 +576,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       setListOpen(false);
       setInput("");
     } catch (e) {
-      toast.error(`Failed to create new session:${(e as Error).message}`);
+      toast.error(`Failed to create new session: ${(e as Error).message}`);
     } finally {
       setCreatingMain(false);
       setConfirmNewMain(false);
@@ -604,25 +604,25 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         const res = await api.controlIntent(taskId, session.intent_id, action, reason, mode);
         if (action === "pause") {
           patchIntentState(session.intent_id, "paused");
-          toast.success(`Worker #${session.intent_id}Suspended`);
+          toast.success(`Worker #${session.intent_id} paused`);
         } else if (action === "resume") {
           patchIntentState(session.intent_id, "open");
-          toast.success(`Worker #${session.intent_id}Restored, waiting to be picked up again`);
+          toast.success(`Worker #${session.intent_id} resumed and is waiting to be picked up`);
         } else if (mode === "hard") {
           // True delete:Intent and exclusive downstream have been physically removed,Remove the row from the list.
           patchIntentState(session.intent_id);
           const d = res.deleted;
-          const extra = d ? `(including${d.intents}intention /${d.facts}facts /${d.findings}vulnerability)` : "";
-          toast.success(`Worker #${session.intent_id}and its exclusive downstream have been completely deleted${extra}`);
+          const extra = d ? ` (including ${d.intents} intents, ${d.facts} facts, and ${d.findings} findings)` : "";
+          toast.success(`Worker #${session.intent_id} and its exclusive downstream were deleted${extra}`);
           setCancelReason("");
         } else {
           // Fake deletion:Intention setting deleted,Reason for record deletion,Retain nodes and outputs.
           patchIntentState(session.intent_id, "deleted");
-          toast.success(`Worker #${session.intent_id}Deleted (the reason has been recorded and the planner will re-plan accordingly)`);
+          toast.success(`Worker #${session.intent_id} deleted. The reason was recorded and the planner will replan.`);
           setCancelReason("");
         }
       } catch (error) {
-        toast.error(`Worker operation failed:${(error as Error).message}`);
+        toast.error(`Worker operation failed: ${(error as Error).message}`);
       } finally {
         setControllingIntent(null);
         setCancelIntent(null);
@@ -1513,7 +1513,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
       .catch((e) => {
         setInput(text); // restore so the user doesn't lose their text / attachments
         setAttachments(atts);
-        toast.error(`Sending failed:${(e as Error).message || "Please try again later"}`);
+        toast.error(`Sending failed: ${(e as Error).message || "Please try again later"}`);
       })
       .finally(() => setSending(false));
   }
@@ -1541,7 +1541,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
         toast.success(`Message sent to Worker #${intentId}, execution has continued immediately`);
       })
       .catch((error) => {
-        toast.error(`Sending failed:${(error as Error).message || "Please try again later"}`);
+        toast.error(`Sending failed: ${(error as Error).message || "Please try again later"}`);
       })
       .finally(() => setWorkerMessageSending(false));
   }
@@ -1724,7 +1724,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                 );
               })}
               {mainLoaded && !workerSessions.length && (
-                <div className="px-2 py-1 text-xs text-muted-foreground">There are no running Worker sessions.</div>
+                <div className="px-2 py-1 text-xs text-muted-foreground">No workers are running.</div>
               )}
             </div>
           </ScrollArea>
@@ -1763,7 +1763,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                       variant="outline"
                       className="max-w-28 shrink-0 font-normal"
                       aria-label={
-                        activeResolution.available ? `Current configuration:${resolutionLabel(activeResolution)}` : "Model not available"
+                        activeResolution.available ? `Current configuration: ${resolutionLabel(activeResolution)}` : "Model not available"
                       }
                     >
                       <span className="truncate">
@@ -1883,7 +1883,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                 ) : activeState?.error ? (
                   <div className="flex items-center gap-2 pl-9 text-xs text-red-500">
                     <CircleXIcon className="size-3.5" />
-                    Loading failed:{activeState.error}
+                    Loading failed: {activeState.error}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -2010,8 +2010,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                   <MentionTextarea
                     inputGroup
                     rows={1}
-                    aria-label={`Give Worker #${active.intent_id}send message`}
-                    placeholder={`Give Worker #${active.intent_id}Send a message, @ quote the record, adjust the execution direction...`}
+                    aria-label={`Send a message to worker #${active.intent_id}`}
+                    placeholder={`Message worker #${active.intent_id}. Use @ to cite a record and adjust what it does next.`}
                     value={workerMessage}
                     onValueChange={(value) => {
                       setWorkerMessage(value);

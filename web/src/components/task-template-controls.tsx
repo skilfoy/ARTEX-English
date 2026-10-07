@@ -169,7 +169,7 @@ function TaskTemplateManager({
         toast.success("Template has been updated");
       }
     } catch (error) {
-      toast.error(`Save failed:${(error as Error).message}`);
+      toast.error(`Save failed: ${(error as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -192,7 +192,7 @@ function TaskTemplateManager({
       setDeleteOpen(false);
       toast.success("Template deleted");
     } catch (error) {
-      toast.error(`Deletion failed:${(error as Error).message}`);
+      toast.error(`Deletion failed: ${(error as Error).message}`);
     } finally {
       setDeleting(false);
     }
@@ -378,7 +378,7 @@ export function TaskTemplateControls({
       setTemplates(await api.taskTemplates());
     } catch (error) {
       setTemplates([]);
-      toast.error(`Failed to load template:${(error as Error).message}`);
+      toast.error(`Failed to load template: ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }

@@ -148,7 +148,7 @@ export default function LogsPage() {
       <div className="flex flex-1 flex-col gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <Input
-            placeholder="Filter(text/tag)…"
+            placeholder="Filter (text or tag)…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="h-8 max-w-xs"

@@ -740,7 +740,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           <CardTitle className="flex items-center gap-2 text-base">
             <CoinsIcon className="size-4 text-amber-500" /> LLM Token usage
             <span className="text-muted-foreground text-xs font-normal">
-              (Statistics by model{tokenTotals.calls > 0 ? `, total${tokenTotals.calls}calls` : ""})
+              (Statistics by model{tokenTotals.calls > 0 ? `, ${tokenTotals.calls} calls total` : ""})
             </span>
           </CardTitle>
         </CardHeader>
@@ -942,7 +942,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <TargetIcon className="size-4" /> Ongoing Intent
+              <TargetIcon className="size-4" /> Running workers
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
@@ -952,7 +952,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
                 <span className="min-w-0 flex-1 truncate">{i.payload}</span>
               </div>
             ))}
-            {running.length === 0 && <p className="text-sm text-muted-foreground">No ongoing plans</p>}
+            {running.length === 0 && <p className="text-sm text-muted-foreground">No workers running</p>}
           </CardContent>
         </Card>
 
@@ -965,7 +965,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
           <CardContent className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <div className="text-2xl font-semibold tabular-nums text-red-600">{taskFindings.length}</div>
-              <div className="text-xs text-muted-foreground">Confirm vulnerability</div>
+              <div className="text-xs text-muted-foreground">Confirmed findings</div>
             </div>
             <div>
               <div className="text-2xl font-semibold tabular-nums text-blue-600">{running.length}</div>
@@ -973,11 +973,11 @@ export function OverviewTab({ taskId }: { taskId: string }) {
             </div>
             <div>
               <div className="text-2xl font-semibold tabular-nums">{open.length}</div>
-              <div className="text-xs text-muted-foreground">frontier to be collected</div>
+              <div className="text-xs text-muted-foreground">Waiting</div>
             </div>
             <div>
               <div className="text-2xl font-semibold tabular-nums text-red-600">{blocked.length}</div>
-              <div className="text-xs text-muted-foreground">Intent to be stopped</div>
+              <div className="text-xs text-muted-foreground">Blocked</div>
             </div>
           </CardContent>
         </Card>
@@ -985,7 +985,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
-              <BugIcon className="size-4 text-red-500" /> Recently discovered
+              <BugIcon className="size-4 text-red-500" /> Recent findings
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
@@ -995,7 +995,7 @@ export function OverviewTab({ taskId }: { taskId: string }) {
                 <span className="min-w-0 flex-1 truncate">{f.summary}</span>
               </div>
             ))}
-            {taskFindings.length === 0 && <p className="text-sm text-muted-foreground">No found yet</p>}
+            {taskFindings.length === 0 && <p className="text-sm text-muted-foreground">No findings yet</p>}
           </CardContent>
         </Card>
       </div>

@@ -140,7 +140,7 @@ export default function CommandsPage() {
         <div className="relative max-w-sm flex-1">
           <SearchIcon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search Tools/Parameters..."
+            placeholder="Search tools or parameters"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="h-8 pl-8"
@@ -223,7 +223,7 @@ export default function CommandsPage() {
                 ) : commands.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                      No tool execution record yet
+                      No tool activity yet
                     </TableCell>
                   </TableRow>
                 ) : (

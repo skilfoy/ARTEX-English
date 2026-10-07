@@ -91,7 +91,7 @@ function healthOf(p: LLMProfile, m?: LLMPoolMember): Health {
   }
   if (m?.state === "degraded") {
     return {
-      label: `Exception · Failure${m.fails}Second-rate`,
+      label: `Error · ${m.fails} failures`,
       cls: "border-amber-500/50 text-amber-600 dark:text-amber-400",
       hint: m.last_error,
     };
@@ -135,7 +135,7 @@ function PoolSheet({
         toast.success("The pocket settings have been updated");
       }
     } catch (e) {
-      toast.error(`Setup failed:${(e as Error).message}`);
+      toast.error(`Setup failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -147,7 +147,7 @@ function PoolSheet({
       await onReload();
       toast.success(id ? "The configuration has been restored" : "All configurations have been restored");
     } catch (e) {
-      toast.error(`Restore failed:${(e as Error).message}`);
+      toast.error(`Restore failed: ${(e as Error).message}`);
     }
   }
 
@@ -165,8 +165,7 @@ function PoolSheet({
             <ZapIcon className="size-4" /> LLM Polling · Failover
           </SheetTitle>
           <SheetDescription>
-            After opening,<b>No model specified</b>The Agent is unavailable in the current configuration (insufficient balance/key invalid/current limiting/
-            Service exception) automatically switches to the next configuration.
+            When enabled, an agent with <b>no model specified</b> switches to the next configuration if the current one is unavailable (insufficient balance, invalid key, rate limit, or service error).
           </SheetDescription>
         </SheetHeader>
 
@@ -174,7 +173,7 @@ function PoolSheet({
           <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
             <div className="grid gap-0.5">
               <Label className="text-sm">Enable polling</Label>
-              <p className="text-muted-foreground text-xs">Off by default. Always use only the active configuration when shutting down, failure is a failure.</p>
+              <p className="text-muted-foreground text-xs">Off by default. When off, only the active configuration is used, and a failure stays a failure.</p>
             </div>
             <Switch
               checked={enabled}
@@ -188,7 +187,7 @@ function PoolSheet({
             <>
               <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
                 <div className="grid gap-0.5">
-                  <Label className="text-sm">Also keep in mind when the specified model fails</Label>
+                  <Label className="text-sm">Also fail over when a specified model fails</Label>
                   <p className="text-muted-foreground text-xs">
                     Off by default: If the Agent or task specifies a certain configuration, it will only use it. If it fails, it will fail (it will not be quietly switched to another model).
                     After being enabled, when the specified configuration fails, it will also fall back to the following polling chain.
@@ -373,12 +372,12 @@ function ProfileSheet({
       if (r.ok && r.models && r.models.length > 0) {
         setModels(r.models);
         setModelsOpen(true);
-        toast.success(`Loaded${r.models.length}models`);
+        toast.success(`Loaded ${r.models.length} models`);
       } else {
-        toast.error(`Failed to load model:${r.error ?? "No model obtained"}`);
+        toast.error(`Failed to load model: ${r.error ?? "No model obtained"}`);
       }
     } catch (e) {
-      toast.error(`Error loading model:${(e as Error).message}`);
+      toast.error(`Error loading model: ${(e as Error).message}`);
     } finally {
       setLoadingModels(false);
     }
@@ -407,9 +406,9 @@ function ProfileSheet({
         toast.success(`Connection successful ·${r.latency_ms ?? "?"}ms · ${r.model ?? model}`, {
           description: r.reply ? `Reply:${r.reply}` : undefined,
         });
-      else toast.error(`Connection failed:${r.error ?? "Unknown"}`);
+      else toast.error(`Connection failed: ${r.error ?? "Unknown"}`);
     } catch (e) {
-      toast.error(`Test error:${(e as Error).message}`);
+      toast.error(`Test error: ${(e as Error).message}`);
     } finally {
       setTesting(false);
     }
@@ -446,12 +445,12 @@ function ProfileSheet({
         session_header_key: sessionHeaderKey.trim(),
         retry,
       });
-      if (isNew) toast.success(`Newly created:${name.trim()}(Set to Activate on the card to activate)`);
+      if (isNew) toast.success(`Newly created: ${name.trim()}(Set to Activate on the card to activate)`);
       else toast.success(profile?.is_default ? "Saved, activation configuration takes effect immediately, no need to restart" : "Saved");
       onSaved(String(id));
       onOpenChange(false);
     } catch (e) {
-      toast.error(`Save failed:${(e as Error).message}`);
+      toast.error(`Save failed: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -832,7 +831,7 @@ export default function LLMPage() {
       toast.success(`Activated:${name}`);
       await load();
     } catch (e) {
-      toast.error(`Activation failed:${(e as Error).message}`);
+      toast.error(`Activation failed: ${(e as Error).message}`);
     }
   }
 
@@ -846,7 +845,7 @@ export default function LLMPage() {
       toast.success(`Deleted:${p.name}`);
       await load();
     } catch (e) {
-      toast.error(`Deletion failed:${(e as Error).message}`);
+      toast.error(`Deletion failed: ${(e as Error).message}`);
     }
   }
 

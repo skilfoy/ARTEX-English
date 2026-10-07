@@ -55,7 +55,7 @@ export function ChangePasswordDialog({
         toast.success("Password has been changed");
         onOpenChange(false);
       })
-      .catch((err) => toast.error(`Modification failed:${(err as Error).message}`))
+      .catch((err) => toast.error(`Modification failed: ${(err as Error).message}`))
       .finally(() => setSaving(false));
   }
 

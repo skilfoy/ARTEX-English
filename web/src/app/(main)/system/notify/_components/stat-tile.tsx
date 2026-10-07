@@ -15,7 +15,7 @@ export function StatTile({ label, value, hint, tone }: { label: string; value: s
 // formatBacklog Render the backlog milliseconds to a level that humans can understand.
 export function formatBacklog(ms: number): string {
   if (!ms) return "—";
-  if (ms < 60_000) return `${Math.round(ms / 1000)}Second`;
-  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}minute`;
-  return `${(ms / 3_600_000).toFixed(1)}Hour`;
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`;
+  return `${(ms / 3_600_000).toFixed(1)} h`;
 }

@@ -183,7 +183,7 @@ function SkillsOverview({
   }
 
   const stats: { label: string; value: React.ReactNode; hint?: string }[] = [
-    { label: "Skill total", value: skills.length, hint: `${agg.usedCount}have been called` },
+    { label: "Skills", value: skills.length, hint: `${agg.usedCount} have been called` },
     { label: "Cumulative calls", value: agg.totalCalls },
     { label: "Not used", value: agg.neverUsed.length, hint: agg.neverUsed.length > 0 ? "Never loaded by any agent" : "All used" },
     { label: "Missed call", value: agg.missingCalls, hint: missing.length > 0 ? `${missing.length}skill that does not exist` : "None" },
@@ -265,7 +265,7 @@ function SkillsOverview({
         {/* Unused (can be cleaned / Need to be exposed) */}
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">
-            Unused Skill
+            Unused skills
             {agg.neverUsed.length > 0 && <span className="ml-1 font-normal">({agg.neverUsed.length})</span>}
           </Label>
           {agg.neverUsed.length === 0 ? (
@@ -362,18 +362,18 @@ export default function SkillsPage() {
     setUploading(true);
     try {
       const r = await api.uploadSkill(file, overwrite);
-      toast.success(`Skill installed:${r.name}(${r.files}files)`);
+      toast.success(`Installed skill ${r.name} (${r.files} files)`);
       load();
     } catch (e) {
       const msg = (e as Error).message;
       // offer overwrite when the skill already exists
       if (!overwrite && msg.includes("Already exists")) {
-        if (window.confirm(`${msg}Overwrite Skill with the same name?`)) {
+        if (window.confirm(`${msg} Replace the skill with the same name?`)) {
           await uploadZip(file, true);
           return;
         }
       } else {
-        toast.error("Upload failed:" + msg);
+        toast.error("Upload failed: " + msg);
       }
     } finally {
       setUploading(false);
@@ -469,17 +469,17 @@ export default function SkillsPage() {
     try {
       if (c.kind === "dir") {
         await api.createSkillDir(c.skill, fullPath);
-        toast.success(`Folder created:${fullPath}`);
+        toast.success(`Folder created: ${fullPath}`);
         ensureExpanded(c.skill, fullPath);
       } else {
         await api.writeSkillFile(c.skill, fullPath, "");
-        toast.success(`File created:${fullPath}`);
+        toast.success(`File created: ${fullPath}`);
         setSelected({ skill: c.skill, path: fullPath });
         ensureExpanded(c.skill, c.inDir);
       }
       load();
     } catch (e) {
-      toast.error("Creation failed:" + (e as Error).message);
+      toast.error("Creation failed: " + (e as Error).message);
     }
   }
 
@@ -496,18 +496,18 @@ export default function SkillsPage() {
       if (selected?.skill === skill && selected.path === path) setSelected(null);
       load();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
 
   async function deleteSkill(name: string) {
     try {
       await api.deleteSkill(name);
-      toast.success(`Deleted Skill:${name}`);
+      toast.success(`Deleted Skill: ${name}`);
       if (selected?.skill === name) setSelected(null);
       load();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
 
@@ -532,7 +532,7 @@ export default function SkillsPage() {
       toast.success("Saved");
       setDirty(false);
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally { setSaving(false); }
   }
 
@@ -543,12 +543,12 @@ export default function SkillsPage() {
     setDetailMcps(next);
     try {
       await api.updateSkillMeta(skillName, { mcps: next });
-      toast.success(`${mcpOn ? "Association" : "Cancel association"}[${mcpName}]`);
+      toast.success(`${mcpOn ? "Linked" : "Unlinked"} ${mcpName}`);
       load();
     } catch (e) {
       // roll back on error
       setDetailMcps(detailMcps);
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
@@ -556,17 +556,17 @@ export default function SkillsPage() {
     const on = (visibility[skillName] ?? []).includes(agentId);
     try {
       await api.toggleSkillVisibility(agentId, skillName, !on);
-      toast.success(`${on ? "Cancel" : "Granted"}[${agentName}"visible`);
+      toast.success(`${on ? "Hid" : "Showed"} this skill for ${agentName}`);
       const ids = await api.skillVisibility(skillName);
       setVisibility((v) => ({ ...v, [skillName]: ids }));
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
   async function createNewSkill() {
-    if (!newName.trim()) { toast.error("Please fill in name"); return; }
-    if (!newDesc.trim()) { toast.error("description is required"); return; }
+    if (!newName.trim()) { toast.error("Please enter a name"); return; }
+    if (!newDesc.trim()) { toast.error("Description is required"); return; }
     setCreatingSkill(true);
     try {
       const name = newName.trim();
@@ -585,7 +585,7 @@ export default function SkillsPage() {
       setNewMcps([]); setNewVisibility([]);
       load();
     } catch (e) {
-      toast.error("Creation failed:" + (e as Error).message);
+      toast.error("Creation failed: " + (e as Error).message);
     } finally { setCreatingSkill(false); }
   }
 
@@ -790,7 +790,7 @@ export default function SkillsPage() {
                       {s.calls > 0 && (
                         <span
                           className="shrink-0 rounded bg-muted px-1 text-[10px] tabular-nums text-muted-foreground"
-                          title={`Called${s.calls}times · recent${fmtTime(s.last_used)}`}
+                          title={`${s.calls} calls · last used ${fmtTime(s.last_used)}`}
                         >
                           {s.calls}
                         </span>
@@ -902,7 +902,7 @@ export default function SkillsPage() {
                             <span className="tabular-nums text-muted-foreground">{fmtTime(c.ts)}</span>
                             <Badge variant="outline" className="font-normal">{c.agent_key || "—"}</Badge>
                             <span className="ml-auto text-muted-foreground">
-                              {c.task_id > 0 ? `Task #${c.task_id}` : c.session_id ? "Dialogue Session" : "—"}
+                              {c.task_id > 0 ? `Task #${c.task_id}` : c.session_id ? "Chat session" : "—"}
                             </span>
                           </div>
                         ))}
