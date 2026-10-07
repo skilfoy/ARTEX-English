@@ -4,10 +4,13 @@
 ssh_public_key = "ssh-ed25519 AAAA... operator@example"
 admin_cidr     = "203.0.113.10/32"
 
-# region        = "us-east-1"
+# free, small, standard, or work. See ../README.md.
+# free is t3.micro and a 30 GiB disk. It fits the published EC2 allowance.
+# It is not a promise of a $0 bill. standard is the size that builds reliably.
+tier = "standard"
+
+# Optional. Overrides the machine only. Leave unset to use the tier.
 # instance_type = "t3.large"
-# name          = "artex-english"
-# git_ref       = "main"
 
 # Web stays limited to admin_cidr until this is set.
 # web_cidrs = ["203.0.113.10/32"]

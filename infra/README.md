@@ -4,13 +4,15 @@ These configurations run the real English application in the cloud: the Go serve
 
 Each provider directory is a complete, separate stack. Pick one. Do not apply two of them for the same deployment.
 
-| Directory | Machine | Default size | Default place |
+| Directory | Machine | Standard tier | Default place |
 | --- | --- | --- | --- |
 | [aws/](aws/main.tf) | EC2 | `t3.large` (2 vCPU, 8 GiB) | `us-east-1` |
 | [gcp/](gcp/main.tf) | Compute Engine | `e2-standard-2` (2 vCPU, 8 GiB) | `us-central1-a` |
 | [azure/](azure/main.tf) | Linux VM | `Standard_D2s_v5` (2 vCPU, 8 GiB) | `eastus` |
 
-All three create a new network, a static public address, encrypted-or-provider-encrypted 100 GiB disk, and firewall rules. Docker Compose on the VM then starts:
+`tier` defaults to `standard`. Set `free`, `small`, or `work` when that is the wrong size. The same four names exist in every provider. An empty machine-size variable means "use the tier." Setting `instance_type`, `machine_type`, or `vm_size` replaces only the machine. Disk, swap, and the Node build heap still come from `tier`.
+
+All three create a new network, a static public address, a disk sized for the tier, and firewall rules. Docker Compose on the VM then starts:
 
 - `postgres`, reachable only on the Compose network
 - `artex`, the Go process with the English UI embedded, also only on the Compose network
@@ -19,6 +21,31 @@ All three create a new network, a static public address, encrypted-or-provider-e
 Ports 8787 and 8788 are not open on the public address. The traffic-recording proxy stays inside the Compose network, same as the local Compose file binding it to localhost.
 
 The upstream author restricts use to study and locally isolated technical verification and prohibits testing online or networked systems. These configurations describe infrastructure and do not change those stated conditions. Review the [license and usage section](../README.md#license-and-use-conditions) before provisioning or using the software.
+
+## Choose a tier
+
+Pick the tier for the job, not the largest one that will start. The application image compiles the Next.js UI, the Go server, and a Chromium install on the VM. That build is what sets the minimum size. The Dockerfile asks Node for 3 GiB of heap on `standard` and `work`. `free` and `small` lower that to 1.5 GiB, add swap, and compile the frontend before Go starts. They can still run out of memory or disk. If the first boot must finish unattended, use `standard`.
+
+| Tier | Use it for | AWS | Google Cloud | Azure | Disk | Swap |
+| --- | --- | --- | --- | --- | --- | --- |
+| `free` | The provider's smallest published free shape | `t3.micro`, 1 GiB | `e2-micro`, 1 GiB, standard disk | `Standard_B1s`, 1 GiB | 30 GiB, or 32 GiB on Azure | 4 GiB |
+| `small` | A cheap always-on UI when a failed build can be retried | `t3.small`, 2 GiB | `e2-small`, 2 GiB | `Standard_B2s`, 2 vCPU, 4 GiB | 40 GiB, or 64 GiB on Azure | 2 GiB |
+| `standard` | The default. The VM builds the image itself | `t3.large`, 8 GiB | `e2-standard-2`, 8 GiB | `Standard_D2s_v5`, 8 GiB | 100 GiB, or 128 GiB on Azure | none |
+| `work` | Several agents at the same time | `t3.xlarge`, 16 GiB | `e2-standard-4`, 16 GiB | `Standard_D4s_v5`, 16 GiB | 128 GiB | none |
+
+```hcl
+tier = "free"      # or small, standard, work
+```
+
+What "free" actually costs:
+
+- **Google Cloud** is the one that can stay at $0. Always Free is one non-preemptible `e2-micro` in `us-west1`, `us-central1`, or `us-east1`, 30 GiB of standard persistent disk, and 1 GiB of North American egress. The default zone `us-central1-a` qualifies. `tier = "free"` in any other region fails the plan. A balanced disk, a second VM, or a larger machine is billed. An external address attached to a running VM is included. An unused address is not.
+- **AWS** is not an always-free server. Accounts created before 15 July 2025 get 750 hours a month of `t2.micro` or `t3.micro`, plus 30 GiB of `gp2` or `gp3`, for 12 months. Accounts created on or after that date get a credit balance, for 6 months or until the credits run out, and `t3.micro` is one of the sizes those credits can pay for. `tier = "free"` selects `t3.micro` and a 30 GiB encrypted `gp3` disk so it fits those allowances. Traffic, addresses beyond the allowance, and anything after the period are billed. Confirm the current terms on the [EC2 Free Tier page](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-free-tier-usage.html).
+- **Azure** is not an entirely free server. A new account includes 750 hours a month of `Standard_B1s` for 12 months. `tier = "free"` uses that size and a 32 GiB Standard SSD, because B1s cannot take a Premium disk. A Standard static public IP is a separate meter and is commonly billed even while the VM hours are free. Confirm the current list on the [Azure free services page](https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/create-free-services).
+
+The Vercel preview remains the free way to click through the interface. It does not become this VM.
+
+Changing `tier` after the first apply changes the disk size or type and usually replaces the VM. Back up `/opt/artex/source/data` and the Docker volumes first. See [Operations](#operations).
 
 ## What you need before apply
 
@@ -66,6 +93,7 @@ These variables exist in every provider. Names that differ are in the provider s
 | `domain` | no | empty | Hostname Caddy will serve. Empty serves plain HTTP on the public IP. A value switches the printed URL to `https://` that name. |
 | `git_ref` | no | `main` | Branch or tag cloned onto the VM. Must match `[A-Za-z0-9._/-]+`. A raw commit SHA does not work: the script uses `git clone --branch`. |
 | `name` | no | `artex-english` | Name prefix for the VM and network resources. Changing it after apply creates a second stack only if you also change the state; normally treat it as fixed. |
+| `tier` | no | `standard` | `free`, `small`, `standard`, or `work`. See [Choose a tier](#choose-a-tier). |
 
 `git_ref` is read at first boot only. Changing it later does not, by itself, pull new code. See [Updating the application](#updating-the-application).
 
@@ -78,7 +106,7 @@ Extra variables:
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `region` | `us-east-1` | Region for the VPC, instance, and address. |
-| `instance_type` | `t3.large` | Any current-generation type with at least 8 GiB is safer for the first frontend build. |
+| `instance_type` | empty | Optional machine override, such as `t3.large`. Empty uses the tier. |
 | `route53_zone_id` | empty | When this and `domain` are both set, Terraform creates an A record in that existing public hosted zone. |
 
 ```bash
@@ -88,7 +116,7 @@ terraform apply \
   -var='admin_cidr=203.0.113.10/32'
 ```
 
-The example file [aws/terraform.tfvars.example](aws/terraform.tfvars.example) lists the same options. The stack creates a dedicated VPC (`10.42.0.0/16`), one public subnet, an internet gateway, a security group, an SSH key pair, a 100 GiB encrypted `gp3` root disk, and an Elastic IP. There is no NAT gateway and no load balancer. The instance itself has the public address.
+The example file [aws/terraform.tfvars.example](aws/terraform.tfvars.example) lists the same options. The stack creates a dedicated VPC (`10.42.0.0/16`), one public subnet, an internet gateway, a security group, an SSH key pair, an encrypted `gp3` root disk sized by the tier, and an Elastic IP. There is no NAT gateway and no load balancer. The instance itself has the public address.
 
 ## Google Cloud
 
@@ -108,7 +136,7 @@ Extra variables:
 | `project_id` | none, required | Existing project that will own the VM. |
 | `region` | `us-central1` | Region for the subnet and the static address. |
 | `zone` | `us-central1-a` | Zone for the VM. It must belong to `region`. |
-| `machine_type` | `e2-standard-2` | Machine type. |
+| `machine_type` | empty | Optional machine override, such as `e2-standard-2`. Empty uses the tier. `tier = "free"` ignores a larger type only when this stays empty, and it must stay in `us-west1`, `us-central1`, or `us-east1`. |
 | `dns_managed_zone` | empty | When this and `domain` are both set, Terraform creates an A record in that existing Cloud DNS zone. The record name is `domain` with a trailing dot. |
 
 ```bash
@@ -119,7 +147,7 @@ terraform apply \
   -var='admin_cidr=203.0.113.10/32'
 ```
 
-The network is custom-mode `10.43.1.0/24` with no auto subnets. The VM has an external static address and a 100 GiB `pd-balanced` disk. Google encrypts persistent disks. Firewall tags match the instance name.
+The network is custom-mode `10.43.1.0/24` with no auto subnets. The VM has an external static address and a disk sized by the tier. `free` uses `pd-standard`, which is the Always Free disk type. The other tiers use `pd-balanced`. Google encrypts persistent disks. Firewall tags match the instance name.
 
 ## Azure
 
@@ -137,7 +165,7 @@ Extra variables:
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `location` | `eastus` | Azure region. |
-| `vm_size` | `Standard_D2s_v5` | VM size. Confirm the size is offered in `location` before apply. |
+| `vm_size` | empty | Optional size override, such as `Standard_D2s_v5`. Empty uses the tier. Confirm the size exists in `location`. |
 | `dns_zone_name` | empty | Existing DNS zone name. Used only together with `domain` and `dns_zone_resource_group`. |
 | `dns_zone_resource_group` | empty | Resource group that already holds that DNS zone. It can differ from the group this stack creates. |
 
@@ -148,7 +176,7 @@ terraform apply \
   -var='admin_cidr=203.0.113.10/32'
 ```
 
-The network is `10.44.0.0/16` with subnet `10.44.1.0/24`, a Standard static public IP, and a network security group. The OS disk is 100 GiB `Premium_LRS`. The image is Canonical Ubuntu Server 24.04 LTS. Password login is disabled.
+The network is `10.44.0.0/16` with subnet `10.44.1.0/24`, a Standard static public IP, and a network security group. `free` and `small` use a Standard SSD because the B-series sizes do not accept a Premium disk. `standard` and `work` use `Premium_LRS`. The image is Canonical Ubuntu Server 24.04 LTS. Password login is disabled.
 
 If `domain` equals `dns_zone_name`, the A record is created at the zone apex. Otherwise `domain` must be a name inside that zone, and Terraform strips the zone suffix to form the relative record.
 
@@ -231,6 +259,8 @@ This deletes the VM, the disk, and the static address. Back up `data`, `pgdata`,
 ## What these stacks do not do
 
 - They do not deploy the Vercel mock, and they do not turn the Vercel project into the full application.
+- They do not make AWS or Azure a $0 deployment. Google Cloud `tier = "free"` is the Always Free shape, and only inside its published region, disk, and egress limits. See [Choose a tier](#choose-a-tier).
+- They do not guarantee that `free` or `small` will finish the image build. Use `standard` when the first boot has to succeed on its own.
 - They do not create a managed database, a second availability zone, backups, or autoscaling.
 - They do not inject LLM API keys. Set those in the UI after setup.
 - They do not publish the recording proxy.

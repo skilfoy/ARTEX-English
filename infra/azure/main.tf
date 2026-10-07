@@ -17,9 +17,18 @@ variable "name" {
   type    = string
   default = "artex-english"
 }
-variable "vm_size" {
+variable "tier" {
   type    = string
-  default = "Standard_D2s_v5"
+  default = "standard"
+  validation {
+    condition     = contains(["free", "small", "standard", "work"], var.tier)
+    error_message = "tier must be free, small, standard, or work."
+  }
+}
+variable "vm_size" {
+  type        = string
+  default     = ""
+  description = "Optional. Overrides the size selected by tier. Disk size, swap, and the Node build heap still come from tier."
 }
 variable "ssh_public_key" { type = string }
 variable "admin_cidr" { type = string }
@@ -53,8 +62,23 @@ variable "git_ref" {
 }
 
 locals {
+  tiers = {
+    free     = { machine = "Standard_B1s", disk_gb = 32, disk_type = "StandardSSD_LRS", node_heap_mb = 1536, swap_mb = 4096 }
+    small    = { machine = "Standard_B2s", disk_gb = 64, disk_type = "StandardSSD_LRS", node_heap_mb = 1536, swap_mb = 2048 }
+    standard = { machine = "Standard_D2s_v5", disk_gb = 128, disk_type = "Premium_LRS", node_heap_mb = 3072, swap_mb = 0 }
+    work     = { machine = "Standard_D4s_v5", disk_gb = 128, disk_type = "Premium_LRS", node_heap_mb = 3072, swap_mb = 0 }
+  }
+  spec                = local.tiers[var.tier]
+  vm_size             = var.vm_size != "" ? var.vm_size : local.spec.machine
   permitted_web_cidrs = length(var.web_cidrs) == 0 ? [var.admin_cidr] : var.web_cidrs
-  bootstrap           = replace(replace(replace(file("${path.module}/../bootstrap.sh"), "__REPO_URL__", "https://github.com/skilfoy/ARTEX-English.git"), "__GIT_REF__", var.git_ref), "__APP_DOMAIN__", var.domain == "" ? ":80" : var.domain)
+  bootstrap = replace(replace(replace(replace(replace(
+    file("${path.module}/../bootstrap.sh"),
+    "__REPO_URL__", "https://github.com/skilfoy/ARTEX-English.git"),
+    "__GIT_REF__", var.git_ref),
+    "__APP_DOMAIN__", var.domain == "" ? ":80" : var.domain),
+    "__SWAP_MB__", tostring(local.spec.swap_mb)),
+    "__NODE_HEAP_MB__", tostring(local.spec.node_heap_mb),
+  )
 }
 
 resource "azurerm_resource_group" "app" {
@@ -139,7 +163,7 @@ resource "azurerm_linux_virtual_machine" "app" {
   name                            = var.name
   resource_group_name             = azurerm_resource_group.app.name
   location                        = azurerm_resource_group.app.location
-  size                            = var.vm_size
+  size                            = local.vm_size
   admin_username                  = "ubuntu"
   disable_password_authentication = true
   network_interface_ids           = [azurerm_network_interface.app.id]
@@ -152,8 +176,8 @@ resource "azurerm_linux_virtual_machine" "app" {
 
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-    disk_size_gb         = 100
+    storage_account_type = local.spec.disk_type
+    disk_size_gb         = local.spec.disk_gb
   }
 
   source_image_reference {
@@ -176,3 +200,5 @@ resource "azurerm_dns_a_record" "app" {
 output "public_ip" { value = azurerm_public_ip.app.ip_address }
 output "app_url" { value = var.domain == "" ? "http://${azurerm_public_ip.app.ip_address}" : "https://${var.domain}" }
 output "ssh_command" { value = "ssh ubuntu@${azurerm_public_ip.app.ip_address}" }
+output "tier" { value = var.tier }
+output "vm_size" { value = local.vm_size }
