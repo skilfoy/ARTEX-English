@@ -16,13 +16,13 @@ export const ASSET_INTERCEPT_KIND_OPTIONS: {
   label: string;
   placeholder: string;
 }[] = [
-  { value: "exact_domain", label: "Domain name (congruent)", placeholder: "example.gov.cn" },
-  { value: "exact_ip", label: "IP(congruent)", placeholder: "203.0.113.10" },
-  { value: "exact_url", label: "URL (congruent)", placeholder: "https://example.com/login" },
-  { value: "fuzzy_domain", label: "Domain name (fuzzy)", placeholder: ".gov.cn" },
-  { value: "fuzzy_ip", label: "IP(blurred)", placeholder: "203.0.113." },
-  { value: "fuzzy_url", label: "URL (blurred)", placeholder: "/admin" },
-  { value: "cidr", label: "CIDR network segment", placeholder: "192.168.0.0/16" },
+  { value: "exact_domain", label: "Domain (exact)", placeholder: "example.gov.cn" },
+  { value: "exact_ip", label: "IP (exact)", placeholder: "203.0.113.10" },
+  { value: "exact_url", label: "URL (exact)", placeholder: "https://example.com/login" },
+  { value: "fuzzy_domain", label: "Domain (fuzzy)", placeholder: ".gov.cn" },
+  { value: "fuzzy_ip", label: "IP (fuzzy)", placeholder: "203.0.113." },
+  { value: "fuzzy_url", label: "URL (fuzzy)", placeholder: "/admin" },
+  { value: "cidr", label: "CIDR range", placeholder: "192.168.0.0/16" },
 ];
 
 // AssetInterceptRulesEditor Yes[Interception/Allow rules]controlled multi-line editing area (interceptionblock/Allowallow +
