@@ -32,7 +32,7 @@ NEXT_PUBLIC_MOCK=1 npm run dev
 
 Open the address printed by Next.js. The mock preview requires no database or model credentials.
 
-A functioning deployment runs the Go server and PostgreSQL together. Locally, copy `.env.example` to `.env`, set `POSTGRES_PASSWORD`, and run `docker compose up -d --build`, then open `http://localhost:8787`. In the cloud, use the Terraform stack for one virtual machine on AWS, Google Cloud, or Azure. Each stack installs Docker, builds this fork, and starts Postgres, the application, and Caddy. SSH and the website start limited to an admin IP you supply.
+A functioning deployment runs the Go server and PostgreSQL together. Locally, copy `.env.example` to `.env`, set `POSTGRES_PASSWORD`, and run `docker compose up -d --build`, then open `http://localhost:8787`. In the cloud, use the Terraform stack for one virtual machine on AWS, Google Cloud, or Azure. Set `tier` to `free`, `small`, `standard`, or `work`. `standard` is the default and the size that can build the application on the VM. `free` selects each provider's smallest published free shape. Google Cloud is the one that can stay inside an always-free allowance. Each stack installs Docker, builds this fork, and starts Postgres, the application, and Caddy. SSH and the website start limited to an admin IP you supply.
 
 | Path | Where it runs | Data |
 | --- | --- | --- |

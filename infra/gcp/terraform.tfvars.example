@@ -5,11 +5,16 @@ project_id     = "YOUR_PROJECT_ID"
 ssh_public_key = "ssh-ed25519 AAAA... operator@example"
 admin_cidr     = "203.0.113.10/32"
 
-# region       = "us-central1"
-# zone         = "us-central1-a"
+# free, small, standard, or work. See ../README.md.
+# free is the always-free e2-micro, and only in us-west1, us-central1, or us-east1.
+# The default zone us-central1-a qualifies. standard is the size that builds reliably.
+tier = "standard"
+
+# region = "us-central1"
+# zone   = "us-central1-a"
+
+# Optional. Overrides the machine only. Leave unset to use the tier.
 # machine_type = "e2-standard-2"
-# name         = "artex-english"
-# git_ref      = "main"
 
 # Web stays limited to admin_cidr until this is set.
 # web_cidrs = ["203.0.113.10/32"]

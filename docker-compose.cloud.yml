@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NODE_HEAP_MB: ${NODE_HEAP_MB:-3072}
     depends_on:
       postgres:
         condition: service_healthy

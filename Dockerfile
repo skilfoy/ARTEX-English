@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim AS frontend
 WORKDIR /src/web
-ENV NODE_OPTIONS=--max-old-space-size=3072
+ARG NODE_HEAP_MB=3072
+ENV NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY web/ ./
@@ -9,6 +10,9 @@ RUN npm run build:static
 
 FROM golang:1.26.3-bookworm AS backend
 WORKDIR /src
+# Finish the frontend stage before downloading modules, so a 1 GiB VM
+# does not compile Node and Go at the same time.
+COPY --from=frontend /src/web/package.json /tmp/frontend-ready.json
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

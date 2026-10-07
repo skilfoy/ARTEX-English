@@ -17,9 +17,18 @@ variable "name" {
   type    = string
   default = "artex-english"
 }
-variable "instance_type" {
+variable "tier" {
   type    = string
-  default = "t3.large"
+  default = "standard"
+  validation {
+    condition     = contains(["free", "small", "standard", "work"], var.tier)
+    error_message = "tier must be free, small, standard, or work."
+  }
+}
+variable "instance_type" {
+  type        = string
+  default     = ""
+  description = "Optional. Overrides the machine selected by tier. Disk size, swap, and the Node build heap still come from tier."
 }
 variable "ssh_public_key" { type = string }
 variable "admin_cidr" { type = string }
@@ -49,8 +58,23 @@ variable "git_ref" {
 }
 
 locals {
+  tiers = {
+    free     = { machine = "t3.micro", disk_gb = 30, node_heap_mb = 1536, swap_mb = 4096 }
+    small    = { machine = "t3.small", disk_gb = 40, node_heap_mb = 1536, swap_mb = 2048 }
+    standard = { machine = "t3.large", disk_gb = 100, node_heap_mb = 3072, swap_mb = 0 }
+    work     = { machine = "t3.xlarge", disk_gb = 128, node_heap_mb = 3072, swap_mb = 0 }
+  }
+  spec          = local.tiers[var.tier]
+  instance_type = var.instance_type != "" ? var.instance_type : local.spec.machine
   permitted_web_cidrs = length(var.web_cidrs) == 0 ? [var.admin_cidr] : var.web_cidrs
-  bootstrap           = replace(replace(replace(file("${path.module}/../bootstrap.sh"), "__REPO_URL__", "https://github.com/skilfoy/ARTEX-English.git"), "__GIT_REF__", var.git_ref), "__APP_DOMAIN__", var.domain == "" ? ":80" : var.domain)
+  bootstrap = replace(replace(replace(replace(replace(
+    file("${path.module}/../bootstrap.sh"),
+    "__REPO_URL__", "https://github.com/skilfoy/ARTEX-English.git"),
+    "__GIT_REF__", var.git_ref),
+    "__APP_DOMAIN__", var.domain == "" ? ":80" : var.domain),
+    "__SWAP_MB__", tostring(local.spec.swap_mb)),
+    "__NODE_HEAP_MB__", tostring(local.spec.node_heap_mb),
+  )
 }
 
 data "aws_ami" "ubuntu" {
@@ -141,14 +165,14 @@ resource "aws_key_pair" "admin" {
 
 resource "aws_instance" "app" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
+  instance_type               = local.instance_type
   subnet_id                   = aws_subnet.public.id
   vpc_security_group_ids      = [aws_security_group.app.id]
   key_name                    = aws_key_pair.admin.key_name
   associate_public_ip_address = true
   user_data                   = local.bootstrap
   root_block_device {
-    volume_size = 100
+    volume_size = local.spec.disk_gb
     volume_type = "gp3"
     encrypted   = true
   }
@@ -173,3 +197,5 @@ resource "aws_route53_record" "app" {
 output "public_ip" { value = aws_eip.app.public_ip }
 output "app_url" { value = var.domain == "" ? "http://${aws_eip.app.public_ip}" : "https://${var.domain}" }
 output "ssh_command" { value = "ssh ubuntu@${aws_eip.app.public_ip}" }
+output "tier" { value = var.tier }
+output "instance_type" { value = local.instance_type }
