@@ -1162,7 +1162,7 @@ func (s *Server) controlIntent(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action string `json:"action"`
 		Reason string `json:"reason"` // required on cancel (delete): the deletion reason
-		Mode   string `json:"mode"`   // cancel only: soft (default, fake delete) | hard (real delete, cascade exclusive descendants)
+		Mode   string `json:"mode"`   // cancel only: soft (default) | hard (real delete, cascade exclusive descendants)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErr(w, 400, "bad json: "+err.Error())

@@ -203,7 +203,7 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 		out.State = "open"
 	case "cancel":
 		// Delete supports two modes:
-		//   soft (default, fake delete): stop the intent at state='deleted' and store the
+		//   soft (default): stop the intent at state='deleted' and store the
 		//     reason in delete_reason. Keep the intent node and all output and lineage;
 		//     do not hang an extra fact on the graph.
 		//   hard (real delete): physically delete the intent and descendant nodes that

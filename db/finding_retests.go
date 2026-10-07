@@ -228,7 +228,7 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 	var finalStatus, verdict string
 	err = tx.QueryRow(`UPDATE finding_retests SET
 	status=CASE WHEN $2='completed' AND verdict='' THEN 'failed' ELSE $2 END,
-	error=CASE WHEN $2='completed' AND verdict='' THEN 'Agent No repetition conclusion saved, please check the session and recheck' ELSE $3 END,
+	error=CASE WHEN $2='completed' AND verdict='' THEN 'The agent did not save a retest verdict. Check the session and run the retest again.' ELSE $3 END,
 	finished_at=now() WHERE id=$1 AND status IN ('pending','running') RETURNING status,verdict`, id, status, reason).Scan(&finalStatus, &verdict)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil // A replay must not overwrite a later manual triage decision.
@@ -237,15 +237,15 @@ func (d *DB) FinishFindingRetest(id int64, status, reason string) error {
 		return err
 	}
 	if finalStatus == "completed" && verdict == "fixed" {
-		// A version with a notice sharing the same semantics as manual change of status on the detailed pages.
+		// Use the notifying path, the same semantics as a person changing status on the detail page.
 		//
-		// It was naked. UPDATE:Review[Fixed]The state has changed, but it does.
-		// on_status_change I can't get anything.——The state changed quietly on the interface.,
-		// It's not until we open the platform. Status update and push event must be dropped together Library,
-		// SetFindingStatusTx Internal processing[We won't register until we've changed.]Wait for details..
-		// Use context.Background():The whole function is nil ctx Old style(d.Begin()/
-		// tx.QueryRow/tx.Exec),There's no one to transmit the cancellation. ctx Parameters will
-		// Touch server Side call points and multiple tests beyond the scope of this change.
+		// This used to be a bare UPDATE: when a retest judged the finding fixed, the status did change, but channels
+		// with on_status_change never received a push. The status changed quietly in the UI, and operators only
+		// noticed by opening the platform. The status update and the push event must be written in the same transaction.
+		// SetFindingStatusTx handles details such as not recording an event when the status did not change.
+		// context.Background() is used because this whole function is the old style with no ctx (d.Begin() /
+		// tx.QueryRow / tx.Exec) and there is no cancellation signal to pass. Adding a ctx parameter would
+		// touch the server call sites and several tests, which is outside this change.
 		if _, _, _, _, err := SetFindingStatusTx(context.Background(), tx, findingID, FindingFixed); err != nil {
 			return err
 		}

@@ -100,7 +100,7 @@ func TestEvaluateAssetGate(t *testing.T) {
 }
 
 func TestAssetInterceptCandidates(t *testing.T) {
-	// Only URL Service assets:host Should be removed and classified as a domain name candidate and thus be fuzzy_domain hit.
+	// A service asset that only has a URL: the host must be split out into the domain candidates so fuzzy_domain can match it.
 	a := &Asset{Type: "service", URL: "https://portal.beijing.gov.cn:8443/app"}
 	domains, _, urls := a.interceptCandidates()
 	if len(urls) != 1 || urls[0] != a.URL {

@@ -1,12 +1,12 @@
-# ARTEX Question. TSec Benchmark Evaluation mirror —— Local One build + run.
-# Production docker-compose.yml(Multi-service:artex+postgres)It doesn't affect each other..
+# ARTEX Tencent TSec Benchmark evaluation image — one-command local build and run.
+# Independent of the production docker-compose.yml (multiple services: artex + postgres).
 # Usage:
-#   cp bench/.env.example bench/.env   # Fill LLM_API_KEY / BENCHMARK_TOKEN etc.
-#   docker compose -f docker-compose.bench.yml up --build      # Build and run front desk(Read the log.)
-#   docker compose -f docker-compose.bench.yml up --build -d   # Backstage
+#   cp bench/.env.example bench/.env   # fill in LLM_API_KEY / BENCHMARK_TOKEN, etc.
+#   docker compose -f docker-compose.bench.yml up --build      # build and run in the foreground (follow the logs)
+#   docker compose -f docker-compose.bench.yml up --build -d   # background
 #   docker compose -f docker-compose.bench.yml logs -f
-#   docker compose -f docker-compose.bench.yml down            # Stop(Add -v Even delete the data roll.)
-# Browser:http://localhost:8787(Use ADMIN_PASSWORD Log in)
+#   docker compose -f docker-compose.bench.yml down            # stop (add -v to delete the data volume as well)
+# Browser: http://localhost:8787 (log in with ADMIN_PASSWORD)
 
 services:
   artex-bench:
@@ -17,9 +17,9 @@ services:
     container_name: artex-bench
     env_file:
       - bench/.env
-    # Network sharing with physics machines: packagings directly using the host grid, with direct connections to the host/VPN The target network..
-    # host Not in the pattern. ports Map, container directly bound to host mouth:8787(UI/API),8788(Agent),
-    # And inside. PostgreSQL 5432 —— Make sure the three ports are free.).
+    # Share the network with the physical host: the container uses the host network stack and can reach targets on the host or over VPN.
+    # host mode does not use a ports mapping; the container binds the host ports directly: 8787 (UI/API), 8788 (proxy),
+    # and the internal PostgreSQL on 5432. Make sure those three host ports are free (stop anything using them before a local test).
     network_mode: host
     restart: "no"
 

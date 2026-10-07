@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// cleanupTreeFixtures Delete an exemplified asset and discovery. I have to. defer Registration(instead of
-// t.Cleanup):t.Cleanup Run after the test function returns,And then... defer d.Close() It's closed.,
-// Clean-up fails silently and leaves dirty data in shared development. Lee..
+// cleanupTreeFixtures deletes the assets and findings a test created. It must be registered with defer
+// (not t.Cleanup): t.Cleanup runs after the test function returns, by which time defer d.Close() has
+// already closed the connection. Cleanup would fail silently and leave dirty rows in the shared dev database.
 func cleanupTreeFixtures(d *DB, taskID int64, rootDomains ...string) {
 	d.Exec(`DELETE FROM assets WHERE root_domain = ANY($1::text[])`, rootDomains) //nolint:errcheck
 	d.DeleteFindingsByTask(taskID)                                                //nolint:errcheck
@@ -43,7 +43,7 @@ func nodeByKey(tree *FindingAssetTree, key string) *FindingAssetNode {
 	return nil
 }
 
-// TestBuildFindingAssetTree covers the whole shape of the[By assets]tree: the
+// TestBuildFindingAssetTree covers the whole shape of the by-asset tree: the
 // root→subdomain→service→endpoint chain gets rebuilt from a finding that only
 // points at the leaf, ancestors aggregate their subtree, assets without any
 // finding stay out, and a finding whose asset row is gone lands in the
@@ -72,20 +72,20 @@ func TestBuildFindingAssetTree(t *testing.T) {
 	epID := seedTreeAsset(t, d, "endpoint", map[string]any{
 		"domain": sub, "root_domain": root, "url": "https://" + sub + "/admin", "port": 443, "method": "GET",
 	})
-	// Another service under the same domain name,Hang on to nothing. —— It shouldn't be in the trees..
+	// Another service on the same domain, with no findings — it must not appear in the tree.
 	seedTreeAsset(t, d, "service", map[string]any{
 		"domain": sub, "root_domain": root, "url": "http://" + sub + ":8080", "port": 8080, "service_type": "http",
 	})
 
-	// Just hang on to the deepest. endpoint on,The ancestral chain has to be built by the tree itself..
+	// Attach the finding only to the deepest endpoint; the tree has to rebuild the ancestor chain itself.
 	if _, err := d.AddFinding(tk.ID, 0, "XSS", "Reflective type XSS", "high", "s", "e", "w", []int64{epID}); err != nil {
 		t.Fatal(err)
 	}
-	// Just hang on to the service.,For validation Self With Total The difference..
+	// One finding attached directly to the service, to check that Self and Total differ.
 	if _, err := d.AddFinding(tk.ID, 0, "Info", "Information leakage", "low", "s", "e", "w", []int64{svcID}); err != nil {
 		t.Fatal(err)
 	}
-	// Asset line does not exist(Removed Assets)→ Unconnected barrel.
+	// The asset row does not exist (deleted asset) → unassigned bucket.
 	if _, err := d.AddFinding(tk.ID, 0, "Misc", "Orphans", "medium", "s", "e", "w", []int64{999000111}); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		}
 	}
 
-	// Father and son.:endpoint → service → subdomain → root_domain.
+	// Parent chain: endpoint → service → subdomain → root_domain.
 	if epNode.Parent != svcNode.Key {
 		t.Errorf("endpoint parent: want %s, got %s", svcNode.Key, epNode.Parent)
 	}
@@ -124,12 +124,12 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		t.Errorf("root parent: want top level, got %s", rootNode.Parent)
 	}
 
-	// Aggregation:Two root domain names.(endpoint of high + service of low),service One by one, two by two..
+	// Aggregation: the root domain has two (the endpoint's high plus the service's low); the service has one of its own and two in the subtree.
 	if rootNode.Total != 2 || rootNode.High != 1 || rootNode.Low != 1 {
 		t.Errorf("root totals: want 2/high1/low1, got %d/high%d/low%d", rootNode.Total, rootNode.High, rootNode.Low)
 	}
 	if rootNode.Self != 0 {
-		t.Errorf("root self: want 0 (Just the ancestors.), got %d", rootNode.Self)
+		t.Errorf("root self: want 0 (ancestor only), got %d", rootNode.Self)
 	}
 	if svcNode.Total != 2 || svcNode.Self != 1 {
 		t.Errorf("service total/self: want 2/1, got %d/%d", svcNode.Total, svcNode.Self)
@@ -138,14 +138,14 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		t.Errorf("endpoint total/self: want 1/1, got %d/%d", epNode.Total, epNode.Self)
 	}
 
-	// I didn't find any bros in the tree..
+	// A sibling service with no findings stays out of the tree.
 	for _, n := range tree.Nodes {
 		if n.Label == "http://"+sub+":8080" {
 			t.Errorf("asset without findings should be hidden: %+v", n)
 		}
 	}
 
-	// The unconnected barrel pointed to the missing asset..
+	// The unassigned bucket holds the finding that pointed at the deleted asset.
 	none := nodeByKey(tree, FindingUnassignedAsset)
 	if none == nil || none.Total != 1 || none.Medium != 1 {
 		t.Fatalf("unassigned bucket: want 1 medium, got %+v", none)
@@ -178,14 +178,14 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 	if _, err := d.AddFinding(tk.ID, 0, "A", "Sub-domain name", "high", "s", "e", "w", []int64{subID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AddFinding(tk.ID, 0, "B", "It's on another root name.", "high", "s", "e", "w", []int64{otherID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "B", "On the other root domain.", "high", "s", "e", "w", []int64{otherID}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.AddFinding(tk.ID, 0, "C", "No assets.", "high", "s", "e", "w", nil); err != nil {
 		t.Fatal(err)
 	}
-	// Point to the discovery of the deleted asset,and asset_ids The same as empty.[Not associated]——Put it in the bucket.,
-	// The list filter must also be traced.,The difference between the two calibers makes the number on the barrel larger than the number of bars after point..
+	// A finding that points at a deleted asset belongs in "unassigned", same as an empty asset_ids.
+	// The list filter must find it too. If the two queries disagree, the bucket count is larger than the rows you see after opening it.
 	if _, err := d.AddFinding(tk.ID, 0, "D", "Assets deleted", "high", "s", "e", "w", []int64{999000333}); err != nil {
 		t.Fatal(err)
 	}
@@ -196,11 +196,11 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		scope string
 		want  int
 	}{
-		{"The whole tree.", assetKey(rootID), 1},      // There's only the sub-domain under the root domain.
-		{"Leaf Node", assetKey(subID), 1},             // Sub-domain name itself
-		{"Another tree.", assetKey(otherID), 1},       // They don't smell like each other.
-		{"Not associated", FindingUnassignedAsset, 2}, // asset_ids Empty + Pointing at detached assets
-		{"missing node", "a:999000222", 0},         // filtering to a node that is not in the tree yields an empty result, not the unfiltered list
+		{"whole subtree", assetKey(rootID), 1},    // only the subdomain finding sits under the root domain
+		{"leaf node", assetKey(subID), 1},         // the subdomain itself
+		{"other tree", assetKey(otherID), 1},      // the trees do not leak into each other
+		{"unassigned", FindingUnassignedAsset, 2}, // empty asset_ids plus the finding that points at a deleted asset
+		{"missing node", "a:999000222", 0},        // filtering to a node that is not in the tree yields an empty result, not the unfiltered list
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -216,12 +216,12 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		})
 	}
 
-	// No, I don't. scope All four of them..
+	// Without a scope, all four findings are present.
 	if _, total, err := d.ListFindingsPage(base, 1, 50); err != nil || total != 4 {
 		t.Fatalf("unscoped: want 4, got %d (%v)", total, err)
 	}
 
-	// The number of unconnected drums in the tree must match the number of bars found after point opening. —— That's exactly what happens when we split up..
+	// The unassigned bucket's count must match the number of rows you get after opening it. This is the assertion that fails when the two queries drift apart.
 	tree, err := d.BuildFindingAssetTree(base)
 	if err != nil {
 		t.Fatal(err)

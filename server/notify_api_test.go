@@ -111,27 +111,27 @@ func (f *notifyFixture) record(t *testing.T, vulnclass, severity string) int64 {
 	return out.FindingID
 }
 
-// channel Read-back channel configuration (source-by-channel) stepX Use).
+// channel reloads one channel's stored config (the step helpers use it).
 func (f *notifyFixture) channel(t *testing.T, id int64) *db.NotificationChannel {
 	t.Helper()
 	ch, err := f.pg.NotificationChannelByID(context.Background(), id)
 	if err != nil {
-		t.Fatalf("Reading Channel Failed: %v", err)
+		t.Fatalf("failed to read channel: %v", err)
 	}
 	return ch
 }
 
-// deliver Assign events and run a round of deliveries only for specified channels.
+// deliver fans out pending events and runs one delivery round for only the given channel.
 func (f *notifyFixture) deliver(t *testing.T, chID int64, baseURL string) {
 	t.Helper()
 	ctx := context.Background()
 	if _, _, err := f.pg.FanOutPendingEvents(ctx, 500); err != nil {
-		t.Fatalf("Assignment Failed: %v", err)
+		t.Fatalf("fan-out failed: %v", err)
 	}
 	f.n.stepRealtime(ctx, f.channel(t, chID), 50, baseURL)
 }
 
-// createChannel Pass HTTP Interfaces build channels to cover the interface ' s own verification path.
+// createChannel builds a channel through the HTTP API so the test covers that path's own validation.
 func (f *notifyFixture) createChannel(t *testing.T, payload map[string]any) int64 {
 	t.Helper()
 	raw, _ := json.Marshal(payload)
@@ -197,8 +197,8 @@ func (f *fakeWebhook) last(t *testing.T) map[string]any {
 	return f.body(t, f.count()-1)
 }
 
-// markdownText Take the body of the request and match the names of the fields.:
-// DingTalk markdown Use `text`,ActionCard Use `text`,Enterprise WeChat markdown Use `content`.
+// markdownText pulls the body out of the request, allowing for each vendor's field names:
+// DingTalk markdown uses `text`, ActionCard uses `text`, and WeCom markdown uses `content`.
 func markdownText(t *testing.T, body map[string]any) string {
 	t.Helper()
 	for _, key := range []string{"markdown", "actionCard"} {
@@ -212,11 +212,11 @@ func markdownText(t *testing.T, body map[string]any) string {
 			}
 		}
 	}
-	t.Fatalf("There is no identifiable body in the request.: %v", body)
+	t.Fatalf("request body has no recognizable text: %v", body)
 	return ""
 }
 
-// agePendingBatch The channel is being sent on time to test the expiry of the batch..
+// agePendingBatch ages this channel's pending deliveries so a digest batch is due.
 func (f *notifyFixture) agePendingBatch(t *testing.T, chID int64) {
 	t.Helper()
 	if _, err := f.pg.Exec(`UPDATE notification_deliveries SET created_at = now() - interval '2 hours'
@@ -292,16 +292,16 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 		}
 	}
 	if mine == nil {
-		t.Fatal("New Channel does not appear in list")
+		t.Fatal("the new channel does not appear in the list")
 	}
 	if !notify.IsMasked(fmt.Sprint(mine.Config["webhook"])) || !notify.IsMasked(fmt.Sprint(mine.Config["secret"])) {
 		t.Fatalf("credential fields should be masked: %v", mine.Config)
 	}
 	if len(mine.SecretKeys) == 0 {
-		t.Fatal("The interface should inform the front end which fields are supported")
+		t.Fatal("the API should tell the frontend which fields are credentials")
 	}
 
-	// PATCH Change name only + Back-to-back mask: the genuine document must be retained as it is..
+	// PATCH the name only and send the mask back: the real secret must be kept as-is.
 	body, _ := json.Marshal(map[string]any{
 		"name":   "After the change of name",
 		"config": map[string]any{"webhook": fmt.Sprint(mine.Config["webhook"]), "secret": fmt.Sprint(mine.Config["secret"])},
@@ -320,13 +320,13 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 		t.Fatal("Name not updated")
 	}
 
-	// Visible Clear secret Should enter into force (as distinct from[Send back the mask.=No change]).
+	// An explicit empty secret must take effect (unlike sending the mask back, which means no change).
 	body, _ = json.Marshal(map[string]any{"config": map[string]any{"secret": ""}})
 	if r := f.request("PATCH", fmt.Sprintf("/api/notify/channels/%d", chID), string(body)); r.Code != 200 {
-		t.Fatalf("Clear secret Failed %d: %s", r.Code, r.Body)
+		t.Fatalf("failed to clear secret %d: %s", r.Code, r.Body)
 	}
 	if _, still := f.channelConfig(t, chID)["secret"]; still {
-		t.Fatal("Empty string to empty secret")
+		t.Fatal("an empty string should clear secret")
 	}
 }
 
@@ -413,13 +413,13 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 	}
 	ch := f.channel(t, chID)
 
-	// Not due: not issued.
+	// Not yet due: nothing is sent.
 	f.n.stepDigest(ctx, ch, 50, "")
 	if hook.count() != 0 {
-		t.Fatal("The aggregate batch was sent before the due date.")
+		t.Fatal("the digest batch was sent before it was due")
 	}
 
-	// Following the old rule: 3 synthesizing a message.
+	// After aging: the three findings become one message.
 	f.agePendingBatch(t, chID)
 	f.n.stepDigest(ctx, ch, 50, "")
 	if got := hook.count(); got != 1 {
@@ -434,7 +434,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 			t.Fatalf("summary is missing item %d:\n%s", i, text)
 		}
 	}
-	// The same number should be shared batch_id.
+	// The three deliveries should share one batch_id.
 	var distinct, total int
 	if err := f.pg.QueryRow(`SELECT count(DISTINCT batch_id), count(*) FROM notification_deliveries WHERE channel_id=$1`, chID).Scan(&distinct, &total); err != nil {
 		t.Fatal(err)
@@ -482,8 +482,8 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 	}
 	f.deliver(t, chID, "")
 
-	// There should be two.:fixed That's a change of status.;finding_created That one could be sent in the same round..
-	// The change in status is actually created later, but it doesn't depend on order..
+	// Expect two messages: the status change to fixed, and the finding_created that can go out in the same round.
+	// The status change is created later, but the assertion does not depend on order.
 	found := false
 	for i := 0; i < hook.count(); i++ {
 		text := markdownText(t, hook.body(t, i))
@@ -531,16 +531,16 @@ func TestNotifyTestMessageEndpoint(t *testing.T) {
 		"config": map[string]any{"webhook": hook.URL},
 	})
 	if r := f.request("POST", fmt.Sprintf("/api/notify/channels/%d/test", chID), ""); r.Code != 200 {
-		t.Fatalf("Test Sender Failed %d: %s", r.Code, r.Body)
+		t.Fatalf("test send failed %d: %s", r.Code, r.Body)
 	}
 	if hook.count() != 1 {
 		t.Fatalf("the fake receiver should get 1 test message, got %d", hook.count())
 	}
-	// The test message must be able to tell at first sight that it's a test. Hole.
+	// The test message must be recognizable as a test at a glance.
 	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "Test") {
-		t.Fatalf("Test messages should be marked as tests.: %s", text)
+		t.Fatalf("test message should be marked as a test: %s", text)
 	}
-	// When the configuration is broken, the original error of the channel is returned to the user..
+	// When the configuration is broken, the channel's own error is returned to the user.
 	badID := f.createChannel(t, map[string]any{
 		"name":   "Bad address",
 		"kind":   notify.KindDingTalk,
@@ -565,7 +565,7 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	ch := f.channel(t, chID)
-	// I've spent all my time trying..
+	// Exhaust the retry budget.
 	for i := 0; i < db.MaxNotifyAttempts; i++ {
 		f.n.stepRealtime(ctx, ch, 50, "")
 		if _, err := f.pg.Exec(`UPDATE notification_deliveries SET next_attempt_at = now() - interval '1 minute' WHERE channel_id=$1`, chID); err != nil {
@@ -577,12 +577,12 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state != db.NotifyStateFailed {
-		t.Fatalf("After re-drive, read failed,get %s", state)
+		t.Fatalf("after retries are exhausted, want failed, got %s", state)
 	}
 
 	r := f.request("GET", fmt.Sprintf("/api/notify/deliveries?channel_id=%d&state=failed", chID), "")
 	if r.Code != 200 {
-		t.Fatalf("History failed. %d: %s", r.Code, r.Body)
+		t.Fatalf("history request failed %d: %s", r.Code, r.Body)
 	}
 	var hist struct {
 		Deliveries []struct {
@@ -598,19 +598,19 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if hist.Total != 1 || len(hist.Deliveries) != 1 {
-		t.Fatalf("I think we got it. 1 Failed delivery, got total=%d len=%d", hist.Total, len(hist.Deliveries))
+		t.Fatalf("want 1 failed delivery, got total=%d len=%d", hist.Total, len(hist.Deliveries))
 	}
 	if hist.Deliveries[0].LastError == "" {
-		t.Fatal("History should include the reason for the failure, otherwise the user cannot check.")
+		t.Fatal("history should include the failure reason, otherwise the user cannot diagnose it")
 	}
 	if hist.Deliveries[0].Attempts < db.MaxNotifyAttempts {
-		t.Fatalf("The number of attempts should be recorded. %d", hist.Deliveries[0].Attempts)
+		t.Fatalf("attempts should be recorded, got %d", hist.Deliveries[0].Attempts)
 	}
 	if hist.Deliveries[0].Title != "It'll fail." {
 		t.Fatalf("history should include the finding title, got %q", hist.Deliveries[0].Title)
 	}
 
-	// Re-activate manually: should return pending And count to zero..
+	// Manual retry: return to pending and reset the attempt count to zero.
 	if r := f.request("POST", fmt.Sprintf("/api/notify/deliveries/%d/retry", hist.Deliveries[0].ID), ""); r.Code != 200 {
 		t.Fatalf("Resend failed %d: %s", r.Code, r.Body)
 	}
@@ -619,7 +619,7 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state != db.NotifyStatePending || attempts != 0 {
-		t.Fatalf("After reissue, insert pending and attempts=0,get %s/%d", state, attempts)
+		t.Fatalf("after retry, want pending and attempts=0, got %s/%d", state, attempts)
 	}
 }
 
@@ -627,7 +627,7 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 	f := newNotifyFixture(t)
 	r := f.request("GET", "/api/notify/meta", "")
 	if r.Code != 200 {
-		t.Fatalf("meta Failed: %s", r.Body)
+		t.Fatalf("meta failed: %s", r.Body)
 	}
 	var meta struct {
 		Kinds []struct {
@@ -643,26 +643,26 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 	}
 	for _, k := range meta.Kinds {
 		if len(k.SecretKeys) == 0 {
-			t.Errorf("Channel %s Documented fields not reported", k.Kind)
+			t.Errorf("channel %s did not report its credential fields", k.Kind)
 		}
 	}
 
-	// Three global set round trip. The tail slash should be standardized or the chain will spell out. "//function/...".
+	// Round-trip the three global settings. A trailing slash must be stripped or links become "//function/...".
 	if r := f.request("PUT", "/api/settings", `{"notify_public_base_url":"https://artex.example.com/","notify_digest_interval_min":15,"notify_enabled":true}`); r.Code != 200 {
-		t.Fatalf("Writing Settings Failed %d: %s", r.Code, r.Body)
+		t.Fatalf("writing settings failed %d: %s", r.Code, r.Body)
 	}
 	t.Cleanup(func() {
 		f.pg.Exec(`DELETE FROM settings WHERE key IN ($1,$2)`, settingNotifyPublicBaseURL, settingNotifyDigestMinutes)
 	})
 	payload := f.s.settingsPayload()
 	if payload["notify_public_base_url"] != "https://artex.example.com" {
-		t.Fatalf("Backlink address not standardized: %v", payload["notify_public_base_url"])
+		t.Fatalf("public base URL was not normalized: %v", payload["notify_public_base_url"])
 	}
 	if payload["notify_digest_interval_min"] != 15 {
-		t.Fatalf("Summary cycle not effective: %v", payload["notify_digest_interval_min"])
+		t.Fatalf("digest interval did not take effect: %v", payload["notify_digest_interval_min"])
 	}
 
-	// Illegal value should be rejected.
+	// Illegal values should be rejected.
 	for _, body := range []string{
 		`{"notify_public_base_url":"ftp://x"}`,
 		`{"notify_digest_interval_min":0}`,
@@ -674,8 +674,8 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNotifyDeepLinkUsesPublicBaseURL Override chain fusion: paired public_base_url hour
-// The message must be buttoned. ActionCard,And the link points to the gap details page.
+// TestNotifyDeepLinkUsesPublicBaseURL checks link rendering: when public_base_url is set,
+// the message must be an ActionCard and the link must point at the finding detail page.
 func TestNotifyDeepLinkUsesPublicBaseURL(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
@@ -690,16 +690,16 @@ func TestNotifyDeepLinkUsesPublicBaseURL(t *testing.T) {
 	body := hook.last(t)
 	card, _ := body["actionCard"].(map[string]any)
 	if card == nil {
-		t.Fatalf("Apply when chain returns ActionCard,get msgtype=%v", body["msgtype"])
+		t.Fatalf("with a public base URL the message should be an ActionCard, got msgtype=%v", body["msgtype"])
 	}
 	want := fmt.Sprintf("https://artex.example.com/function/findings/detail?id=%d", finding)
 	if card["singleURL"] != want {
-		t.Fatalf("Wrong chain.\nExpectations %s\nget %v", want, card["singleURL"])
+		t.Fatalf("wrong detail link\nwant %s\ngot %v", want, card["singleURL"])
 	}
 }
 
-// TestNotifyNoDeepLinkWithoutBaseURL Inverse Overwrite: No bad chain should occur without external address Answer.
-// (Like pointing. localhost (or relative path) markdown.
+// TestNotifyNoDeepLinkWithoutBaseURL is the inverse: with no external base URL there must be no bad link
+// (localhost or a relative path). The message stays markdown.
 func TestNotifyNoDeepLinkWithoutBaseURL(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
@@ -774,12 +774,12 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 	if sent+pending != total {
 		t.Fatalf("delivery counts do not add up: sent=%d pending=%d total=%d (neither sent nor pending means lost)", sent, pending, total)
 	}
-	// How many more are not included in this article?.
+	// How many were left out of this message?
 	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "remain") {
 		t.Fatalf("the message should say some entries were left out:\n%.400s", text)
 	}
 
-	// Postponed entries may not consume the retest budget: when received attempts Optimistic. +1,We need to reduce it when we delay it..
+	// Deferred rows must not consume the retry budget: claiming optimistically increments attempts, and deferring must decrement it again.
 	var maxAttempts int
 	if err := f.pg.QueryRow(`SELECT COALESCE(max(attempts),0) FROM notification_deliveries
 WHERE channel_id=$1 AND state=$2`, chID, db.NotifyStatePending).Scan(&maxAttempts); err != nil {
@@ -945,7 +945,7 @@ func TestNotifyTickBudgetFitsWithinLease(t *testing.T) {
 	worst := time.Duration(notifyMaxSendsPerChannelPerTick) * notifySendTimeout
 	if worst >= notifyLease {
 		t.Fatalf("worst-case one-channel round %v must stay under the lease %v "+
-			"(notifyMaxSendsPerChannelPerTick=%d × notifySendTimeout=%v)——"+
+			"(notifyMaxSendsPerChannelPerTick=%d × notifySendTimeout=%v) — "+
 			"Change any of these three constants and check the other two simultaneously.",
 			worst, notifyLease, notifyMaxSendsPerChannelPerTick, notifySendTimeout)
 	}

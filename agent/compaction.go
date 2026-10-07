@@ -457,7 +457,7 @@ func nodeConfidence(n *db.Node) string {
 // buildCompressionInput renders the connected sub-graph for the §4 prompt:
 // member nodes (summary + id + kind + state + confidence), the internal blood
 // edges among members, and — for a §3.1 shared-parent group — the anchor parents
-// as context ("Co-Father #p"), which are NOT members.
+// as context ("shared parent #p"), which are NOT members.
 func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) string {
 	memberSet := make(map[int64]bool, len(b.Members))
 	for _, m := range b.Members {

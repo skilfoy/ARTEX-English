@@ -76,20 +76,20 @@ func (o RetryOverride) Clamped() RetryOverride {
 	return o
 }
 
-// LLMRetryPolicy holds theFive. retry configuration. Connect/Empty/Stream are the
+// LLMRetryPolicy holds the five-layer retry configuration. Connect/Empty/Stream are the
 // per-request layers (a profile may override them, see LLMProfile.Retry);
 // Breaker and Intent are process-wide by nature and live only here.
 type LLMRetryPolicy struct {
-	// Connect:SDK Retry establishing connection(Connection reset/Timeout/429/5xx,Before the stream starts).Default 3 Index retreat.
+	// Connect: SDK connection retries (reset, timeout, 429, 5xx, before the stream starts). Default 3 attempts, exponential backoff.
 	Connect RetryRule `json:"connect"`
-	// Empty:SDK Retry with empty response(Completed but none content block,Only openai Format).Default 2 Index retreat.
+	// Empty: SDK empty-response retries (finished with no content block; openai format only). Default 2 attempts, exponential backoff.
 	Empty RetryRule `json:"empty"`
-	// Stream:Same provider Safe window retry(Discontinuation before undelivered output).Default 2 times,0.5s Start index(Top 4s).
+	// Stream: same-provider safe-window retry (replay a dropped stream before any output was delivered). Default 2 attempts, exponential from 0.5s, capped at 4s.
 	Stream RetryRule `json:"stream"`
-	// Breaker:Polling circuit breaker.Attempts=Successive instantaneous failure to trigger melting(Default 3,-1=The instant failure does not melt,
-	// Hard failure as the balance is insufficient/The key failed and melted immediately);IntervalMS=Fixed cooling time(0=Default 1/5/30min Gradient).
+	// Breaker: polling circuit breaker. Attempts = how many consecutive transient failures trip it (default 3; -1 = transient failures do not trip it;
+	// a hard failure such as insufficient balance or an invalid key still trips immediately). IntervalMS = fixed cooldown (0 = the default 1/5/30min ladder).
 	Breaker RetryRule `json:"breaker"`
-	// Intent:worker With model_error After closing, the whole article was intended to run again. Default 2 Second, fixed 3s.
+	// Intent: rerun the whole intent after a worker ends in model_error. Default 2 attempts, fixed 3s.
 	Intent RetryRule `json:"intent"`
 }
 

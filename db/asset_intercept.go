@@ -13,8 +13,8 @@ type AssetInterceptRule struct {
 	Pattern string `json:"pattern"`
 	Note    string `json:"note"`
 	Builtin bool   `json:"builtin"`
-	// Action For task-level rules only:'block'=Interception 'allow'=Allow(whitelist).
-	// Global rules(asset_intercept_rules)Without this column, it's always empty..
+	// Action is only for task-level rules: 'block' = intercept, 'allow' = allow (allowlist).
+	// Global rules (asset_intercept_rules) have no such column, so this stays empty and is treated as a block.
 	Action    string    `json:"action,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

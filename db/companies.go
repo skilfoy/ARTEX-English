@@ -52,8 +52,8 @@ var (
 )
 
 const (
-	// Unrestricted number of rules of enterprise:Individual IP / Domain lists are a thousand miles in motion.,The top will force the user.
-	// Dismantling into multiple enterprises. Request Body Size(server Side maxCompanyMutationBodyBytes)Still in the background..
+	// Company scope does not cap the number of rules: scopes entered one IP or domain at a time routinely run to thousands of entries, and a cap would only force the user
+	// to split them across multiple companies. Request body size (maxCompanyMutationBodyBytes on the server) is still the backstop.
 	//
 	// Raw and normalized textual scope payloads are bounded by Unicode rune
 	// count so multi-byte input is treated consistently by the API and DB layer.
@@ -69,12 +69,12 @@ func (e *CompanyScopeValidationError) Error() string { return e.Message }
 
 // ValidateCompanyScopeInputBounds applies request-wide limits before parsing.
 // Store methods call it again so non-HTTP callers cannot bypass the limits.
-// Length of single rule only,Unlimited.
+// Limits only the length of a single rule, not how many rules there are.
 func ValidateCompanyScopeInputBounds(inputs []ScopeInput) error {
 	for i, input := range inputs {
 		if utf8.RuneCountInString(input.Value) > MaxCompanyScopeRawRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"Enterprise scope no. %d The original bar is too long: Max %d characters", i+1, MaxCompanyScopeRawRunes,
+				"company scope rule %d raw value is too long: at most %d characters", i+1, MaxCompanyScopeRawRunes,
 			)}
 		}
 	}
@@ -400,12 +400,12 @@ func validateParsedScopeBounds(rules []ParsedScope) error {
 	for i, rule := range rules {
 		if utf8.RuneCountInString(rule.Raw) > MaxCompanyScopeRawRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"Enterprise scope no. %d The original bar is too long: Max %d characters", i+1, MaxCompanyScopeRawRunes,
+				"company scope rule %d raw value is too long: at most %d characters", i+1, MaxCompanyScopeRawRunes,
 			)}
 		}
 		if utf8.RuneCountInString(rule.Value) > MaxCompanyScopeValueRunes {
 			return &CompanyScopeValidationError{Message: fmt.Sprintf(
-				"Enterprise scope no. %d Excessive normative value: Max %d characters", i+1, MaxCompanyScopeValueRunes,
+				"company scope rule %d normalized value is too long: at most %d characters", i+1, MaxCompanyScopeValueRunes,
 			)}
 		}
 	}

@@ -1,7 +1,7 @@
 {
-  "_comment": "Copy As config.json(Or use environmental variables ARTEX_CONFIG Specifies another path. This document only contains database With skill_dir Two.;LLM When the rest of the configuration goes through the environment variable or application settings, except in this file.",
+  "_comment": "Copy to config.json (or set ARTEX_CONFIG to another path). This file only has database and skill_dir. LLM and the other settings come from environment variables or in-app settings, not this file.",
 
-  "_comment_database": "PostgreSQL Connect. Priority: Environmental variables ARTEX_PG_DSN > Document database.Two ways, two ways.:(A) Fill in the fields below;(B) Fill Only database.dsn A full link string.",
+  "_comment_database": "PostgreSQL connection. Precedence: environment variable ARTEX_PG_DSN > this file's database. Use one of the two forms: (A) fill in the fields below; (B) set only database.dsn to one full connection string.",
   "database": {
     "host": "127.0.0.1",
     "port": 5433,
@@ -11,13 +11,13 @@
     "sslmode": "disable"
   },
 
-  "_comment_database_dsn": "Writing (B):Delete the top one. database,Change to Complete DSN.dsn Non-empty field ignored.",
+  "_comment_database_dsn": "Form (B): delete the database object above and use a full DSN instead. When dsn is non-empty, the separate fields are ignored.",
   "_example_database_dsn": {
     "database": {
       "dsn": "postgres://user:pass@db.example.com:5432/artex?sslmode=require"
     }
   },
 
-  "_comment_skill_dir": "skill Root directory (one per subdirectories) skill,incl. SKILL.md).Priority: Environmental variables ARTEX_SKILL_DIR > This field > Default (executable file equivalent) skills/).This field is left empty or deleted by default. Relative path relative to current working directory.",
+  "_comment_skill_dir": "Skill root (one skill per subdirectory, including SKILL.md). Precedence: environment variable ARTEX_SKILL_DIR > this field > default (skills/ next to the executable). Leave this field empty or delete it to use the default. Relative paths are resolved against the current working directory.",
   "skill_dir": "/opt/artex/skills"
 }
