@@ -1075,7 +1075,7 @@ export default function DashboardPage() {
 
         {/* Traffic status code */}
         <Card className="p-4">
-          <SectionTitle icon={ActivityIcon} sub={`${traffic.length}requests`}>
+          <SectionTitle icon={ActivityIcon} sub={`${traffic.length} requests`}>
             Traffic status code
           </SectionTitle>
 

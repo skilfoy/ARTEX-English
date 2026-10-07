@@ -375,7 +375,7 @@ export function AssetDslSearch({
       </div>
       {query.trim() && !open && (
         <p className="pl-1 text-[11px] text-muted-foreground">
-          {loading ? "Searching…" : error ? <span className="text-destructive">{error}</span> : `Found${count ?? 0}strip`}
+          {loading ? "Searching…" : error ? <span className="text-destructive">{error}</span> : `Found ${count ?? 0}`}
         </p>
       )}
     </div>

@@ -66,7 +66,7 @@ export function LinkTrafficDialog({
         selected.finding_id,
         trafficIds.map((traffic_id) => ({ traffic_id })),
       );
-      toast.success(`Already associated${trafficIds.length}Traffic to vulnerability #${selected.finding_id}`);
+      toast.success(`Linked ${trafficIds.length} traffic records to finding #${selected.finding_id}`);
       onBound();
       onClose();
     } catch (e) {

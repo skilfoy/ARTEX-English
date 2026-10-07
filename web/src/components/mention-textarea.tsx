@@ -236,7 +236,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
             <span>
               {categories.length
                 ? "Select reference type"
-                : `Search${mentionKinds.find((kind) => kind.kind === search.kind)?.label ?? "All records"}`}
+                : `Search ${mentionKinds.find((kind) => kind.kind === search.kind)?.label ?? "all records"}`}
             </span>
             <span>↑↓ Select · Enter to confirm · Esc to close</span>
           </div>
@@ -277,7 +277,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
             )}
             {!categories.length && !loading && error && (
               <div role="alert" className="p-3 text-destructive text-sm">
-                Search failed:{error}. Please re-enter and try again.
+                Search failed: {error}. Please re-enter and try again.
               </div>
             )}
             {!categories.length && !loading && !error && !items.length && (
@@ -313,7 +313,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
               {loadingMore && <span role="status">Loading more…</span>}
               {!loadingMore && nextCursor && (
                 <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={loadMore}>
-                  {pageError ? "Loading failed, click to try again" : `Showed${items.length}bar, scroll down to load more`}
+                  {pageError ? "Loading failed. Click to try again." : `Showing ${items.length}. Scroll to load more.`}
                 </button>
               )}
               {!loadingMore && !nextCursor && !loading && !error && items.length > 0 && `Showing all ${items.length} items`}
@@ -335,7 +335,7 @@ export function MentionTextarea({ value, onValueChange, onKeyDown, className, in
               <button
                 type="button"
                 disabled={disabled}
-                aria-label={`Remove reference${item.label}`}
+                aria-label={`Remove reference ${item.label}`}
                 onClick={() => {
                   onValueChange(value.slice(0, item.start) + value.slice(item.start + item.token.length));
                   setCursor(null);

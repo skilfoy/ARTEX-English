@@ -120,7 +120,7 @@ export function ConfigField({
   const hint = masked ? (
     <p className="text-muted-foreground flex items-center gap-1 text-xs">
       <CheckIcon className="size-3" />
-      Saved{maskedTail ? `(Tail number${maskedTail})` : ""} · Fill in the new value to overwrite it, clear it to delete the item
+      Saved{maskedTail ? ` (ends in ${maskedTail})` : ""}. Enter a new value to replace it, or clear the field to remove it.
     </p>
   ) : (
     def.help && <p className="text-muted-foreground text-xs">{def.help}</p>
@@ -141,13 +141,13 @@ export function FilterSummary({ filter }: { filter: NotificationFilter }) {
   if (filter.min_severity) {
     parts.push(SEVERITY_OPTIONS.find((o) => o.value === filter.min_severity)?.label ?? filter.min_severity);
   }
-  if (filter.vulnclass_include?.length) parts.push(`Type includes${filter.vulnclass_include.length}word`);
-  if (filter.vulnclass_exclude?.length) parts.push(`Exclude${filter.vulnclass_exclude.length}word`);
-  if (filter.task_ids?.length) parts.push(`${filter.task_ids.length}tasks`);
-  if (filter.asset_ids?.length) parts.push(`${filter.asset_ids.length}assets`);
+  if (filter.vulnclass_include?.length) parts.push(`Includes ${filter.vulnclass_include.length} types`);
+  if (filter.vulnclass_exclude?.length) parts.push(`Excludes ${filter.vulnclass_exclude.length} types`);
+  if (filter.task_ids?.length) parts.push(`${filter.task_ids.length} tasks`);
+  if (filter.asset_ids?.length) parts.push(`${filter.asset_ids.length} assets`);
   if (filter.on_status_change) parts.push("Including status changes");
   if (parts.length === 0) {
-    return <p className="text-muted-foreground text-sm">All vulnerabilities</p>;
+    return <p className="text-muted-foreground text-sm">All findings</p>;
   }
   return <p className="text-muted-foreground text-sm">{parts.join(" · ")}</p>;
 }

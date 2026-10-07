@@ -55,13 +55,13 @@ function source(row: InterceptApprovalRow) {
 
 function originLabel(row: InterceptApprovalRow) {
   if (row.task_id) return row.task_id;
-  if (row.conversation_id) return `Dialogue #${row.conversation_id}`;
+  if (row.conversation_id) return `Conversation #${row.conversation_id}`;
   return "—";
 }
 
 function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; detail?: boolean }) {
   const [locating, setLocating] = React.useState(false);
-  const label = detail && row.task_id ? `Task${row.task_id}` : originLabel(row);
+  const label = detail && row.task_id ? `Task #${row.task_id}` : originLabel(row);
   const query = new URLSearchParams({ approval: String(row.id) });
   let href: string | undefined;
   if (row.conversation_id) {
@@ -75,7 +75,7 @@ function ApprovalOrigin({ row, detail = false }: { row: InterceptApprovalRow; de
     <a
       href={href}
       className="text-primary underline-offset-4 hover:underline"
-      aria-label={`Positioning Approval #${row.id}Source:${label}`}
+      aria-label={`Show the source of approval #${row.id}: ${label}`}
       aria-busy={locating}
       onClick={async (e) => {
         e.stopPropagation();
@@ -143,7 +143,7 @@ function CodeBlock({ label, text, truncated = false }: { label: string; text: st
       <div className="flex items-center justify-between gap-2">
         <h3 className="font-medium text-muted-foreground text-xs">{label}</h3>
         {text ? (
-          <Button variant="ghost" size="icon-xs" aria-label={`Copy${label}`} onClick={() => void copy()}>
+          <Button variant="ghost" size="icon-xs" aria-label={`Copy ${label}`} onClick={() => void copy()}>
             <CopyIcon />
           </Button>
         ) : null}
@@ -213,7 +213,7 @@ function ModelReviewContext({ input }: { input: InterceptReviewInput }) {
           {input.task ? (
             <>
               <CodeBlock label="Task description (old version)" text={input.task.description} truncated={input.task.truncated} />
-              <CodeBlock label="Mission objective (old version)" text={input.task.goal} truncated={input.task.truncated} />
+              <CodeBlock label="Task goal (previous format)" text={input.task.goal} truncated={input.task.truncated} />
               <CodeBlock label="Task operation constraints (old version)" text={JSON.stringify(input.task.constraints, null, 2)} />
             </>
           ) : null}
@@ -341,7 +341,7 @@ export function ApprovalDetail({
       <div className="grid min-w-0 gap-5 rounded-xl border bg-muted/20 p-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3">
           <CodeBlock
-            label={`${current.agent_name || current.conv_agent_key || "Agent"}· Tool Requests`}
+            label={`${current.agent_name || current.conv_agent_key || "Agent"} · Tool requests`}
             text={JSON.stringify(row.tool_input ?? {}, null, 2)}
           />
           {command ? (
@@ -403,7 +403,7 @@ export function ApprovalDetail({
         <Alert variant="destructive">
           <AlertDescription>
             <div className="flex flex-wrap items-center gap-2">
-              <span>Details loading failed:{error}</span>
+              <span>Details loading failed: {error}</span>
               <Button variant="outline" size="sm" onClick={() => setRetry((v) => v + 1)}>
                 Retry details
               </Button>
@@ -469,7 +469,7 @@ export function ApprovalDetail({
                           audit.context.map((entry, index) => (
                             <CodeBlock
                               key={`${entry.kind}-${entry.tool_use_id || index}`}
-                              label={`${contextLabels[entry.kind] ?? entry.kind}${entry.tool ? ` · ${entry.tool}` : ""}${entry.is_error ? "· Abnormal" : ""}`}
+                              label={`${contextLabels[entry.kind] ?? entry.kind}${entry.tool ? ` · ${entry.tool}` : ""}${entry.is_error ? " · Error" : ""}`}
                               text={entry.text}
                               truncated={entry.truncated}
                             />
@@ -589,7 +589,7 @@ function ApprovalTable({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`${open ? "Collapse" : "Expand"}Approval #${row.id}`}
+                    aria-label={`${open ? "Collapse" : "Expand"} approval #${row.id}`}
                     aria-expanded={open}
                     aria-controls={open ? panelID : undefined}
                     onClick={(e) => {
@@ -807,7 +807,7 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                <SelectItem value="all">All status</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="denied">Rejected</SelectItem>
                 <SelectItem value="pending">Pending approval</SelectItem>
                 <SelectItem value="allowed">Allowed</SelectItem>
@@ -817,7 +817,7 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
           </Select>
         </Field>
         <Field className="w-full sm:w-40">
-          <FieldLabel htmlFor={`${filterID}-source`}>Determine the source</FieldLabel>
+          <FieldLabel htmlFor={`${filterID}-source`}>Decision source</FieldLabel>
           <Select
             value={filter.decision_source ?? "all"}
             onValueChange={(value) =>
@@ -833,8 +833,8 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
             <SelectContent>
               <SelectGroup>
                 <SelectItem value="all">All sources</SelectItem>
-                <SelectItem value="model">Model determination</SelectItem>
-                <SelectItem value="rule">Rule judgment</SelectItem>
+                <SelectItem value="model">Model</SelectItem>
+                <SelectItem value="rule">Rule</SelectItem>
                 <SelectItem value="unknown">Unknown source</SelectItem>
               </SelectGroup>
             </SelectContent>
@@ -848,7 +848,7 @@ export function ApprovalRecords({ taskId }: { taskId?: string }) {
       </FieldGroup>
       {error ? (
         <Alert variant="destructive">
-          <AlertDescription>Record loading failed:{error}. Please click Refresh to try again.</AlertDescription>
+          <AlertDescription>Record loading failed: {error}. Please click Refresh to try again.</AlertDescription>
         </Alert>
       ) : null}
       {pendingError ? (

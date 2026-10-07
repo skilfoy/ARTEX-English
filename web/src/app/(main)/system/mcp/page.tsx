@@ -176,7 +176,7 @@ export default function MCPPage() {
       if (!editing) setOpen(false);
       load();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -188,10 +188,10 @@ export default function MCPPage() {
     try {
       const t = await api.refreshMcpServer(editing.id);
       setTools(t);
-      toast.success(`Discover${t.length}tools`);
+      toast.success(`Discovered ${t.length} tools`);
       load();
     } catch (e) {
-      toast.error("Refresh failed:" + (e as Error).message);
+      toast.error("Refresh failed: " + (e as Error).message);
     } finally {
       setRefreshing(false);
     }
@@ -204,7 +204,7 @@ export default function MCPPage() {
       setOpen(false);
       load();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
 
@@ -213,7 +213,7 @@ export default function MCPPage() {
       await api.saveMcpServer({ ...s, enabled: !s.enabled });
       load();
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
@@ -221,10 +221,10 @@ export default function MCPPage() {
     const on = (visibility[serverId] ?? []).includes(agentId);
     try {
       await api.toggleVisibility(agentId, "mcp", serverId, !on);
-      toast.success(`${on ? "Cancel" : "Granted"}[${agentName}"visible`);
+      toast.success(`${on ? "Hid" : "Showed"} this server for ${agentName}`);
       load();
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
@@ -232,7 +232,7 @@ export default function MCPPage() {
     return (
       <div className="grid gap-4 py-4">
         <div className="grid gap-2">
-          <Label>Transmission method</Label>
+          <Label>Transport</Label>
           <div className="flex gap-2">
             <Button
               type="button"
@@ -253,7 +253,7 @@ export default function MCPPage() {
               variant={form.transport === "sse" ? "default" : "outline"}
               onClick={() => setF({ transport: "sse" })}
             >
-              sse (old version)
+              sse (legacy)
             </Button>
           </div>
         </div>
@@ -340,7 +340,7 @@ export default function MCPPage() {
         {toolsLoading ? (
           <p className="text-muted-foreground text-sm">Loading…</p>
         ) : tools.length === 0 ? (
-          <p className="text-muted-foreground text-sm">The tool has not been found, click Refresh to obtain it again.</p>
+          <p className="text-muted-foreground text-sm">No tools yet. Click Refresh to fetch them again.</p>
         ) : (
           <div className="flex flex-col divide-y">
             {tools.map((t) => (
@@ -408,7 +408,7 @@ export default function MCPPage() {
             </CardHeader>
             <CardContent className="grid gap-3">
               <p className="text-muted-foreground text-sm">
-                {s.tools && s.tools.length > 0 ? `${s.tools.length}tools` : "Tool not found yet"}
+                {s.tools && s.tools.length > 0 ? `${s.tools.length} tools` : "No tools yet"}
               </p>
               <div className="grid gap-2" onClick={(e) => e.stopPropagation()}>
                 <span className="text-muted-foreground text-xs">Visibility (authorized by Agent)</span>

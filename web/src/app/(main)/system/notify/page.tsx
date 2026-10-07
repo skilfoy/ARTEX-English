@@ -59,13 +59,13 @@ export default function NotifyPage() {
         setBaseURL(m.public_base_url);
         setDigestMin(m.digest_interval_min);
       })
-      .catch((e) => toast.error("Failed to read push configuration:" + (e as Error).message));
+      .catch((e) => toast.error("Failed to read push configuration: " + (e as Error).message));
     // If the channel list fails to load, it will be reported: Silent failure will be displayed as[Not a single channel],
     // Users will think that the configuration is lost, which is more alarming than reporting an error directly..
     api
       .notifyChannels()
       .then(setChannels)
-      .catch((e) => toast.error("Failed to read channel list:" + (e as Error).message));
+      .catch((e) => toast.error("Failed to read channel list: " + (e as Error).message));
   }, []);
   React.useEffect(() => {
     load();
@@ -190,7 +190,7 @@ export default function NotifyPage() {
       }
       load();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -204,7 +204,7 @@ export default function NotifyPage() {
       toast.success(`Test message sent (${r.latency_ms}ms), please go to the group to confirm`);
     } catch (e) {
       // The backend returns the original error returned by the channel truthfully. This is the only clue to troubleshoot the configuration. Display it as it is..
-      toast.error("Test failed:" + (e as Error).message, { duration: 12000 });
+      toast.error("Test failed: " + (e as Error).message, { duration: 12000 });
     } finally {
       setTesting(false);
     }
@@ -217,7 +217,7 @@ export default function NotifyPage() {
       setOpen(false);
       load();
     } catch (e) {
-      toast.error("Deletion failed:" + (e as Error).message);
+      toast.error("Deletion failed: " + (e as Error).message);
     }
   }
 
@@ -226,7 +226,7 @@ export default function NotifyPage() {
       await api.notifyUpdateChannel(ch.id, { enabled: !ch.enabled });
       load();
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
@@ -237,7 +237,7 @@ export default function NotifyPage() {
       setMeta((m) => (m ? { ...m, enabled: on } : m));
       toast.success(on ? "Push is enabled" : "Push has been paused");
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     } finally {
       setGlobalSaving(false);
     }
@@ -253,7 +253,7 @@ export default function NotifyPage() {
       toast.success("Saved");
       load();
     } catch (e) {
-      toast.error("Save failed:" + (e as Error).message);
+      toast.error("Save failed: " + (e as Error).message);
     } finally {
       setGlobalSaving(false);
     }
@@ -417,7 +417,7 @@ export default function NotifyPage() {
             <SheetTitle>{editing ? editing.name : "Add notification channel"}</SheetTitle>
             <SheetDescription>
               {KIND_LABEL[form.kind] ?? form.kind}
-              {defaultRate > 0 ? `· Default current limit${defaultRate}bars/minute` : "· No current limit"}
+              {defaultRate > 0 ? ` · Default rate limit ${defaultRate}/min` : " · No rate limit"}
             </SheetDescription>
           </SheetHeader>
 

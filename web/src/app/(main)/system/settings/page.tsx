@@ -75,7 +75,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success("The number of saved concurrent work agents (effective for tasks started later)");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSavingWorkers(false));
   };
 
@@ -87,7 +87,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success("Saved Python interpreter configuration");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSaving(false));
   };
   const detectPython = () => {
@@ -136,7 +136,7 @@ export default function SystemSettingsPage() {
       })
       .catch((e) => {
         setAgentTrafficBinding(!v);
-        toast.error(`Save failed:${(e as Error).message}`);
+        toast.error(`Save failed: ${(e as Error).message}`);
       })
       .finally(() => setSaving(false));
   };
@@ -159,7 +159,7 @@ export default function SystemSettingsPage() {
       })
       .catch((e) => {
         setNoaCompaction(!v); // revert on failure
-        toast.error(`Save failed:${(e as Error).message}`);
+        toast.error(`Save failed: ${(e as Error).message}`);
       });
   };
 
@@ -173,7 +173,7 @@ export default function SystemSettingsPage() {
         toast.success("Saved web search configuration");
       })
       .catch((e) => {
-        toast.error("Save failed:" + (e as Error).message);
+        toast.error("Save failed: " + (e as Error).message);
         api
           .settings()
           .then(apply)
@@ -191,7 +191,7 @@ export default function SystemSettingsPage() {
         setBraveKeyInput("");
         toast.success("Saved Brave API Key");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSavingKey(false));
   };
 
@@ -204,7 +204,7 @@ export default function SystemSettingsPage() {
         setTavilyKeyInput("");
         toast.success("Tavily API Key saved");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSavingTavilyKey(false));
   };
 
@@ -216,7 +216,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success(proxyInput.trim() ? "Export agent saved" : "The export proxy has been cleared (changed to direct connection)");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSavingProxy(false));
   };
 
@@ -228,7 +228,7 @@ export default function SystemSettingsPage() {
         apply(s);
         toast.success(globalProxyInput.trim() ? "Global agent saved" : "Global proxy cleared (changed to direct connection)");
       })
-      .catch((e) => toast.error("Save failed:" + (e as Error).message))
+      .catch((e) => toast.error("Save failed: " + (e as Error).message))
       .finally(() => setSavingGlobalProxy(false));
   };
 
@@ -244,10 +244,10 @@ export default function SystemSettingsPage() {
         tavily_search_api_key: tavilyKeyInput,
       })
       .then((r) => {
-        if (r.ok) toast.success(`Search test successful ·${r.backend}return${r.count}results`);
-        else toast.error("Search test failed:" + (r.error || "Unknown error"));
+        if (r.ok) toast.success(`Search test succeeded · ${r.backend} returned ${r.count} results`);
+        else toast.error("Search test failed: " + (r.error || "Unknown error"));
       })
-      .catch((e) => toast.error("Search test failed:" + (e as Error).message))
+      .catch((e) => toast.error("Search test failed: " + (e as Error).message))
       .finally(() => setTesting(false));
   };
 
@@ -391,7 +391,7 @@ export default function SystemSettingsPage() {
             </div>
             <div className="flex items-center justify-between gap-4">
               <Label htmlFor="inject-worker" className="text-sm font-normal text-muted-foreground">
-                Inject executor (worker){injectWorker ? "· Enabled" : "· Closed"}
+                Inject executor (worker){injectWorker ? " · On" : " · Off"}
               </Label>
               <Switch
                 id="inject-worker"
@@ -413,14 +413,14 @@ export default function SystemSettingsPage() {
               The mechanism is still under verification and is turned off by default. It may change Agent behavior or affect stability, please enable it after understanding the impact.
               <br />
               <b>noa context compression</b>: Long conversation history is actively compressed by the model (norma v0.4.0). The four types of Agents (
-              <b>Planner/Executor/Main Agent/Dialogue</b>) use noa to take over the context instead of built-in compression,
+              <b>Planner, worker, main agent, and chat</b>) use noa for context compression instead of the built-in compactor,
               The compressed original text will be archived in the task working directory for easy backtracking. The switch takes effect immediately (effective for subsequent runs), and there is no need to rebuild the Agent;
               Built-in compression is restored immediately after shutdown.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex items-center justify-between gap-4">
             <Label htmlFor="noa-compaction" className="text-sm font-normal text-muted-foreground">
-              noa context compression{noaCompaction ? "· Enabled" : "· Closed"}
+              noa context compression{noaCompaction ? " · On" : " · Off"}
             </Label>
             <Switch
               id="noa-compaction"

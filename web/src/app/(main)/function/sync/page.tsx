@@ -61,7 +61,7 @@ function ScopeSentryPanel() {
     api
       .ssStatus()
       .then(setStatus)
-      .catch((e) => toast.error(`Failed to read data source status:${e.message}`))
+      .catch((e) => toast.error(`Failed to read data source status: ${e.message}`))
       .finally(() => setLoadingStatus(false));
   }, []);
 
@@ -113,7 +113,7 @@ function DataSourceCard({
       toast.success("The ScopeSentry data source has been created, please fill in the address and key");
       onChanged();
     } catch (e) {
-      toast.error(`Creation failed:${(e as Error).message}`);
+      toast.error(`Creation failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -128,7 +128,7 @@ function DataSourceCard({
       setApiKey("");
       onChanged();
     } catch (e) {
-      toast.error(`Save failed:${(e as Error).message}`);
+      toast.error(`Save failed: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
@@ -241,7 +241,7 @@ function SyncWorkbench() {
       dimension === "project"
         ? api.ssProjects(page, 50, search).then((r) => setProjects(r.projects))
         : api.ssTasks(page, 50, search).then(setTasks);
-    fn.catch((e) => toast.error(`Failed to load list:${e.message}`)).finally(() => setLoading(false));
+    fn.catch((e) => toast.error(`Failed to load list: ${e.message}`)).finally(() => setLoading(false));
   }, [dimension, page, search]);
 
   React.useEffect(() => {
@@ -266,7 +266,7 @@ function SyncWorkbench() {
   const chosenTypes = ASSET_TYPES.filter((t) => assetTypes[t.key]).map((t) => t.key);
 
   const runSync = async () => {
-    if (selected.size === 0) return toast.error(`Please select at least one${dimension === "project" ? "Project" : "Task"}`);
+    if (selected.size === 0) return toast.error(`Please select at least one ${dimension === "project" ? "project" : "task"}`);
     if (chosenTypes.length === 0) return toast.error("Please select at least one asset type");
     setSyncing(true);
     setResult(null);
@@ -281,7 +281,7 @@ function SyncWorkbench() {
       const total = Object.values(r.synced ?? {}).reduce((a, b) => a + b, 0);
       toast.success(`Synchronization completed; ${total} assets saved`);
     } catch (e) {
-      toast.error(`Synchronization failed:${(e as Error).message}`);
+      toast.error(`Synchronization failed: ${(e as Error).message}`);
     } finally {
       setSyncing(false);
     }

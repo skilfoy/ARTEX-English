@@ -32,7 +32,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
         setRows(r.deliveries);
         setTotal(r.total);
       })
-      .catch((e) => toast.error("Failed to read delivery record:" + (e as Error).message))
+      .catch((e) => toast.error("Failed to read delivery record: " + (e as Error).message))
       .finally(() => setLoading(false));
   }, [channelID, state, page]);
   React.useEffect(() => {
@@ -45,7 +45,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
       toast.success("Rejoined the team");
       load();
     } catch (e) {
-      toast.error("Resend failed:" + (e as Error).message);
+      toast.error("Resend failed: " + (e as Error).message);
     }
   }
 
@@ -95,7 +95,7 @@ export function DeliveryList({ channels }: { channels: NotificationChannel[] }) 
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>
           <RefreshCwIcon className={loading ? "animate-spin" : ""} /> Refresh
         </Button>
-        <span className="text-muted-foreground ml-auto text-xs">Total {total} strip</span>
+        <span className="text-muted-foreground ml-auto text-xs">Total {total}</span>
       </div>
 
       <Card className="py-0">

@@ -530,13 +530,13 @@ export default function TasksPage() {
       try {
         const result = await api.deleteTask(id, options);
         if (result.cleanup_warning) {
-          toast.warning(`${deleteSummary(result)};Some external data cleaning is not completed:${result.cleanup_warning}`);
+          toast.warning(`${deleteSummary(result)}. Some external cleanup did not finish: ${result.cleanup_warning}`);
         } else {
           toast.success(deleteSummary(result));
         }
         load();
       } catch (e) {
-        toast.error("Deletion failed:" + (e as Error).message);
+        toast.error("Deletion failed: " + (e as Error).message);
         throw e;
       }
     },
@@ -551,10 +551,10 @@ export default function TasksPage() {
       try {
         const result = await api.controlTask(id, action);
         toast.success(
-          action === "pause" ? `Task #${id}Suspended` : `Task #${id}Continued${result.queued ? ", has entered the queue" : ""}`,
+          action === "pause" ? `Task #${id} paused` : `Task #${id} resumed${result.queued ? " and queued" : ""}`,
         );
       } catch (e) {
-        toast.error(`${action === "pause" ? "Pause" : "Continue"}Failed:${(e as Error).message}`);
+        toast.error(`${action === "pause" ? "Pause" : "Resume"} failed: ${(e as Error).message}`);
       } finally {
         // Refresh regardless of success or failure:The failure is mostly because the status has changed,Pull again to return the button to its correct form.
         lastRef.current = "";
@@ -568,11 +568,11 @@ export default function TasksPage() {
     async (task: Task, name: string) => {
       try {
         await api.renameTask(task.id, name);
-        toast.success(`Task #${task.id}renamed`);
+        toast.success(`Task #${task.id} renamed`);
         lastRef.current = "";
         load();
       } catch (error) {
-        toast.error(`Rename failed:${(error as Error).message}`);
+        toast.error(`Rename failed: ${(error as Error).message}`);
         throw error;
       }
     },
@@ -584,11 +584,11 @@ export default function TasksPage() {
       const pinned = taskIsPinned(task);
       try {
         await api.pinTask(task.id, !pinned);
-        toast.success(pinned ? `Task #${task.id}Unpinned` : `Task #${task.id}Pinned`);
+        toast.success(pinned ? `Task #${task.id} unpinned` : `Task #${task.id} pinned`);
         lastRef.current = "";
         load();
       } catch (error) {
-        toast.error(`${pinned ? "Cancel pin" : "Pick it to the top"}Failed:${(error as Error).message}`);
+        toast.error(`${pinned ? "Unpin" : "Pin"} failed: ${(error as Error).message}`);
         throw error;
       }
     },
@@ -599,12 +599,12 @@ export default function TasksPage() {
     async (task: Task) => {
       try {
         await api.archiveTask(task.id);
-        toast.success(`Task #${task.id}Entered the archive queue`);
+        toast.success(`Task #${task.id} added to the archive queue`);
         setActiveTab("archived");
         lastRef.current = "";
         load();
       } catch (error) {
-        toast.error(`Archiving failed:${(error as Error).message}`);
+        toast.error(`Archiving failed: ${(error as Error).message}`);
         throw error;
       }
     },
@@ -651,9 +651,9 @@ export default function TasksPage() {
           return next;
         });
         const details = deleteDetails(total);
-        const summary = `Deleted${deleted.length}tasks` + (details.length > 0 ? `(${details.join(",")})` : "");
+        const summary = `Deleted ${deleted.length} tasks` + (details.length > 0 ? ` (${details.join(", ")})` : "");
         if (warnings.length > 0) {
-          toast.warning(`${summary};Some external data cleaning is not completed:${warnings.join(";")}`);
+          toast.warning(`${summary}. Some external cleanup did not finish: ${warnings.join("; ")}`);
         } else {
           toast.success(summary);
         }
@@ -663,7 +663,7 @@ export default function TasksPage() {
           .slice(0, 3)
           .map((f) => `#${f.id}(${f.message})`)
           .join(";");
-        toast.error(`${failed.length}Task deletion failed:${head}${failed.length > 3 ? "wait" : ""}`);
+        toast.error(`${failed.length} tasks could not be deleted: ${head}${failed.length > 3 ? "…" : ""}`);
       }
       load();
     },
@@ -689,13 +689,13 @@ export default function TasksPage() {
     const result = await api.archiveTasks(archivableTaskIDs);
     const succeeded = result.items.filter((item) => item.ok);
     const failed = result.items.filter((item) => !item.ok);
-    if (succeeded.length > 0) toast.success(`Already${succeeded.length}tasks are added to the archive queue`);
+    if (succeeded.length > 0) toast.success(`Added ${succeeded.length} tasks to the archive queue`);
     if (failed.length > 0) {
       toast.error(
-        `${failed.length}tasks cannot be archived:${failed
+        `${failed.length} tasks could not be archived: ${failed
           .slice(0, 3)
-          .map((item) => `#${item.id}(${item.error || "Status has changed"})`)
-          .join(";")}`,
+          .map((item) => `#${item.id} (${item.error || "status changed"})`)
+          .join("; ")}`,
       );
     }
     setSelectedIds(new Set());
@@ -719,8 +719,8 @@ export default function TasksPage() {
         if (succeeded.length > 0) {
           toast.success(
             action === "pause"
-              ? `Suspended${succeeded.length}tasks`
-              : `Continued${succeeded.length}tasks${succeeded.some((item) => item.queued) ? ", some tasks have entered the queue" : ""}`,
+              ? `Paused ${succeeded.length} tasks`
+              : `Resumed ${succeeded.length} tasks${succeeded.some((item) => item.queued) ? ". Some are queued." : ""}`,
           );
         }
         if (failed.length > 0) {
@@ -728,12 +728,12 @@ export default function TasksPage() {
             .slice(0, 3)
             .map((item) => `#${item.id}(${item.error || "Status has changed"})`)
             .join(";");
-          toast.error(`${failed.length}task operations failed:${details}${failed.length > 3 ? "wait" : ""}`);
+          toast.error(`${failed.length} tasks could not be updated: ${details}${failed.length > 3 ? "…" : ""}`);
         }
         lastRef.current = "";
         load();
       } catch (error) {
-        toast.error(`${action === "pause" ? "Batch pause" : "Continue in batches"}Failed:${(error as Error).message}`);
+        toast.error(`${action === "pause" ? "Pause" : "Resume"} failed: ${(error as Error).message}`);
       } finally {
         setBatchControlling(null);
       }
@@ -747,7 +747,7 @@ export default function TasksPage() {
       const ids = [...selectedIds];
       if (ids.length === 0 || movingCategory) return;
       if (ids.length > 100) {
-        toast.error("Modify the classification of up to 100 tasks at a time");
+        toast.error("Move at most 100 tasks at a time");
         return;
       }
       setMovingCategory(true);
@@ -757,7 +757,7 @@ export default function TasksPage() {
         const failed = result.items.filter((item) => !item.ok);
         const target = result.category?.name ?? "Uncategorized";
         if (succeeded.length > 0) {
-          toast.success(`Already${succeeded.length}tasks moved to "${target}]`);
+          toast.success(`Moved ${succeeded.length} tasks to "${target}"`);
           setSelectedIds(new Set());
         }
         if (failed.length > 0) {
@@ -765,11 +765,11 @@ export default function TasksPage() {
             .slice(0, 3)
             .map((item) => `#${item.id}(${item.error || "Task no longer exists"})`)
             .join(";");
-          toast.error(`${failed.length}tasks failed to move:${details}${failed.length > 3 ? "wait" : ""}`);
+          toast.error(`${failed.length} tasks could not be moved: ${details}${failed.length > 3 ? "…" : ""}`);
         }
         refreshCategoriesAndTasks();
       } catch (error) {
-        toast.error(`Failed to modify classification:${(error as Error).message}`);
+        toast.error(`Could not update categories: ${(error as Error).message}`);
       } finally {
         setMovingCategory(false);
       }
@@ -1045,8 +1045,8 @@ function SortableTaskHead({
   let ariaSort: React.AriaAttributes["aria-sort"] = "none";
   if (active) ariaSort = direction === "asc" ? "ascending" : "descending";
 
-  let actionLabel = `Press${label}Sort in reverse order`;
-  if (active) actionLabel = `${label}current${direction === "asc" ? "Normal sequence" : "Reverse order"}, click to switch the sorting direction`;
+  let actionLabel = `Sort by ${label}, descending`;
+  if (active) actionLabel = `${label}, currently ${direction === "asc" ? "ascending" : "descending"}. Click to reverse the sort.`;
 
   return (
     <TableHead className={className} aria-sort={ariaSort}>
@@ -1093,10 +1093,10 @@ function ConcurrencySettingsDialog() {
     setSaving(true);
     try {
       await api.setSettings({ task_concurrency_enabled: enabled, task_concurrency_limit: nextLimit });
-      toast.success(enabled ? `Concurrency limit turned on: maximum simultaneous running${nextLimit}tasks` : "Task concurrency limit has been turned off");
+      toast.success(enabled ? `Concurrency limit on: at most ${nextLimit} tasks at once` : "Task concurrency limit turned off");
       setOpen(false);
     } catch (error) {
-      toast.error(`Save failed:${(error as Error).message}`);
+      toast.error(`Save failed: ${(error as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -1183,7 +1183,7 @@ const TaskRow = React.memo(function TaskRow({
         <Checkbox
           checked={selected}
           onCheckedChange={(checked) => onSelectedChange(task.id, checked === true)}
-          aria-label={`Choose a task${task.id}`}
+          aria-label={`Select task ${task.id}`}
         />
       </TableCell>
       <TableCell>
@@ -1343,7 +1343,7 @@ function TaskNameEditor({ task, onRename }: { task: Task; onRename: (task: Task,
           maxLength={200}
           autoFocus
           disabled={saving}
-          aria-label={`Task #${task.id}name`}
+          aria-label={`Task #${task.id} name`}
           className="h-7 min-w-28 max-w-48 px-2 font-medium"
           onFocus={(event) => event.currentTarget.select()}
           onChange={(event) => setName(event.target.value)}
@@ -1584,7 +1584,7 @@ function formatArchiveBytes(bytes: number): string {
 function archiveCompressionLabel(archive: TaskArchive): string {
   if (archive.original_size <= 0 || archive.compressed_size <= 0) return "—";
   const saved = Math.max(0, 100 - (archive.compressed_size / archive.original_size) * 100);
-  return `${formatArchiveBytes(archive.compressed_size)}· Save${saved.toFixed(0)}%`;
+  return `${formatArchiveBytes(archive.compressed_size)} · saved ${saved.toFixed(0)}%`;
 }
 
 function archiveDataTotal(archive: TaskArchive): number {
@@ -1684,7 +1684,7 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
         if (restored) onChanged();
       }
     } catch (error) {
-      toast.error(`Failed to read archive list:${(error as Error).message}`);
+      toast.error(`Failed to read archive list: ${(error as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -1740,11 +1740,11 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
         const archiveID = Number(item.archive_id ?? item.id);
         if (item.ok && Number.isSafeInteger(archiveID) && archiveID > 0) pendingRestoreIDs.current.add(archiveID);
       }
-      if (succeeded > 0) toast.success(`Already${succeeded}tasks added to restore queue`);
-      if (failed > 0) toast.error(`${failed}tasks cannot be restored`);
+      if (succeeded > 0) toast.success(`Added ${succeeded} tasks to the restore queue`);
+      if (failed > 0) toast.error(`${failed} tasks could not be restored`);
       afterAction();
     } catch (error) {
-      toast.error(`Restore failed:${(error as Error).message}`);
+      toast.error(`Restore failed: ${(error as Error).message}`);
     }
   }
 
@@ -1765,11 +1765,11 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
           : await api.deleteTaskArchives(items.map((archive) => archive.id));
       const succeeded = result.items.filter((item) => item.ok).length;
       const failed = result.items.length - succeeded;
-      if (succeeded > 0) toast.success(`Already${succeeded}archives queued for permanent deletion`);
-      if (failed > 0) toast.error(`${failed}archives cannot be deleted`);
+      if (succeeded > 0) toast.success(`Queued ${succeeded} archives for permanent deletion`);
+      if (failed > 0) toast.error(`${failed} archives could not be deleted`);
       afterAction();
     } catch (error) {
-      toast.error(`Permanent deletion failed:${(error as Error).message}`);
+      toast.error(`Permanent deletion failed: ${(error as Error).message}`);
       throw error;
     }
   }
@@ -1782,7 +1782,7 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
       toast.success("Rejoined the processing queue");
       afterAction();
     } catch (error) {
-      toast.error(`Retry failed:${(error as Error).message}`);
+      toast.error(`Retry failed: ${(error as Error).message}`);
     }
   }
 
@@ -1928,7 +1928,7 @@ function TaskArchivesPanel({ onChanged }: { onChanged: () => void }) {
                     </TableCell>
                     <TableCell
                       className="whitespace-nowrap text-xs"
-                      title={`Before compression${formatArchiveBytes(archive.original_size)}`}
+                      title={`Size before compression: ${formatArchiveBytes(archive.original_size)}`}
                     >
                       {archiveCompressionLabel(archive)}
                     </TableCell>
@@ -2354,7 +2354,7 @@ function BulkDeleteTasksDialog({
             }}
           >
             {deleting && <Spinner data-icon="inline-start" />}
-            {deleting ? `Deleting${done}/${ids.length}` : `Delete${ids.length}tasks`}
+            {deleting ? `Deleting ${done}/${ids.length}` : `Delete ${ids.length} tasks`}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -2489,9 +2489,9 @@ function CategoryPicker({
       onValueChange(created.id);
       setInputValue("");
       onCategoryCreated();
-      toast.success(`Category created${created.name}]`);
+      toast.success(`Category "${created.name}" created`);
     } catch (e) {
-      toast.error(`Failed to create category:${(e as Error).message}`);
+      toast.error(`Failed to create category: ${(e as Error).message}`);
     } finally {
       setCreating(false);
     }
@@ -2613,7 +2613,7 @@ function CompanyPicker({
         <ComboboxChipsInput id="task-companies" placeholder="Search company name or asset range" />
       </ComboboxChips>
       <ComboboxContent portalContainer={portalContainer}>
-        <ComboboxEmpty>No matching business</ComboboxEmpty>
+        <ComboboxEmpty>No matching company</ComboboxEmpty>
         <ComboboxList>
           {(companyID) => {
             const company = companiesByID.get(companyID);
@@ -2658,7 +2658,7 @@ function CategoryDropTarget({
   disabled: boolean;
   onSelect: () => void;
 }) {
-  const { isOver, setNodeRef } = useDroppable({ id: `category:${value}`, disabled });
+  const { isOver, setNodeRef } = useDroppable({ id: `category: ${value}`, disabled });
 
   return (
     <button
@@ -2672,14 +2672,14 @@ function CategoryDropTarget({
       onClick={onSelect}
     >
       <span className="block truncate font-medium text-sm">{name}</span>
-      <span className="block truncate text-muted-foreground text-xs">{isOver ? "Release to move" : `${count}tasks`}</span>
+      <span className="block truncate text-muted-foreground text-xs">{isOver ? "Release to move" : `${count} tasks`}</span>
     </button>
   );
 }
 
 function DraggableCategoryTask({ task, disabled, moving }: { task: Task; disabled: boolean; moving: boolean }) {
   const { attributes, isDragging, listeners, setNodeRef } = useDraggable({
-    id: `task:${task.id}`,
+    id: `task: ${task.id}`,
     disabled,
   });
 
@@ -2827,7 +2827,7 @@ function CategoryManagementSheet({
       }
       onChanged();
     } catch (error) {
-      toast.error(`${selectedView === "new" ? "Create" : "Update"}Classification failed:${(error as Error).message}`);
+      toast.error(`Could not ${selectedView === "new" ? "create" : "update"} the category: ${(error as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -2846,7 +2846,7 @@ function CategoryManagementSheet({
       setDeleteOpen(false);
       onChanged();
     } catch (error) {
-      toast.error(`Failed to delete category:${(error as Error).message}`);
+      toast.error(`Failed to delete category: ${(error as Error).message}`);
     } finally {
       setDeleting(false);
     }
@@ -2866,9 +2866,9 @@ function CategoryManagementSheet({
     try {
       await api.updateTaskCategory(task.id, category?.id);
       onTaskMoved(task.id, category);
-      toast.success(`Task #${task.id}Moved to "${category?.name ?? "Uncategorized"}]`);
+      toast.success(`Task #${task.id} moved to "${category?.name ?? "Uncategorized"}"`);
     } catch (error) {
-      toast.error(`Move task failed:${(error as Error).message}`);
+      toast.error(`Move task failed: ${(error as Error).message}`);
     } finally {
       setMovingTaskID(null);
     }
@@ -2960,7 +2960,7 @@ function CategoryManagementSheet({
                       />
                       <FieldDescription>
                         {selectedCategory
-                          ? `Currently available${selectedCategory.task_count}tasks use this category. The task list will be updated synchronously after renaming.`
+                          ? `${selectedCategory.task_count} tasks use this category. Renaming updates the task list.`
                           : "After creation, it can be used in new tasks and task list filtering."}
                       </FieldDescription>
                     </Field>
@@ -2972,8 +2972,8 @@ function CategoryManagementSheet({
                           <FieldLabel>{selectedCategory ? "Classification tasks" : "Uncategorized tasks"}</FieldLabel>
                           <FieldDescription>
                             {selectedCategory
-                              ? `This category contains${visibleTasks.length}tasks.`
-                              : `Currently available${visibleTasks.length}tasks have not been classified yet.`}
+                              ? `This category contains ${visibleTasks.length} tasks.`
+                              : `${visibleTasks.length} tasks are not in a category yet.`}
                           </FieldDescription>
                         </div>
                       </div>
@@ -3122,7 +3122,7 @@ function CreateTaskSheet({
       setDescription((prev) => appendUploads(prev, r.attachments));
       setUploadCount((n) => n + r.attachments.length);
     } catch (e) {
-      toast.error("Upload failed:" + (e as Error).message);
+      toast.error("Upload failed: " + (e as Error).message);
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = ""; // allow re-picking the same file
@@ -3177,7 +3177,7 @@ function CreateTaskSheet({
       setOpen(false);
       onCreated();
     } catch (e) {
-      toast.error("Creation failed:" + (e as Error).message);
+      toast.error("Creation failed: " + (e as Error).message);
     } finally {
       setCreating(false);
     }
@@ -3270,7 +3270,7 @@ function CreateTaskSheet({
                 </Button>
                 <span className="text-muted-foreground text-xs">
                   {uploadCount > 0
-                    ? `Uploaded${uploadCount}files, the absolute path is appended to the end of the description (editable)`
+                    ? `Uploaded ${uploadCount} files. Their paths were appended to the description (you can edit them).`
                     : "Multi-selectable; after uploading, append the absolute path of the file to the description for workers to open with Read/Bash"}
                 </span>
               </div>

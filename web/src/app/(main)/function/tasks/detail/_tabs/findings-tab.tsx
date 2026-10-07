@@ -172,10 +172,10 @@ export function FindingsTab({ taskId }: { taskId: string }) {
     setFindings((cur) => cur.map((x) => (x.id === f.id ? { ...x, status: next } : x)));
     try {
       await api.setFindingStatus(f.finding_id, next);
-      toast.success(`Marked as "${statusMeta("finding", next).label}]`);
+      toast.success(`Marked as "${statusMeta("finding", next).label}"`);
     } catch (e) {
       setFindings((cur) => cur.map((x) => (x.id === f.id ? { ...x, status: prev } : x)));
-      toast.error("Update failed:" + (e as Error).message);
+      toast.error("Update failed: " + (e as Error).message);
     }
   }, []);
 
@@ -195,7 +195,7 @@ export function FindingsTab({ taskId }: { taskId: string }) {
           <button
             type="button"
             className="inline-flex items-center gap-1 outline-none focus-visible:underline"
-            aria-label={`Discovery time is current${sortPreference.direction === "asc" ? "Normal sequence" : "Reverse order"}, click to switch the sorting direction`}
+            aria-label={`Discovery time, currently ${sortPreference.direction === "asc" ? "ascending" : "descending"}. Click to reverse the sort.`}
             onClick={() =>
               setSortPreference((current) => ({
                 field: "time",

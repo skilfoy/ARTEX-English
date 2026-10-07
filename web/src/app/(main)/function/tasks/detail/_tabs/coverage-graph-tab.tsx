@@ -220,7 +220,7 @@ function toG6Nodes(renderNodes: RenderNode[]): G6NodeDatum[] {
         fold: true,
         tested: false,
         inScope: false,
-        lbl: `Also${rn.hidden.length}indivual${kindMeta[rn.kind].label}`,
+        lbl: `${rn.hidden.length} more ${kindMeta[rn.kind].label}`,
         size: 24,
       };
     }

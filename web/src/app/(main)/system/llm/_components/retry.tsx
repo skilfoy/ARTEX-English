@@ -273,7 +273,7 @@ export function RetryPolicyPanel() {
       const p = await api.llmRetryPolicy();
       setPolicy({ ...ZERO_POLICY, ...p });
     } catch (e) {
-      toast.error(`Read retry policy failed:${(e as Error).message}`);
+      toast.error(`Read retry policy failed: ${(e as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -292,7 +292,7 @@ export function RetryPolicyPanel() {
       setPolicy({ ...ZERO_POLICY, ...saved });
       toast.success("Saved, effective immediately (the current round of calls still uses the old parameters)");
     } catch (e) {
-      toast.error(`Save failed:${(e as Error).message}`);
+      toast.error(`Save failed: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }

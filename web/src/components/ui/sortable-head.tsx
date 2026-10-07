@@ -32,8 +32,8 @@ export function SortableHead<Field extends string>({
   let ariaSort: React.AriaAttributes["aria-sort"] = "none";
   if (active) ariaSort = direction === "asc" ? "ascending" : "descending";
 
-  let actionLabel = `Press${label}Sort in reverse order`;
-  if (active) actionLabel = `${label}current${direction === "asc" ? "Normal sequence" : "Reverse order"}, click to switch the sorting direction`;
+  let actionLabel = `Sort by ${label}, descending`;
+  if (active) actionLabel = `${label}, currently ${direction === "asc" ? "ascending" : "descending"}. Click to reverse the sort.`;
 
   let icon = <ArrowUpDownIcon className="size-3.5 opacity-40 transition-opacity group-hover/sort:opacity-100" />;
   if (active) icon = direction === "asc" ? <ArrowUpIcon className="size-3.5" /> : <ArrowDownIcon className="size-3.5" />;

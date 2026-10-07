@@ -32,7 +32,7 @@ interface StatusMeta {
 }
 
 const intent: Record<string, StatusMeta> = {
-  open: { label: "To be collected", tone: "slate" },
+  open: { label: "Waiting", tone: "slate" },
   running: { label: "Executing", tone: "blue" },
   paused: { label: "Suspended", tone: "amber" },
   done: { label: "Completed", tone: "green" },
@@ -57,9 +57,9 @@ const task: Record<string, StatusMeta> = {
 };
 
 const severity: Record<string, StatusMeta> = {
-  critical: { label: "Serious", tone: "rose" },
+  critical: { label: "Critical", tone: "rose" },
   high: { label: "High risk", tone: "red" },
-  medium: { label: "medium risk", tone: "amber" },
+  medium: { label: "Medium risk", tone: "amber" },
   low: { label: "Low risk", tone: "slate" },
 };
 
@@ -70,15 +70,15 @@ const finding: Record<string, StatusMeta> = {
   resolved: { label: "Processed", tone: "green" },
   fixed: { label: "Fixed", tone: "green" },
   false_positive: { label: "False positive", tone: "slate" },
-  ignored: { label: "Ignore", tone: "neutral" },
-  duplicate: { label: "Repeat", tone: "neutral" },
-  risk_accepted: { label: "Risk Acceptance", tone: "violet" },
+  ignored: { label: "Ignored", tone: "neutral" },
+  duplicate: { label: "Duplicate", tone: "neutral" },
+  risk_accepted: { label: "Risk accepted", tone: "violet" },
 };
 
 const engine: Record<string, StatusMeta> = {
   exploring: { label: "Exploring", tone: "blue" },
   paused: { label: "Suspended", tone: "amber" },
-  stalled: { label: "Stagnation", tone: "red" },
+  stalled: { label: "Stalled", tone: "red" },
   idle: { label: "Idle", tone: "neutral" },
 };
 
@@ -89,13 +89,13 @@ const goal: Record<string, StatusMeta> = {
 };
 
 const audit: Record<string, StatusMeta> = {
-  allow: { label: "Release", tone: "green" },
+  allow: { label: "Allow", tone: "green" },
   block: { label: "Interception", tone: "red" },
 };
 
 const node: Record<string, StatusMeta> = {
-  observed: { label: "Observation", tone: "slate" },
-  confirmed: { label: "Confirm", tone: "green" },
+  observed: { label: "Observed", tone: "slate" },
+  confirmed: { label: "Confirmed", tone: "green" },
   tombstoned: { label: "Abandoned", tone: "neutral" },
 };
 

@@ -42,7 +42,7 @@ export function UpdateBadge() {
   return (
     <Link
       href="/system/settings"
-      title={`New version found${latest}, click to update`}
+      title={`New version ${latest} is available. Click to update`}
       className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 font-medium text-primary-foreground text-xs transition-opacity hover:opacity-90"
     >
       {/* Breathing point: There are many elements in the top bar, and pure text is easy to be ignored. The animation makes it visible at a glance.. */}

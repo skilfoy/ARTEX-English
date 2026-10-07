@@ -96,7 +96,7 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
     : (activeProfile?.name ?? (activeID ? `Configuration #${activeID}` : "Follow the default configuration"));
   const activeIndex = chain.indexOf(activeID);
   const backupCount = activeIndex >= 0 ? Math.max(0, chain.length - activeIndex - 1) : 0;
-  const currentTitle = [currentLabel, activeProfile?.model, backupCount > 0 ? `${backupCount}Spare` : ""]
+  const currentTitle = [currentLabel, activeProfile?.model, backupCount > 0 ? `${backupCount} backup` : ""]
     .filter(Boolean)
     .join(" · ");
   let editorDescription = "After adjusting the sequence or current configuration, it will take effect from the next LLM call.";
@@ -134,14 +134,14 @@ function TaskLLMControl({ task, profiles, onUpdated }: { task: Task; profiles: L
       } else {
         toast.success(
           result.reopened_intents > 0
-            ? `LLM configuration updated and restored${result.reopened_intents}Quota blocking intent`
+            ? `LLM configuration updated. Reopened ${result.reopened_intents} quota-blocked intents`
             : "LLM configuration updated",
         );
       }
       setOpen(false);
       onUpdated();
     } catch (error) {
-      toast.error("Update failed:" + (error as Error).message);
+      toast.error("Update failed: " + (error as Error).message);
     } finally {
       setSaving(false);
     }
@@ -283,7 +283,7 @@ function TaskDetailInner() {
       setPaused(next);
       toast.success(next ? "Exploration paused" : "Exploration resumed");
     } catch (e) {
-      toast.error("Operation failed:" + (e as Error).message);
+      toast.error("Operation failed: " + (e as Error).message);
     }
   }
 
@@ -295,7 +295,7 @@ function TaskDetailInner() {
       toast.success("The task has been added to the archive queue");
       router.push("/function/tasks");
     } catch (error) {
-      toast.error(`Archiving failed:${(error as Error).message}`);
+      toast.error(`Archiving failed: ${(error as Error).message}`);
       setArchiving(false);
     }
   }
@@ -303,7 +303,7 @@ function TaskDetailInner() {
   if (!task) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-10 text-center">
-        <p className="text-muted-foreground">{loaded ? `Task${id}Deleted, archived or no longer exists` : "Loading…"}</p>
+        <p className="text-muted-foreground">{loaded ? `Task ${id} was deleted, archived, or no longer exists` : "Loading…"}</p>
         {loaded && (
           <Button asChild variant="outline">
             <Link href="/function/tasks">
@@ -319,9 +319,9 @@ function TaskDetailInner() {
   const terminal = ["done", "failed", "timeout"].includes(task.status);
   const archiveLifecycleEligible = terminal || paused || task.status === "paused";
   const canArchive = archiveLifecycleEligible && !task.archive_blocked_by_task_id;
-  let archiveDisabledReason = task.queued ? "The tasks in the queue must be paused first" : "Running tasks must be paused first";
+  let archiveDisabledReason = task.queued ? "Pause this queued task first" : "Pause running tasks first";
   if (archiveLifecycleEligible && task.archive_blocked_by_task_id) {
-    archiveDisabledReason = `The task is unarchived task #${task.archive_blocked_by_task_id}Direct inheritance, please archive dependent tasks first`;
+    archiveDisabledReason = `Task #${task.archive_blocked_by_task_id} still depends on this task. Archive that task first.`;
   }
   const engineMode = paused ? "paused" : (task.engine_mode ?? "idle");
   let controlVariant: "default" | "secondary" | "outline" = "outline";
