@@ -70,7 +70,7 @@ type LLMProfile struct {
 }
 
 // RetryOverride is one profile's optional override of the three retry layers
-// that are per-endpoint: Jianlian(connect) / Empty response(empty) / Same provider Safety window
+// that are per-endpoint: connection (connect) / empty response (empty) / same-provider safe window
 // (stream). Each rule's zero value means "inherit the global policy"; see
 // RetryRule for the -1 / 0 / >0 semantics.
 type RetryOverride struct {

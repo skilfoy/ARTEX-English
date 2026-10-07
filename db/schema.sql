@@ -22,7 +22,7 @@ END;
 $$ LANGUAGE plpgsql IMMUTABLE STRICT;
 
 -- =====================================================================
--- A. Asset level:companies / assets / company_scope
+-- A. Asset layer: companies / assets / company_scope
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS companies (
@@ -194,7 +194,7 @@ CREATE TABLE IF NOT EXISTS exploration_nodes (
     )
 );
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS blocked_reason TEXT;
--- Intent to fake delete(soft delete):state='deleted' hour,delete_reason Reason for deletion filled out by user.
+-- Soft-deleted intent (state='deleted'): delete_reason stores the reason the user entered.
 ALTER TABLE exploration_nodes ADD COLUMN IF NOT EXISTS delete_reason TEXT;
 -- cold-digest (§2.3/§5.3): content_version bumps on any change that could alter a
 -- digest body (summary/state/confidence); cold_since_round stamps the planner round
@@ -283,7 +283,7 @@ CREATE INDEX IF NOT EXISTS idx_anchor_asset ON exploration_anchors(asset_id);
 
 -- task_constraints: operator-authored operation constraints (allow/deny) for a task.
 -- Extracted by the goals decomposer at round 0 (from goal/description), editable at
--- runtime by the main agent + Overview[Regulation]. Injected into the planner/worker system
+-- runtime by the main agent and the overview constraint manager. Injected into the planner/worker system
 -- prompt each round (config-gated) to keep exploration within the operator's boundary.
 CREATE TABLE IF NOT EXISTS task_constraints (
     id             BIGSERIAL PRIMARY KEY,
@@ -393,11 +393,11 @@ CREATE TABLE IF NOT EXISTS llm_profiles (
     --                             sending max_tokens is rejected as unsupported_parameter.
     -- anthropic (max_tokens required) and openai-responses (max_output_tokens) choose their own field names and ignore this value.
     max_tokens_field TEXT NOT NULL DEFAULT '',
-    -- Custom session header: for each request for a name that is not empty HTTP head, head value=Current running session id
-    -- (chat session/worker Intention).For some presses session-id Header prompt cache/Gateway for sticky routing.''=Do not send.
+    -- Custom session header: when non-empty, every request sends an HTTP header of this name whose value is the current run's session id
+    -- (chat conversation / worker intent). For gateways that key prompt cache or sticky routing off a session-id header. '' = do not send.
     session_header_key TEXT NOT NULL DEFAULT '',
-    -- Try over: Number 0=Use global default/-1=Close/>0=value;spacing 0=Avoidance with Default Index/>0=Fixed milliseconds.
-    -- Three sets for the serial re-test, empty response re-test, same provider Try again the safe window, see below ALTER Comment.
+    -- Retry override: attempts 0 = use the global default, -1 = disable, >0 = this value; interval 0 = that layer's default exponential backoff, >0 = a fixed number of milliseconds.
+    -- The three pairs are connection retry, empty-response retry, and same-provider safe-window retry. See the ALTER comments below.
     retry_connect_attempts    INTEGER NOT NULL DEFAULT 0,
     retry_connect_interval_ms INTEGER NOT NULL DEFAULT 0,
     retry_empty_attempts      INTEGER NOT NULL DEFAULT 0,
@@ -617,14 +617,14 @@ CREATE TABLE IF NOT EXISTS task_templates (
     nkey        TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL,
     goal        TEXT NOT NULL,
-    -- predefined job classification; empty when classification is deleted (and tasks.category_id Unanimously, unblocked.).
+    -- Preset task category; cleared when the category is deleted (same as tasks.category_id, and it does not block the task).
     category_id     BIGINT REFERENCES task_categories(id) ON DELETE SET NULL,
-    -- Preset task-level interception/Allow rules snapshots(AssetInterceptRuleInput array);Fill new tasks with templates.
+    -- Snapshot of preset task-level block/allow rules (AssetInterceptRuleInput array); copied into a new task when the template is applied.
     intercept_rules JSONB NOT NULL DEFAULT '[]',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- Backup Library(Issued,Cassette IF NOT EXISTS).
+-- Backfill for already-released databases (ADD COLUMN with IF NOT EXISTS).
 ALTER TABLE task_templates ADD COLUMN IF NOT EXISTS category_id BIGINT REFERENCES task_categories(id) ON DELETE SET NULL;
 ALTER TABLE task_templates ADD COLUMN IF NOT EXISTS intercept_rules JSONB NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS idx_task_templates_updated ON task_templates(updated_at DESC, id DESC);
@@ -730,12 +730,12 @@ WHERE t.active_llm_profile_id IS NULL
   AND t.llm_profile_id IS NOT NULL
   AND EXISTS (SELECT 1 FROM task_llm_profiles x WHERE x.task_id=t.id AND x.profile_id=t.llm_profile_id);
 
--- Task test range (sum of asset coverage) + Authorization Boundary).
---   Autofill(source='auto'):insertAssets Top Level Press worker Catalysing asset types with conservative coverage
---     (root_domain→root_domain,subdomain/service/endpoint→subdomain(host),ip→ip);
---     side-effect The derived assets are out of range. handler Top floor, birthplace. db Inside).
---   agent Fill(source='agent'):add_task_scope Add company/root_domain/subdomain/ip.
--- Coverage = match active Okay. assets(in, by fact Proportion of node anchored (molecular)).
+-- Task test scope (the denominator for asset coverage, and the authorization boundary).
+--   auto (source='auto'): insertAssets adds a conservative scope from the asset types the worker inserted explicitly
+--     (root_domain→root_domain, subdomain/service/endpoint→subdomain(host), ip→ip);
+--     assets derived as a side effect are out of scope (the hook is at the top of the handler; derivation happens inside the db layer).
+--   agent (source='agent'): add_task_scope adds company/root_domain/subdomain/ip.
+-- Coverage = among assets matching an active row (denominator), the share anchored by a fact node (numerator).
 CREATE TABLE IF NOT EXISTS task_scope (
     id          BIGSERIAL PRIMARY KEY,
     task_id     BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -789,13 +789,13 @@ CREATE TABLE IF NOT EXISTS agents (
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT agents_role_ck CHECK (role IN ('goals','main','planner','worker','assistant'))
 );
--- Gale Migration(Issued,Upgrade Backlog;New Library CREATE Included. No migration CHECK:Old stock security + Backend to White List Bottom).
+-- Column-add migration (already released: old databases gain the columns; new databases already have them in CREATE. The migration has no CHECK: existing rows stay valid, and the backend write path enforces the allowlist).
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS trigger_run_mode     TEXT    NOT NULL DEFAULT 'serial';
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS trigger_merge_mode   TEXT    NOT NULL DEFAULT 'all';
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS trigger_max_parallel INTEGER NOT NULL DEFAULT 5;
--- per-agent LLM Binding(agent Level Default Model):Column from the first edition above CREATE statement,Here. ALTER Just an old library.(Wait.).
+-- Per-agent LLM binding (the agent's default model): the column has been in the CREATE above since the first version; this ALTER only covers very old databases (idempotent).
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS llm_profile_id BIGINT REFERENCES llm_profiles(id) ON DELETE SET NULL;
--- run_seconds Single run Wall clock default 600→1200:Align Defaults Only(Impact on future new entries),Do not move old stock line.
+-- run_seconds wall-clock default for one run, 600→1200: change only the column default (future inserts). Do not rewrite existing rows.
 ALTER TABLE agents ALTER COLUMN run_seconds SET DEFAULT 1200;
 CREATE INDEX IF NOT EXISTS idx_agents_llm_profile ON agents(llm_profile_id) WHERE llm_profile_id IS NOT NULL;
 DROP TRIGGER IF EXISTS trg_agents_upd ON agents;
@@ -812,7 +812,7 @@ CREATE TABLE IF NOT EXISTS agent_prompts (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (agent_id, version)
 );
--- Loop External Keys:agents.current_prompt_id → agent_prompts.id(After two tables are created)
+-- Circular foreign key: agents.current_prompt_id → agent_prompts.id (added after both tables exist).
 DO $$ BEGIN
     ALTER TABLE agents ADD CONSTRAINT fk_agents_curprompt
         FOREIGN KEY (current_prompt_id) REFERENCES agent_prompts(id) ON DELETE SET NULL;
@@ -840,7 +840,7 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
     env         JSONB NOT NULL DEFAULT '{}',
     url         TEXT,
     enabled     BOOLEAN NOT NULL DEFAULT true,
-    insecure    BOOLEAN NOT NULL DEFAULT false,  -- http: Skip TLS Certificate Validation(From Visa Bookscape, issue #108)
+    insecure    BOOLEAN NOT NULL DEFAULT false,  -- http: skip TLS certificate verification (self-signed certificates, issue #108)
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -849,15 +849,15 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 ALTER TABLE mcp_servers DROP CONSTRAINT IF EXISTS mcp_servers_transport_check;
 ALTER TABLE mcp_servers ADD CONSTRAINT mcp_servers_transport_check
     CHECK (transport IN ('stdio','http','sse'));
--- Old library patch(schema.sql Every time it starts. Exec).
+-- Backfill column for old databases (schema.sql is executed on every startup).
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS insecure BOOLEAN NOT NULL DEFAULT false;
 DROP TRIGGER IF EXISTS trg_mcp_upd ON mcp_servers;
 CREATE TRIGGER trg_mcp_upd BEFORE UPDATE ON mcp_servers
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Default data source location:ScopeSentry Asset synchronization MCP(Address and authentication are empty, not enabled).
--- Supply[Asset synchronization]Checks whether the data source is configured; users fill the page url With X-API-Key Enable later.
--- Insert only when missing, never overwrite the user configured/Enabled Servers(schema.sql Every time it starts. Exec).
+-- Placeholder for the default data source: the ScopeSentry asset-sync MCP (address and credentials left empty, not enabled).
+-- The asset-sync page uses this row to tell whether a data source is configured; the user fills in url and X-API-Key on that page before enabling it.
+-- Insert only when the row is missing. Never overwrite a server the user has already configured or enabled (schema.sql is executed on every startup).
 INSERT INTO mcp_servers (name, transport, url, env, enabled)
 VALUES ('ScopeSentry', 'http', NULL, '{"X-API-Key":""}', false)
 ON CONFLICT (name) DO NOTHING;
@@ -873,7 +873,7 @@ CREATE TABLE IF NOT EXISTS mcp_tools_cache (
 );
 
 -- =====================================================================
--- G. Visibility:agent × mcp / skill
+-- G. Visibility: agent × mcp / skill
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS agent_visibility (
     agent_id      BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -908,15 +908,15 @@ CREATE TABLE IF NOT EXISTS skill_usage (
     intent_id      BIGINT,
     session_id     TEXT,
     args_len       INTEGER NOT NULL DEFAULT 0,
-    -- false = The model called out a non-existent one. skill(miss).Such lines are equally reserved: it reflects"Want to use it but don't have it"
-    -- The gap is filled. skill Basis.
+    -- false = the model named a skill that does not exist (a miss). These rows are kept too: they record a "wanted it but it was not there"
+    -- gap, which is the signal for which skills to add.
     found          BOOLEAN NOT NULL DEFAULT true
 );
 CREATE INDEX IF NOT EXISTS idx_skill_usage_skill ON skill_usage(skill, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_skill_usage_task  ON skill_usage(task_id);
 
--- Tool call book (see) db/tool_usage.go).One time. CoreTool.Call One line, only dimension.,
--- Do not save tool parameters or return content. Do not set external keys, keep statistics after the task, session or custom tool has been deleted.
+-- Tool-call ledger (see db/tool_usage.go). One row per actual CoreTool.Call, recording only who called it,
+-- not the tool arguments or the return value. No foreign keys on purpose, so the stats survive deletion of the task, session, or custom tool.
 CREATE TABLE IF NOT EXISTS tool_usage (
     id             BIGSERIAL PRIMARY KEY,
     ts             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1013,7 +1013,7 @@ CREATE TABLE IF NOT EXISTS agent_triggers (
     updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_agent_triggers_agent ON agent_triggers(agent_key);
--- Gale Migration(Issued,Upgrade Backlog;New Library CREATE These columns are included,ALTER for no-op).Wait.,Duplicate each start.
+-- Column-add migration (already released: old databases gain the columns; new databases already have them in CREATE, so ALTER is a no-op). Idempotent; safe to run on every startup.
 ALTER TABLE agent_triggers ADD COLUMN IF NOT EXISTS on_tool_call        BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE agent_triggers ADD COLUMN IF NOT EXISTS tool_call_message   TEXT    NOT NULL DEFAULT '';
 ALTER TABLE agent_triggers ADD COLUMN IF NOT EXISTS tool_names          TEXT    NOT NULL DEFAULT '';
@@ -1084,19 +1084,19 @@ CREATE TABLE IF NOT EXISTS findings (
     task_id     BIGINT REFERENCES tasks(id) ON DELETE SET NULL,
     node_id     BIGINT REFERENCES exploration_nodes(id) ON DELETE SET NULL,
     vulnclass   TEXT NOT NULL DEFAULT '',
-    -- Vulnerability name(Readable Titles);Show back display for empty frontend vulnclass.severity Take Value:
-    -- critical Serious / high High / medium / low Low (no) CHECK,With status Unanimously by server White List Verify).
+    -- Finding name (a readable title). The UI falls back to vulnclass when this is empty. severity values:
+    -- critical / high / medium / low (no CHECK, same as status: the server allowlist validates them).
     name        TEXT NOT NULL DEFAULT '',
     severity    TEXT NOT NULL DEFAULT '',
     summary     TEXT NOT NULL DEFAULT '',
     evidence    TEXT NOT NULL DEFAULT '',
     worker      TEXT NOT NULL DEFAULT '',
     asset_ids   JSONB NOT NULL DEFAULT '[]',
-    -- Disposal status:pending Pending / in_progress Processing / confirmed Confirmed / resolved Processed / fixed Fixed /
-    -- false_positive False positive / ignored Ignore / duplicate Repeat / risk_accepted Risk Acceptance.
-    -- No value. CHECK:The old vault is down there. ALTER Supplement,CHECK Unable to fill back,Unified by server Verification of the side white list.
+    -- Disposition: pending / in_progress / confirmed / resolved / fixed /
+    -- false_positive / ignored / duplicate / risk_accepted.
+    -- No CHECK: old databases gain the column via the ALTER below, a CHECK cannot be backfilled, and the server allowlist validates the value.
     status      TEXT NOT NULL DEFAULT 'pending',
-    -- Detailed report on loopholes(Markdown);Default Empty,Read details page only/Display,Do not enter list interface before payload Inflated.
+    -- Detailed finding report (Markdown). Empty by default. Read and shown only on the detail page, not in the list API, so the list payload stays small.
     report      TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1106,10 +1106,10 @@ ALTER TABLE findings ADD COLUMN IF NOT EXISTS report TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_findings_task ON findings(task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_findings_time ON findings(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status, created_at DESC);
--- [By assets]View asset_ids @> '[<id>]' Invert detection.,There's no such thing. GIN The index is a full sweep..
+-- The "by asset" view looks up findings with asset_ids @> '[<id>]'. Without this GIN index that is a full table scan.
 CREATE INDEX IF NOT EXISTS idx_findings_asset_ids ON findings USING GIN(asset_ids jsonb_path_ops);
 
--- Manual rehearsing is a stand-alone session; conclusions are separated from original lacuna disposal status.
+-- A manual retest is its own session; the verdict is stored separately from the original finding's disposition.
 CREATE TABLE IF NOT EXISTS finding_retests (
     id BIGSERIAL PRIMARY KEY,
     finding_id BIGINT NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
@@ -1258,12 +1258,12 @@ CREATE TRIGGER trg_asset_intercept_rules_upd BEFORE UPDATE ON asset_intercept_ru
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =====================================================================
--- Task-level asset interception/Allow rules
--- With Global asset_intercept_rules Compositing(kind/pattern/note/enabled),But press task_id
--- Association, deletion with task cascades; entry when creating task, editable in task details.
--- action: 'block'=Interception(Testing prohibited)  'allow'=Allow(whitelist).
--- Executing the decision: First, the interception rules.(Global ∪ Taskblock) Match, hit is forbidden; missed and the task exists
--- Enabled allow When the rules are in place, you have to hit something. allow I'll let you go.[Test not permitted].
+-- Task-level asset block/allow rules
+-- Same shape as the global asset_intercept_rules (kind/pattern/note/enabled), but keyed by task_id,
+-- cascade-deleted with the task. Entered when the task is created and editable on the task detail page.
+-- action: 'block' = intercept (do not test), 'allow' = allow (allowlist).
+-- Decision order: match block rules first (global ∪ this task's block rules); a hit forbids the target.
+-- If nothing blocks and the task has any enabled allow rule, a target is tested only when some allow rule hits; otherwise it is "not allowed to test".
 -- =====================================================================
 CREATE TABLE IF NOT EXISTS task_intercept_rules (
     id          BIGSERIAL PRIMARY KEY,
@@ -1287,28 +1287,29 @@ CREATE TRIGGER trg_task_intercept_rules_upd BEFORE UPDATE ON task_intercept_rule
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- =====================================================================
--- M. Vulnerability IM Push
+-- M. Finding IM notifications
 --
--- The three statements were deliberately separated.**Explosive radius**:The one with the bug.(RecordFindingTx,
--- Synchronising folder)You're allowed to be blind only once. INSERT,Do not read channel tables, do not run filter rules for users. Otherwise...
--- A wrong match. webhook Filter conditions can contaminate./Discontinuation of services, resulting in gaps.
+-- The three tables are separate on purpose. The point is blast radius: the transaction that writes a finding
+-- (RecordFindingTx, which holds the task row lock) may do only one blind INSERT. It must not read the channel
+-- tables or run the user's filter rules. Otherwise one misconfigured webhook filter can poison or abort the
+-- transaction, and the finding is never stored.
 --
---   notification_channels   Channel Examples Configuration(Variable, supporting evidence,UI Management)
---   notification_events     The facts of the incident(Bleak-in-the-blank service. Render snapshot.)
---   notification_deliveries Organisation(Outside of Service fan-out Generate, load state/Retry/Batch)
+--   notification_channels   channel instance config (mutable, holds credentials, managed in the UI)
+--   notification_events     event facts (blind-inserted inside the finding transaction, including the render snapshot)
+--   notification_deliveries delivery jobs (created by fan-out outside the transaction; hold state, retries, and batch)
 -- =====================================================================
 
--- Example of channel: same kind Any number of matches(As[Emergency response cluster][Daily group]One nail robot each.).
--- kind Take value by server Check the side white list, no. CHECK:With findings.status Same thing.,
--- Follow-up channels should not require changes in the chart structure.
+-- Channel instances: the same kind may be configured any number of times (for example one DingTalk bot for the incident channel and one for the daily channel).
+-- kind is checked by a server-side allowlist, not a CHECK constraint, for the same reason as findings.status:
+-- adding a channel later must not require a schema change.
 CREATE TABLE IF NOT EXISTS notification_channels (
     id           BIGSERIAL PRIMARY KEY,
     name         TEXT NOT NULL,
-    -- dingtalk DingTalk / feishu Feishu / wecom Enterprise WeChat / webhook General / telegram / email
+    -- dingtalk / feishu / wecom / webhook / telegram / email
     kind         TEXT NOT NULL,
     enabled      BOOLEAN NOT NULL DEFAULT true,
-    -- Evidence(Organisation,UI Mask echoes; see server Side maskChannelSecrets).The six channel fields are very different.,
-    -- Harmonization JSONB + Go Side press kind Strict verification. Avoid adding a pile to every channel. NULL Column:
+    -- Credentials (stored in plaintext; the UI masks them on read — see maskChannelSecrets on the server). The six channels use very different fields,
+    -- so this is one JSONB object validated strictly by kind in Go, instead of a pile of NULL columns per channel:
     --   dingtalk {webhook,secret}
     --   feishu   {webhook,secret}
     --   wecom    {webhook}
@@ -1316,13 +1317,13 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     --   telegram {bot_token,chat_id,base_url}
     --   email    {host,port,username,password,from,to[],tls}
     config       JSONB NOT NULL DEFAULT '{}',
-    -- Push timing:realtime Hit and push. / digest The incoming batch is summarized in one article by global cycle.
+    -- When to push: realtime sends on each hit; digest collects into a batch and summarizes it on the global interval.
     mode         TEXT NOT NULL DEFAULT 'realtime',
-    -- Filter Conditions, All Fields Optional(Default=Do Not Filter):
+    -- Filter. Every field is optional (omitted = do not filter):
     --   min_severity       ''|low|medium|high|critical
-    --   task_ids/asset_ids Empty array=Open-ended; non-empty
-    --   vulnclass_include/exclude Keyword array(Case Insensitive Substring);include Empty=All
-    --   on_status_change   bool,Only realtime The pattern makes sense.
+    --   task_ids/asset_ids empty array = no restriction; if non-empty, the intersection must be non-empty
+    --   vulnclass_include/exclude keyword arrays (case-insensitive substring); empty include = accept all
+    --   on_status_change   bool, meaningful only in realtime mode
     filter       JSONB NOT NULL DEFAULT '{}',
     -- Deliveries per minute; 0 means no limit. The default of 20 matches the official DingTalk and WeCom hard caps.
     -- Over the limit, messages are not dropped; delivery waits for the next tick.
@@ -1372,7 +1373,7 @@ CREATE TABLE IF NOT EXISTS notification_deliveries (
     -- A sending row left by a crash is claimed again on the next round once the lease expires.
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_error  TEXT NOT NULL DEFAULT '',
-    -- digest Mode shared with batch;realtime Constant NULL.Once the whole message is rendered together sent.
+    -- Shared by one digest batch; always NULL for realtime. The whole batch is marked sent together after it is rendered as one message.
     batch_id    BIGINT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     sent_at     TIMESTAMPTZ

@@ -180,7 +180,7 @@ func TestCompanyScopeLimitsAndCheckedErrors(t *testing.T) {
 	if err := ValidateCompanyScopeInputBounds([]ScopeInput{{Kind: "keyword", Value: boundary + "Border"}}); !errors.As(err, &validationErr) {
 		t.Fatalf("oversized raw value error=%v want CompanyScopeValidationError", err)
 	}
-	// No upper limit on the number of articles,Only check the length of the item.
+	// There is no cap on the number of rules; only each rule's length is checked.
 	if err := ValidateCompanyScopeInputBounds(make([]ScopeInput, 1000)); err != nil {
 		t.Fatalf("rule count should be unbounded, got %v", err)
 	}

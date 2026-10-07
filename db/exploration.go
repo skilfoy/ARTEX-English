@@ -382,10 +382,11 @@ type IntentCleanup struct {
 	Activities int64 `json:"activities"`
 }
 
-// SoftDeleteIntent Leave to delete a pending/Running/Intent suspended:set state='deleted' And fill it out for users.
-// Reason for deletion delete_reason Field,Retention of intended nodes and all their outputs/Blood.(No longer on the map like old reality.
-// Another one. fact).Returns the intent before deleting summary,Supply planner Notification used. Punctuation cleared with deletion.
-// The caller has to stop running worker,Avoid subsequent writing.
+// SoftDeleteIntent soft-deletes an open, running, or paused intent: set state='deleted' and store the user's
+// reason in delete_reason. The intent node and all of its output and lineage stay (unlike the old behavior, which
+// hung an extra fact on the graph). Returns the intent's summary from before the delete, for the planner notice.
+// Side sessions are cleared together with the deleted state.
+// The caller must stop a running worker first so it cannot write afterwards.
 func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -411,7 +412,7 @@ func (s *ExplorationStore) SoftDeleteIntent(id int64, reason string) (string, er
 		WHERE id=$1 AND exploration_id=$2`, id, s.expID, reason); err != nil {
 		return "", err
 	}
-	// Main intent to audit track retention,But the sub-question and answer session was to remove the atom cleanup.(The delay note rejected it.).
+	// Keep the main intent's audit trail, but atomically clear the side-question session with the delete (a delayed snapshot will reject it).
 	if _, err := tx.Exec(`DELETE FROM side_question_sessions WHERE intent_id=$1`, id); err != nil {
 		return "", err
 	}
@@ -470,7 +471,7 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		}
 		kind[nid] = k
 		if k == KindGoal || (k == KindFact && st == StateOrigin) {
-			protected[nid] = true // Targets and mission roots will never be deleted as intended
+			protected[nid] = true // goals and the task-root fact are never deleted along with an intent
 		}
 	}
 	nrows.Close()
@@ -478,8 +479,8 @@ func (s *ExplorationStore) CancelIntent(id int64) (IntentCleanup, error) {
 		return out, err
 	}
 
-	parentsOf := map[int64][]int64{} // dst -> Everything that points to it. src(Any rel,incl. covers:Being digest That's why the members are covered. digest Father retained)
-	downOf := map[int64][]int64{}    // src -> Along yields/derived_from Down next door.
+	parentsOf := map[int64][]int64{} // dst -> every src of an edge pointing at it (any rel, including covers: a member covered by a digest has that digest as a parent and is kept)
+	downOf := map[int64][]int64{}    // src -> downward neighbors along yields/derived_from
 	erows, err := tx.Query(`SELECT src_id, rel, dst_id FROM exploration_edges WHERE exploration_id=$1`, s.expID)
 	if err != nil {
 		return out, err

@@ -242,8 +242,8 @@ ON CONFLICT (agent_id, var_name) DO UPDATE
 		}
 		_ = d.SetSetting("interactive_shell_default_v1", "true")
 	}
-	// Seed the built-in browser (Playwright) MCP once — DISABLED by default (User
-	// Enable when needed), no proxy by default. The traffic-capture toggle injects/strips
+	// Seed the built-in browser (Playwright) MCP once — DISABLED by default (the user
+	// enables it when needed), no proxy by default. The traffic-capture toggle injects/strips
 	// the recording proxy + CA at runtime (server.Manager.syncBrowserMCPProxy).
 	// Insert only if absent so we never clobber user edits (args/env/enabled/
 	// visibility) on restart.
@@ -469,10 +469,10 @@ func (d *DB) seedDefaultInterceptRules() error {
 			priority: 90,
 		},
 		// ── Destructive HTTP requests (priority 80) ──────────────────────────────────
-		// Agent Send DELETE Three common ways to request:
+		// An agent sends a DELETE request in three common ways:
 		//   1. curl -X DELETE / --request DELETE (Bash runs them directly or writes them into a script)
-		//   2. Python HTTP Client .delete() Method
-		//   3. JS/In a generic script. method: 'DELETE' / method="DELETE"
+		//   2. a Python HTTP client's .delete() method
+		//   3. method: 'DELETE' / method="DELETE" in JS or a generic script
 		{
 			name:     "[Built-in] curl or wget sends a DELETE request",
 			target:   "tool_input",

@@ -439,13 +439,13 @@ func TestAddFindingFollowUpIntent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	auditInput := Activity{Worker: "system", Kind: "text", Summary: "Artificial submission of loopholes with deep intent", Detail: "Validation of availability and creation of chain of evidence"}
-	intentID, audit, err := store.AddFindingFollowUpIntent(findingID, findingNodeID, "Validation of availability and creation of chain of evidence", auditInput)
+	auditInput := Activity{Worker: "system", Kind: "text", Summary: "Manually submitted follow-up intent for the finding", Detail: "Verify exploitability and build an evidence chain"}
+	intentID, audit, err := store.AddFindingFollowUpIntent(findingID, findingNodeID, "Verify exploitability and build an evidence chain", auditInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondID, _, err := store.AddFindingFollowUpIntent(findingID, findingNodeID, "From another path.", Activity{
-		Worker: "system", Kind: "text", Summary: "Artificial submission of loopholes with deep intent", Detail: "From another path.",
+	secondID, _, err := store.AddFindingFollowUpIntent(findingID, findingNodeID, "Go deeper from another path", Activity{
+		Worker: "system", Kind: "text", Summary: "Manually submitted follow-up intent for the finding", Detail: "Go deeper from another path",
 	})
 	if err != nil {
 		t.Fatal(err)

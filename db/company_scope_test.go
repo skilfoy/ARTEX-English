@@ -232,14 +232,14 @@ func TestCompanyICPAttribution(t *testing.T) {
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	// The connection must go. t.Cleanup and**Registration before clearance**:t.Cleanup It's back and forth.,
-	// Sign off first → Turn off the final execution, and the data clean-up below is connected. Library.
-	// It was here. `defer d.Close()`:defer Run first when returning function,t.Cleanup After that.
-	// Then the clean-up statement was dropped.**Closed connection**Up, wrong again. `_, _ =` Drop,
-	// Assets and companies remain permanently in the vault. Residues themselves are not immediately reported wrong, but they are used as examples.
-	// `MAX(companies.id)+1` Fake TaskID Marking of assets (see below) suffix),
-	// Once this number and other examples are available, id Hit it.[Just right. N Assets]The assertion
-	// You'll fail for nothing.——Checking costs are extremely high..
+	// Close the connection with t.Cleanup, and register that cleanup first: t.Cleanup is LIFO,
+	// so registering Close first means it runs last, and the data cleanup below can still reach the database.
+	// This used to be `defer d.Close()`: defer runs first when the function returns, and t.Cleanup runs after that,
+	// so every cleanup statement hit an already-closed connection and the error was discarded by `_, _ =`.
+	// The assets and companies then stayed in the database forever. The leftover rows do not fail immediately, but this test
+	// uses `MAX(companies.id)+1` as a fake task id to tag assets (see suffix below).
+	// If that number collides with another test's task id, that test's "exactly N assets" assertion
+	// fails for no obvious reason, and tracking it down is expensive.
 	t.Cleanup(func() { d.Close() })
 
 	var suffix int64

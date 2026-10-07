@@ -168,7 +168,7 @@ func FromEnv() (Config, bool) {
 		BaseURL: os.Getenv("ARTEX_LLM_BASE_URL"),
 		Model:   os.Getenv("ARTEX_LLM_MODEL"),
 		Proxy:   strings.TrimSpace(os.Getenv("ARTEX_LLM_PROXY")),
-		// Default Stream;ARTEX_LLM_STREAM=false/0/off Visible Close Non-Flow.
+		// Streaming by default. ARTEX_LLM_STREAM=false/0/off explicitly turns it off and uses non-streaming.
 		Stream: !isFalsy(os.Getenv("ARTEX_LLM_STREAM")),
 	}
 	switch prov {

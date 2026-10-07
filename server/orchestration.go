@@ -24,11 +24,11 @@ func jsonResult(v any) (actool.Result, error) {
 	return actool.Text(string(b)), nil
 }
 
-// This document achieves P2[Multi-task Organization Tool Set](docs/Run Division §2 P2).These are... host Tools——Need
-// Visits Manager(Arbitrary assignments Store),Engine(Pause),And build task processes,That's why I live here. server Layer.
-// Read Tool Set[Existing per-task Tools]Redirect to target mission. store Run!(Build a temporary ToolSet
-// and Call Response tool),And then it's exactly the same logic.;Control Class(spawn/pause)Direct Manager/Engine.
-// They're like flow tools. seed In. tools Table, by agent Binding(Tie to layout only agent I'll see you there.).
+// This file implements the P2 cross-task orchestration toolset (docs/Run Division §2 P2). These are host tools:
+// they need the Manager (any task's Store), the Engine (pause), and the task-creation flow, so they live in the server package.
+// Read tools point the existing per-task tools at the target task's store (build a temporary ToolSet
+// and Call the matching tool), reusing the exact same logic. Control tools (spawn/pause) call the Manager/Engine directly.
+// Like the traffic tools, they are seeded into the tools table and bound per agent (only an agent bound to orchestration can see them).
 
 // hostTools is the runtime host-tool provider fed to ToolAugment: traffic tools
 // (gated by capture) + cross-task orchestration tools + user-defined custom tools.
@@ -40,7 +40,7 @@ func jsonResult(v any) (actool.Result, error) {
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	tools := append(s.m.HostTools(), s.orchestrationTools()...)
 	tools = append(tools, s.findingRetestTools()...)
-	tools = append(tools, s.platformTools()...) // Platform Operating Tool(Construction skill/Tools/MCP,Give Auto Use)
+	tools = append(tools, s.platformTools()...) // platform tools (create/update skills, tools, and MCP, for Auto)
 	custom, err := s.customTools()
 	if err != nil {
 		log.Printf("[custom-tool] Loading failed: %v", err)

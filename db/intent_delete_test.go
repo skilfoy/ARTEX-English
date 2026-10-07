@@ -37,7 +37,7 @@ func gone(t *testing.T, es *ExplorationStore, id int64) bool {
 	return n == nil
 }
 
-// TestSoftDeleteIntent Hypothetical Delete deleted + delete_reason,Reserved node.
+// TestSoftDeleteIntent soft-deletes to state deleted, stores delete_reason, and keeps the node.
 func TestSoftDeleteIntent(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -69,7 +69,7 @@ func TestSoftDeleteIntent(t *testing.T) {
 	if n.State != StateIntentDeleted || n.DeleteReason != "Misdirectional error" {
 		t.Fatalf("state=%q delete_reason=%q, want deleted/Misdirectional error", n.State, n.DeleteReason)
 	}
-	// To be collected(open)Intent also allows false deletion.
+	// An open (not yet claimed) intent may also be soft-deleted.
 	openIntent := mustIntent(t, es, "Pending intention")
 	if _, err := es.SoftDeleteIntent(openIntent, "No more directions."); err != nil {
 		t.Fatalf("soft delete open intent: %v", err)
@@ -78,13 +78,13 @@ func TestSoftDeleteIntent(t *testing.T) {
 		t.Fatalf("open intent not soft-deleted: n=%+v err=%v", n, err)
 	}
 
-	// Deleted(deleted)We can't get rid of them until we're in another state..
+	// Already deleted, and other states, cannot be soft-deleted again.
 	if _, err := es.SoftDeleteIntent(intent, "Again."); err == nil {
 		t.Fatal("soft-deleting an already-deleted intent unexpectedly succeeded")
 	}
 }
 
-// TestHardDeleteCascadesExclusiveDescendants Remove the chain chain and remove the children from the leaves..
+// TestHardDeleteCascadesExclusiveDescendants hard-deletes exclusive descendants down the chain to the leaves.
 func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -121,7 +121,7 @@ func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	}
 }
 
-// TestHardDeletePreservesSharedAndGoal Really delete shared offspring(And the other fathers.)Objectives.
+// TestHardDeletePreservesSharedAndGoal hard-deletes while keeping shared descendants (they have another parent) and the goal.
 func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -139,7 +139,7 @@ func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// intent1 Monarchy finding(proves goal),intent1 With intentX Share fact1(fact1 Derivated intent2).
+	// intent1 exclusively owns the finding (proves the goal). intent1 and intentX share fact1 (fact1 derives intent2).
 	intent1 := mustIntent(t, es, "To be deleted")
 	intentX := mustIntent(t, es, "Sideline intent.")
 	finding := mustNode(t, es, KindFinding, "Vulnerability")
@@ -155,7 +155,7 @@ func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Delete only intent1 It's not exclusive. finding;shared(Yes intentX Father)And its downstream. intent2,goal Keep All.
+	// Delete only intent1 and its exclusive finding. shared (intentX is also a parent) and its downstream intent2, plus the goal, all stay.
 	if cleanup.Intents != 1 || cleanup.Findings != 1 || cleanup.Facts != 0 {
 		t.Fatalf("cleanup=%+v, want 1 intent / 1 finding / 0 fact", cleanup)
 	}

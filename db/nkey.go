@@ -57,9 +57,9 @@ func ParameterKey(endpointID int64, location, name string) string {
 	return itoa(endpointID) + "|" + strings.ToLower(location) + "|" + name
 }
 
-// NormalizeParamName Normalize parameter names(endpoint.params Elements[Same Reference]Decision).
-// Rules:lower + trim,Do not merge synonyms(userId/user_id/uid Consider it different.).Write and query share this realization,
-// Promise.[Interfacing with companies by parameter name]Revertible.
+// NormalizeParamName normalizes a parameter name (how endpoint.params entries decide "the same reference").
+// Rules: lowercase + trim. Do not merge synonyms (userId, user_id, and uid stay different). Writes and queries share this implementation
+// so "find this company's interfaces by parameter name" is reproducible.
 func NormalizeParamName(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }

@@ -539,20 +539,20 @@ func TestQueryByType(t *testing.T) {
 	}
 }
 
-// TestDeleteByTaskID: Unique assets deleted.,Assets shared with other missions are released only(Reservations),host Invert correct..
+// TestDeleteByTaskID: assets owned only by this task are deleted. Assets shared with another task are only unlinked (kept). Host lookup stays correct.
 func TestDeleteByTaskID(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
 
 	const taskA = int64(90001)
 	const taskB = int64(90002)
-	// solo:Only taskA
+	// solo: belongs only to taskA
 	solo, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "solo-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer deleteAsset(d, solo)
-	// shared:First taskA Again. taskB → task_ids={A,B}
+	// shared: taskA first, then taskB → task_ids={A,B}
 	shared, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "shared-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
@@ -562,13 +562,13 @@ func TestDeleteByTaskID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// host Inverse(Before deleting assets):Should contain two domain names
+	// Host lookup (before deleting assets): should contain both domains.
 	hosts, err := av2.HostsByTask(taskA)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(hosts, "solo-del.test") || !slices.Contains(hosts, "shared-del.test") {
-		t.Fatalf("HostsByTask Missing host: %v", hosts)
+		t.Fatalf("HostsByTask missing host: %v", hosts)
 	}
 
 	n, err := av2.DeleteByTaskID(taskA)
@@ -576,19 +576,19 @@ func TestDeleteByTaskID(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 1 {
-		t.Fatalf("DeleteByTaskID: Should be deleted 1 A unique asset.,Delete %d", n)
+		t.Fatalf("DeleteByTaskID: want 1 unique asset deleted, deleted %d", n)
 	}
-	// solo Deleted
+	// solo is gone
 	if a, _ := av2.GetByIDs([]int64{solo}); len(a) != 0 {
-		t.Fatalf("solo Assets should be deleted")
+		t.Fatalf("solo asset should be deleted")
 	}
-	// shared Reservations,and task_ids Only left. taskB
+	// shared is kept, and task_ids is only taskB
 	sa, _ := av2.GetByIDs([]int64{shared})
 	if len(sa) != 1 {
-		t.Fatalf("shared Assets should be retained")
+		t.Fatalf("shared asset should be kept")
 	}
 	if slices.Contains(sa[0].TaskIDs, taskA) || !slices.Contains(sa[0].TaskIDs, taskB) {
-		t.Fatalf("shared task_ids Should be lifted A Reservations B,Get %v", sa[0].TaskIDs)
+		t.Fatalf("shared task_ids should drop A and keep B, got %v", sa[0].TaskIDs)
 	}
 }
 
@@ -640,7 +640,7 @@ func TestQueryByTask(t *testing.T) {
 	}
 }
 
-// Task asset list by page,No longer cut by a fixed number:60 Use of assets 25/I want the pages to come out..
+// The task asset list is paged and is no longer cut off at a fixed count: 60 assets at 25 per page must all be reachable.
 func TestQueryByTaskPaging(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
@@ -739,7 +739,7 @@ func TestQueryByCompany(t *testing.T) {
 	}
 }
 
-// The list of enterprise assets is also taken by page,Not Interrupted by Fixed Numbers.
+// The company asset list is also paged, not cut off at a fixed count.
 func TestQueryByCompanyPaging(t *testing.T) {
 	d, av2, cs := testSetup(t)
 	defer d.Close()
@@ -754,7 +754,7 @@ func TestQueryByCompanyPaging(t *testing.T) {
 		t.Fatalf("AddScope: added=%d, errors=%v", added, errs)
 	}
 
-	// UpsertSubdomain It's got root name assets.,Clear it together.
+	// UpsertSubdomain also creates the root-domain asset; delete that too.
 	defer d.Exec(`DELETE FROM assets WHERE root_domain = 'qbc-paging.io'`)
 
 	const n = 60
