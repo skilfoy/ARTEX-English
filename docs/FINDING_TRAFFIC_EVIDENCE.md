@@ -1,12 +1,12 @@
 # Traffic evidence for findings
 
-The finding detail view supports selecting traffic across pages, assigning a role and note to each record, ordering the records, and removing bindings. The traffic view can bind several records to an existing finding. Evidence inherited from another task is read only in the receiving task.
+The finding detail view supports selecting traffic across pages, assigning a role and note to each record, ordering the records, and removing bindings. The traffic view can bind several records to an existing finding. Evidence inherited from another task is read-only in the receiving task.
 
 ## Automatic binding
 
 The `agent_traffic_binding` setting is available through `/api/settings` and is disabled by default. Enabling it gives the reporting agent access to traffic search and retrieval tools. That agent verifies traffic records, binds them to a finding, reads the resulting evidence version, and saves a report against that version. This process consumes additional model tokens for tool calls and traffic review. A new agent round reads the current setting.
 
-Disabling automatic binding removes its parameters, tool bindings, and prompt guidance from subsequent agent rounds. Running sessions cannot submit new automatic bindings after the setting is disabled. Manual binding, traffic capture, saved evidence, and export remain available.
+Disabling automatic binding removes the traffic-reference parameters, the bind-finding tool, and the automatic-binding prompt guidance from subsequent agent rounds. The reporting agent does not receive traffic search or retrieval tools while the setting is off. Running sessions cannot submit new automatic bindings after the setting is disabled. Manual binding, traffic capture, saved evidence, and export remain available.
 
 `report_finding` also accepts explicit `traffic_refs` or an `evidence_hint_id`. Each referenced traffic record must exist and have a complete body. Binding and finding creation use a transaction, so an invalid reference rejects the submission. Repeatedly adding the same snapshot leaves the existing binding and note intact. Traffic evidence is optional for findings that lack a recorded HTTP request, including findings concerning other protocols. Agents can retain command output and logs as evidence.
 
@@ -31,7 +31,7 @@ An agent can use `bind_finding_traffic(finding_id, traffic_refs)` to add evidenc
 
 ## HTTP API
 
-The base path is `/api/exploration/findings/{finding_id}/traffic`. Authentication and task visibility rules apply. Inherited findings are read only.
+The base path is `/api/exploration/findings/{finding_id}/traffic`. Authentication and task visibility rules apply. Inherited findings are read-only.
 
 | Method and path | Operation |
 | --- | --- |

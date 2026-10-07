@@ -53,7 +53,7 @@ Use `list_projects` to obtain a project's object ID when the task names a projec
 
 The `search` field is ScopeSentry's search expression, not SQL. `==` matches an exact value, `!=` excludes a value, `&&` combines conditions, and `||` offers alternatives. `=` performs a broader pattern match. A value beginning with `^` requests a prefix match. Exact and prefix searches on indexed fields such as domain, IP, port, and title are preferable for a large asset set. The `project` restriction belongs in `filter`, not in `search`.
 
-Common search fields across types are `tag`, `task`, and `rootDomain`. Type specific fields include:
+Common search fields across types are `tag`, `task`, and `rootDomain`. Type-specific fields include:
 
 | Asset type | Useful fields |
 | --- | --- |
@@ -75,7 +75,7 @@ Read `list_nodes` for node names and `list_scan_templates` for template object I
 
 | Source | Input |
 | --- | --- |
-| `general` | Newline separated `target` values. |
+| `general` | Newline-separated `target` values. |
 | `project` | Project object IDs in `project`. |
 | `asset`, `RootDomain`, `subdomain`, `UrlScan` | `search` with optional `project`, `filter`, and `targetNumber`. |
 | Sources ending in `Source` | `targetTp=search` with a query or `targetTp=select` with `targetIds`. |

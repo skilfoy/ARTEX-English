@@ -43,7 +43,7 @@ flowchart LR
 
 Each task has a planner loop and worker routines. Graph updates wake the planner. The planner reads task scope, graph state, and coverage, then adds eligible intents to a frontier queue. A worker claims one intent, executes its assigned work, and records resulting activity, facts, assets, and findings. Those writes can prompt another planning round. The planner may add no intents during a round if the graph presents no new direction.
 
-Workers can inspect activity from other workers in the same task through `search_all_worker_traces`, `list_worker_traces`, and `get_worker_trace`. These tools expose observations that have not been promoted to formal facts. The planner also retains a task level checklist across its sessions, so it can track dependencies between successive intents.
+Workers can inspect activity from other workers in the same task through `search_all_worker_traces`, `list_worker_traces`, and `get_worker_trace`. These tools expose observations that have not been promoted to formal facts. The planner also retains a task-level checklist across its sessions, so it can track dependencies between successive intents.
 
 ## Supporting services
 

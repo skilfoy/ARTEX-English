@@ -35,7 +35,7 @@ Usage:
   ./build.sh --release               Build and package every supported target
 
 Options:
-  --release              Build Linux, macOS, and Windows amd64/arm64 targets and produce zips
+  --release              Build Linux amd64/arm64, macOS amd64/arm64, and Windows amd64, then produce zips
   --target OS/ARCH       Set a single target, for example windows/amd64
   --upx                  Force UPX compression (may break some Linux environments)
   --no-compress          Do not use UPX; only Go linker stripping and zip compression
@@ -142,7 +142,7 @@ compress_binary() {
     if [ "$ARTEX_COMPRESS" = "required" ]; then
       die "ARTEX_COMPRESS=required but upx was not found"
     fi
-    warn "upx was not found; keeping the linker-compressed binary: $binary"
+    warn "upx was not found; keeping the linker-stripped binary: $binary"
     return 0
   fi
 
