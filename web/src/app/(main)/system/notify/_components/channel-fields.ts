@@ -1,9 +1,9 @@
-// Parsing tool for channel field tables and configuration values.
+// Helpers for the channel field table and config values.
 //
-// Separated from the page because this one is**Data**Instead of a view: it describes what fields are there for each channel,
-// What controls should be used, and form text to configuration values(JSON)bidirectional conversion of.
-// After placing a separate file, you only need to move here to add a new channel, and the page itself does not need to be changed..
-// The display name and introduction of the channel type. It is placed on the front end because it only affects the copywriting and the back end does not need to know.
+// This file is data, not a view. It lists each channel's fields, which control to
+// use, and how form text converts to and from the config JSON. Adding a channel
+// means editing this file. The page itself does not change.
+// Display names live here because they are copy. The backend does not need them.
 export const KIND_LABEL: Record<string, string> = {
   dingtalk: "DingTalk",
   feishu: "Feishu",
@@ -13,14 +13,16 @@ export const KIND_LABEL: Record<string, string> = {
   email: "Mail",
 };
 
-// Configuration field definitions for each channel.
+// Field definitions for each channel.
 //
-// A front-end field table is deliberately kept here instead of being distributed by the back-end. schema:The backend is only responsible for
-// Validate(Required/Format),UI What is needed is layout and control type, the two are not concerned with the same thing.
-// The only coupling point is secret_keys —— Which fields should be rendered into password boxes are given by the backend,
-// Because only the channel realizes that it knows which values are counted as credentials (the entire enterprise WeChat Webhook It's the credentials,
-// And Dingding is only one of them secret).When adding a new channel, missing one entry here will only make the form blank.,
-// Does not error silently (below hasFields will prompt).
+// The frontend keeps this table instead of taking a schema from the backend. The
+// backend only validates required fields and format. The UI needs layout and
+// control types. Those are different jobs.
+// The one shared point is secret_keys: the backend says which fields render as
+// password inputs, because only the channel implementation knows which values are
+// credentials (the whole WeCom webhook is the credential, while DingTalk has a
+// separate secret). A missing entry here only leaves the form blank. It does not
+// fail silently (hasFields warns below).
 export type FieldKind = "text" | "password" | "number" | "select" | "textarea" | "switch" | "kv" | "list";
 export interface FieldDef {
   key: string;

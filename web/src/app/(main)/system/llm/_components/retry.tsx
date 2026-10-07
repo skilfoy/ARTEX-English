@@ -34,11 +34,11 @@ const ZERO_POLICY: LLMRetryPolicy = {
 
 type LayerMeta = {
   title: string;
-  /** Where does this layer of retries occur and who performs them? */
+  /** Where this retry layer runs, and who performs it. */
   where: string;
-  /** What kind of mistakes will reach this level?——As far as the status code is concerned, don't let anyone guess. */
+  /** Which failures reach this layer. Do not guess from the status code alone. */
   trigger: string;
-  /** Looks alike but[No]It's a mistake to go to this level, so you don't have to fill it out and think it's true when there's no response. bug */
+  /** Similar, but not a failure that reaches this layer. Leave it blank. Do not treat a missing response as this failure. */
   skips?: string;
   desc: string;
   attemptsLabel: string;
