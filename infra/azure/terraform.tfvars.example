@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and edit. Do not commit terraform.tfvars.
+# Full description of each option: ../README.md
+
+ssh_public_key = "ssh-ed25519 AAAA... operator@example"
+admin_cidr     = "203.0.113.10/32"
+
+# location = "eastus"
+# vm_size  = "Standard_D2s_v5"
+# name     = "artex-english"
+# git_ref  = "main"
+
+# Web stays limited to admin_cidr until this is set.
+# web_cidrs = ["203.0.113.10/32"]
+
+# HTTPS. Let's Encrypt must be able to reach port 80, so web_cidrs
+# has to include the public internet before a certificate will issue.
+# domain                   = "artex.example.com"
+# dns_zone_name            = "example.com"
+# dns_zone_resource_group  = "existing-dns-rg"

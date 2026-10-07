@@ -10,11 +10,9 @@ This fork translates the interface, preview data, built-in agent prompts, backen
 
 ## Preview and deployment
 
-Full-stack Terraform configurations for AWS, Google Cloud, and Azure are documented in [infra/README.md](infra/README.md). Each configuration builds this fork's Go backend with the frontend embedded and runs it with PostgreSQL. Review the upstream author's usage conditions below before provisioning or using the software.
+Two deployments exist, and they are not interchangeable.
 
-The `web/` directory supports a frontend-only demo with `NEXT_PUBLIC_MOCK=1`. This mode uses simulated tasks, assets, and findings and does not run the Go backend or make requests to real targets.
-
-For Vercel, import this repository with these settings:
+The hosted preview at [artex-english.vercel.app](https://artex-english.vercel.app/function/tasks) is the Next.js interface with `NEXT_PUBLIC_MOCK=1`. It uses simulated tasks, assets, and findings. It does not run the Go backend, PostgreSQL, or an agent. Import this repository into Vercel with these settings:
 
 | Setting | Value |
 | --- | --- |
@@ -22,11 +20,9 @@ For Vercel, import this repository with these settings:
 | Framework | Next.js |
 | Build command | `NEXT_PUBLIC_MOCK=1 npm run build` |
 
-The build command is included in [web/vercel.json](web/vercel.json).
+The build command is included in [web/vercel.json](web/vercel.json). A Vercel deployment of `web/` provides the frontend preview only.
 
-The full application serves its API and event streams from the Go process. A Vercel deployment of `web/` provides the frontend preview only.
-
-To run the preview locally:
+To run that same preview locally:
 
 ```bash
 cd web
@@ -35,6 +31,16 @@ NEXT_PUBLIC_MOCK=1 npm run dev
 ```
 
 Open the address printed by Next.js. The mock preview requires no database or model credentials.
+
+A functioning deployment runs the Go server and PostgreSQL together. Locally, copy `.env.example` to `.env`, set `POSTGRES_PASSWORD`, and run `docker compose up -d --build`, then open `http://localhost:8787`. In the cloud, use the Terraform stack for one virtual machine on AWS, Google Cloud, or Azure. Each stack installs Docker, builds this fork, and starts Postgres, the application, and Caddy. SSH and the website start limited to an admin IP you supply.
+
+| Path | Where it runs | Data |
+| --- | --- | --- |
+| Vercel, or `NEXT_PUBLIC_MOCK=1 npm run dev` | Next.js only | Simulated, in the browser |
+| `docker compose up` | Your machine, `http://localhost:8787` | Local Postgres |
+| [infra/aws](infra/aws/main.tf), [infra/gcp](infra/gcp/main.tf), or [infra/azure](infra/azure/main.tf) | One cloud VM behind Caddy | Postgres on that VM |
+
+Every variable, the DNS and HTTPS rules, backups, and update steps are in [infra/README.md](infra/README.md). Review the upstream author's usage conditions below before provisioning or using the software.
 
 ## Build the English application
 
