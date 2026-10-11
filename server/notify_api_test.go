@@ -240,7 +240,7 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 		t.Fatalf("expected 1 message, got %d", hook.count())
 	}
 	text := markdownText(t, hook.last(t))
-	for _, want := range []string{"SQLInjection", "High", "Abstract"} {
+	for _, want := range []string{"SQLInjection", "High", "Summary"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Message body missing %q:\n%s", want, text)
 		}
