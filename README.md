@@ -8,6 +8,38 @@ This fork translates the interface, preview data, built-in agent prompts, backen
 
 [Open the English demo](https://artex-english.vercel.app/function/tasks)
 
+## Interface
+
+These are the English preview screens. They use simulated data. The original repository showed the same screens in Chinese; those image files were not carried into this fork.
+
+| Dashboard | Tasks |
+| :---: | :---: |
+| ![Dashboard](screenshots/dashboard.png) | ![Tasks](screenshots/tasks.png) |
+
+| Task session | Exploration graph |
+| :---: | :---: |
+| ![Task session](screenshots/sessions.png) | ![Exploration graph](screenshots/graph.png) |
+
+| Findings | Assets |
+| :---: | :---: |
+| ![Findings](screenshots/findings.png) | ![Assets](screenshots/assets.png) |
+
+| Asset coverage |
+| :---: |
+| ![Asset coverage](screenshots/assets_test.png) |
+
+| Traffic | Chat |
+| :---: | :---: |
+| ![Traffic](screenshots/traffic.png) | ![Chat](screenshots/chat.png) |
+
+| Agents | LLM configuration |
+| :---: | :---: |
+| ![Agents](screenshots/agents.png) | ![LLM configuration](screenshots/llm.png) |
+
+| Interception rules | Logs |
+| :---: | :---: |
+| ![Interception rules](screenshots/intercept.png) | ![Logs](screenshots/logs.png) |
+
 ## Preview and deployment
 
 Two deployments exist, and they are not interchangeable.
