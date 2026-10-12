@@ -1,6 +1,7 @@
-// Mock routing: put (method, path) Map to lib/mock/data static data.
-// If there is no hit, return to safe default.([] / {} / {ok:true}),Guarantee that no page will crash.
-// Only in NEXT_PUBLIC_MOCK=1 Time passed api.ts of http() Short circuit goes here.
+// MOCK_GET_ROUTES is the verified GET route list for the demo UI.
+// An unmatched GET throws only when MOCK_STRICT=1. Otherwise the handler keeps the safe [] / {} fallback.
+// POST, PUT, PATCH, and DELETE still end at { ok: true } when no branch matches.
+// Routes run only when NEXT_PUBLIC_MOCK=1, through http() in api.ts.
 
 import {
   classifyCompanyScopeLine,
@@ -91,7 +92,7 @@ const mockEvidenceBodies: Record<string, { req: string; resp: string }> = {
   "x-8": { req: "", resp: '{"order_id":1001,"user_id":42,"amount":199.00}' },
   "x-9": {
     req: "",
-    resp: '{"order_id":1002,"user_id":77,"amount":1299.00,"address":"Chaoyang District, Beijing ****","phone":"138****6021"}',
+    resp: '{"order_id":1002,"user_id":77,"amount":1299.00,"address":"Example Street","phone":"555-0100"}',
   },
   "x-15": {
     req: '{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}',
@@ -139,7 +140,7 @@ function mockTrafficBindings(findingID: string): FindingTrafficBinding[] {
   if (!mockFindingTraffic[findingID]) {
     const seeds = mockFindingTrafficSeeds[findingID] ?? [];
     mockFindingTraffic[findingID] = seeds.map((seed, index) => ({
-      id: String(++mockBindingSeq),
+      id: `b-${findingID}-${index + 1}`,
       finding_id: findingID,
       snapshot_id: `snap-${seed.traffic_id}`,
       role: seed.role,
@@ -212,8 +213,51 @@ type MockTaskArchiveSnapshot = {
   assetSources: Array<[number, MockTaskAssetSource]>;
 };
 type MockTaskArchive = TaskArchive & { snapshot: MockTaskArchiveSnapshot };
-const mockTaskArchives: MockTaskArchive[] = [];
-let nextMockTaskArchiveID = 1;
+
+// One finished demo task already has a ready archive so the archive list and detail
+// pages read a real row. The live task list is left in place.
+function seedDemoTaskArchive(): MockTaskArchive {
+  const task = structuredClone(D.tasks.find((item) => item.id === "t-vpn-edge"));
+  if (!task) throw new Error("Demo archive task is missing");
+  const numericTaskID = D.tasks.findIndex((item) => item.id === task.id) + 1;
+  const when = task.completed_at ?? task.created_at;
+  return {
+    id: 1,
+    task_id: numericTaskID,
+    state: "ready",
+    phase: "Archiving completed",
+    progress: 100,
+    format_version: 1,
+    original_size: 4096,
+    compressed_size: 1300,
+    task_name: task.name ?? "",
+    task_description: task.description,
+    task_goal: task.goal,
+    original_status: task.status,
+    category_id: task.category_id,
+    category_name: task.category_name,
+    source_task_ids: [],
+    remaining_timeout_seconds: 0,
+    data_counts: { assets: 0, findings: 0, llm_records: 0 },
+    aggregate_stats: {
+      tokens: {
+        input_tokens: task.tokens?.input_tokens ?? 0,
+        output_tokens: task.tokens?.output_tokens ?? 0,
+        cache_read_tokens: task.tokens?.cache_read_tokens ?? 0,
+        cache_write_tokens: task.tokens?.cache_write_tokens ?? 0,
+      },
+      findings: {},
+    },
+    archived_at: when,
+    requested_at: when,
+    created_at: task.created_at,
+    updated_at: when,
+    snapshot: { task, numericTaskID, assetIDs: [], assetSources: [] },
+  };
+}
+
+const mockTaskArchives: MockTaskArchive[] = [seedDemoTaskArchive()];
+let nextMockTaskArchiveID = 2;
 const mockTaskAssetIDs = new Map(D.tasks.map((task, index) => [task.id, index + 1]));
 const mockTaskScopes = new Map<string, TaskScopeRow[]>();
 type MockTaskAssetSource = Pick<Asset, "task_source" | "task_source_summary" | "task_source_node_id">;
@@ -998,6 +1042,249 @@ function parseBody(body?: BodyInit | null): Record<string, unknown> {
   }
 }
 
+function mockRequestedDays(raw: string | null, fallback: number): number {
+  const parsed = Number(raw);
+  const days = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+  return Math.min(366, Math.max(1, days));
+}
+
+// Daily buckets end today so dashboard ranges of 7, 30, 90, 180, and 365 all have points.
+function mockUsageDaily(days: number) {
+  const profile = D.llmProfiles.find((item) => item.is_default)?.name ?? "default";
+  return Array.from({ length: days }, (_, index) => {
+    const day = new Date();
+    day.setUTCHours(0, 0, 0, 0);
+    day.setUTCDate(day.getUTCDate() - (days - 1 - index));
+    const wave = 20000 + Math.round(15000 * Math.abs(Math.sin(index / 3)));
+    return {
+      profile_name: profile,
+      date: day.toISOString().slice(0, 10),
+      input_tokens: wave,
+      output_tokens: Math.round(wave * 0.08),
+      cache_read_tokens: Math.round(wave * 0.7),
+    };
+  });
+}
+
+// The fixture covers 30 days. Longer ranges keep those days and extend backward.
+function mockDailyTokens(days: number) {
+  if (days <= D.dailyTokens.length) return D.dailyTokens.slice(-days);
+  const extra = days - D.dailyTokens.length;
+  const first = new Date(`${D.dailyTokens[0].date}T00:00:00Z`);
+  const older = Array.from({ length: extra }, (_, index) => {
+    const day = new Date(first);
+    day.setUTCDate(day.getUTCDate() - (extra - index));
+    const wave = 40000 + Math.round(30000 * Math.abs(Math.sin(index / 3)));
+    return {
+      date: day.toISOString().slice(0, 10),
+      input_tokens: wave,
+      output_tokens: Math.round(wave * 0.08),
+      cache_read_tokens: Math.round(wave * 0.7),
+      cache_write_tokens: Math.round(wave * 0.12),
+    };
+  });
+  return [...older, ...D.dailyTokens];
+}
+
+function mockGoalCards() {
+  return D.explorationGraph.nodes
+    .filter((node) => node.type === "goal")
+    .map((node) => {
+      let text = node.id;
+      try {
+        if (node.payload) {
+          const payload = JSON.parse(node.payload) as { text?: string };
+          if (payload.text) text = payload.text;
+        }
+      } catch {
+        // Keep the node id when the payload is not JSON.
+      }
+      return {
+        id: node.id,
+        text,
+        vulnclass: "",
+        state: node.state,
+        origin: node.origin,
+        ts: node.ts,
+      };
+    });
+}
+
+function mockActivitySessionKey(item: Activity): string {
+  if (item.worker === "system" || item.kind === "llm_switch" || item.kind === "llm_failover") return "system";
+  if (item.worker === "mainagent") return `main:${item.main_seg ?? 0}`;
+  if (item.worker === "planner") return "plan";
+  if (item.intent_id) return `intent:${item.intent_id}`;
+  return "unknown";
+}
+
+function mockActivityHistory(q: URLSearchParams) {
+  const session = q.get("session") || "main:0";
+  const before = Number(q.get("before") ?? 0);
+  const limit = Math.min(500, Math.max(1, Number(q.get("limit") ?? 200)));
+  const matched = mockActivity.filter((item) => {
+    const key = mockActivitySessionKey(item);
+    return key === session || (session === "main" && key === "main:0");
+  });
+  const ordered = matched.filter((item) => before <= 0 || item.seq < before).sort((a, b) => a.seq - b.seq);
+  const page = ordered.slice(Math.max(0, ordered.length - limit));
+  const snapshot = mockActivity.reduce((max, item) => Math.max(max, item.seq), 0);
+  return {
+    items: page,
+    snapshot_cursor: snapshot,
+    earliest_cursor: page.length ? page[0].seq : before,
+    has_more: ordered.length > page.length,
+  };
+}
+
+function mockMainSessions() {
+  const bySeg = new Map<number, string>();
+  for (const item of mockActivity) {
+    if (item.worker !== "mainagent") continue;
+    const seg = item.main_seg ?? 0;
+    const previous = bySeg.get(seg);
+    if (!previous || item.ts < previous) bySeg.set(seg, item.ts);
+  }
+  if (bySeg.size === 0) bySeg.set(0, "2026-07-24T09:12:00Z");
+  const sessions = [...bySeg.entries()]
+    .sort((left, right) => right[0] - left[0])
+    .map(([seq, created_at]) => ({ seq, created_at }));
+  return { sessions, current: sessions[0]?.seq ?? 0 };
+}
+
+const mockRetryRule = { attempts: 0, interval_ms: 0 };
+
+const mockNotifyMeta = {
+  kinds: [
+    { kind: "dingtalk", default_rate_per_min: 20, secret_keys: ["webhook", "secret"] },
+    { kind: "email", default_rate_per_min: 60, secret_keys: ["password"] },
+    { kind: "feishu", default_rate_per_min: 100, secret_keys: ["webhook", "secret"] },
+    { kind: "telegram", default_rate_per_min: 20, secret_keys: ["bot_token"] },
+    { kind: "webhook", default_rate_per_min: 0, secret_keys: ["url", "headers"] },
+    { kind: "wecom", default_rate_per_min: 20, secret_keys: ["webhook"] },
+  ],
+  enabled: true,
+  public_base_url: "",
+  digest_interval_min: "30",
+  defaults: { digest_interval_min: 30 },
+  stats: {
+    channels: 0,
+    channels_on: 0,
+    pending: 0,
+    failed: 0,
+    sent_today: 0,
+    backlog_age_ms: 0,
+  },
+};
+
+// Path templates verified against the UI client. Tests walk this array; do not keep a second copy.
+export const MOCK_GET_ROUTES = [
+  "/health",
+  "/auth/status",
+  "/tasks",
+  "/tasks/:taskId",
+  "/task-categories",
+  "/task-templates",
+  "/task-archives",
+  "/task-archives/:archiveId",
+  "/tasks/:taskId/llm/resolution",
+  "/stats",
+  "/tasks/:taskId/coverage",
+  "/tasks/:taskId/coverage-graph",
+  "/tokens/usage?days=365",
+  "/tokens/daily?days=90",
+  "/tokens/conversations",
+  "/tasks/:taskId/goals",
+  "/tasks/:taskId/constraints",
+  "/tasks/:taskId/intercept-rules",
+  "/tasks/:taskId/scope",
+  "/tasks/:taskId/asset-refs?asset_id=1",
+  "/workspace/list",
+  "/workspace/read",
+  "/assets",
+  "/assets/counts",
+  "/tasks/:taskId/intent-assets",
+  "/companies",
+  "/exploration/frontier",
+  "/exploration/findings",
+  "/exploration/findings/groups",
+  "/exploration/findings/asset-tree",
+  "/exploration/findings/stats",
+  "/exploration/findings/:findingId",
+  "/exploration/findings/:findingId/traffic",
+  "/exploration/findings/:findingId/traffic/:bindingId",
+  "/exploration/findings/:findingId/traffic/:bindingId/body",
+  "/exploration/findings/:findingId/lineage",
+  "/exploration/findings/:findingId/retests",
+  "/exploration/findings/retests/active",
+  "/exploration/intents",
+  "/exploration/tokens",
+  "/exploration/graph",
+  "/exploration/nodes",
+  "/exploration/activity",
+  "/exploration/activity/history?session=main:0",
+  "/exploration/activity/:activitySeq",
+  "/exploration/main-sessions",
+  "/audit",
+  "/traffic",
+  "/traffic/exchange?id=x-2",
+  "/traffic/hosts",
+  "/settings",
+  "/notify/meta",
+  "/notify/channels",
+  "/notify/deliveries",
+  "/chat/mentions",
+  "/tasks/:taskId/chat/status",
+  "/tasks/:taskId/chat/side-questions",
+  "/tasks/:taskId/intents/:intentId/side-questions",
+  "/llm",
+  "/llm/profiles",
+  "/llm/pool",
+  "/llm/retry-policy",
+  "/llm/records",
+  "/llm/records/tasks",
+  "/llm/records/by-model?task=:taskId",
+  "/llm/records/:recordId",
+  "/agents",
+  "/agents/:agentKey",
+  "/agents/:agentKey/triggers",
+  "/agents/:agentKey/prompts",
+  "/agents/:agentKey/variables",
+  "/agents/:agentKey/visibility",
+  "/conversations",
+  "/conversations/:conversationId/messages",
+  "/conversations/:conversationId/messages/:messageSeq",
+  "/conversations/:conversationId/side-questions",
+  "/tools",
+  "/mcp",
+  "/mcp/:mcpId/tools",
+  "/sync/scopesentry/status",
+  "/sync/scopesentry/projects",
+  "/sync/scopesentry/tasks",
+  "/skills",
+  "/skills/missing",
+  "/skills/:skillName/files",
+  "/skills/:skillName/files/:skillFile",
+  "/skills/:skillName/usage",
+  "/visibility/mcp/:mcpId",
+  "/visibility/skill/:skillName",
+  "/intercept/rules",
+  "/asset-intercept/rules",
+  "/intercept/pending",
+  "/intercept/pending/:pendingId",
+  "/intercept/history",
+  "/intercept/history/:approvalId",
+  "/intercept/history/:approvalId/execution",
+  "/intercept/task/:taskId",
+  "/intercept/tool-config",
+  "/intercept/judge",
+  "/intercept/judge/usage",
+  "/commands",
+  "/commands/stats",
+  "/update/check",
+  "/logs/history",
+];
+
 export async function mockHandle<T>(method: string, rawPath: string, body?: BodyInit | null): Promise<T> {
   advanceMockRetests();
   await delay();
@@ -1056,6 +1343,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── auth:Let demo Go directly to the main interface ──
   if (path === "/auth/status") return { initialized: true };
+  if (path === "/health") return { ok: true, service: "artex", version: "dev" };
   if (path === "/auth/login" || path === "/auth/init") return { token: "mock-demo" };
   if (path === "/auth/change-password") return { ok: true };
 
@@ -1523,6 +1811,15 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (seg[0] === "tasks" && seg[2] === "scope" && seg.length === 3 && m === "GET") {
     return { scope: mockTaskScopes.get(seg[1]) ?? [] };
   }
+  if (seg[0] === "tasks" && seg[2] === "goals" && seg.length === 3 && m === "GET") {
+    return { goals: seg[1] === "t-acme-web" ? mockGoalCards() : [] };
+  }
+  if (seg[0] === "tasks" && seg[2] === "constraints" && seg.length === 3 && m === "GET") {
+    return { constraints: [] };
+  }
+  if (seg[0] === "tasks" && seg[2] === "intercept-rules" && seg.length === 3 && m === "GET") {
+    return { rules: [] };
+  }
   if (seg[0] === "tasks" && seg[2] === "scope" && seg.length === 3 && m === "POST") {
     const current = mockTaskScopes.get(seg[1]) ?? [];
     const kind = String(b.kind ?? "") as TaskScopeRow["kind"];
@@ -1549,11 +1846,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
 
   // ── Global llm_usage Aggregation (new version of dashboard view,demo)──
-  if (path === "/tokens/usage")
+  if (path === "/tokens/usage") {
+    const days = mockRequestedDays(q.get("days"), 365);
     return {
       by_profile: [
         {
-          profile_name: "default",
+          profile_name: D.llmProfiles.find((item) => item.is_default)?.name ?? "default",
           calls: 60,
           tasks: 4,
           input_tokens: 1570000,
@@ -1562,30 +1860,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
           cache_write_tokens: 140000,
         },
       ],
-      daily: [
-        {
-          profile_name: "default",
-          date: "2026-08-18",
-          input_tokens: 520000,
-          output_tokens: 38000,
-          cache_read_tokens: 370000,
-        },
-        {
-          profile_name: "default",
-          date: "2026-08-19",
-          input_tokens: 640000,
-          output_tokens: 45000,
-          cache_read_tokens: 460000,
-        },
-        {
-          profile_name: "default",
-          date: "2026-08-20",
-          input_tokens: 410000,
-          output_tokens: 27000,
-          cache_read_tokens: 290000,
-        },
-      ],
+      daily: mockUsageDaily(days),
     };
+  }
 
   // ── By model token Dosage(demo:An example)──
   if (path === "/llm/records/by-model")
@@ -2073,6 +2350,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     // List:GET /traffic
     return mockTrafficSummary(findingID);
   }
+  if (seg[0] === "exploration" && seg[1] === "findings" && seg[3] === "lineage" && seg.length === 4 && m === "GET") {
+    return { nodes: [], edges: [] };
+  }
   // Single finding:GET Details / PATCH Change status/Severity/Name/Category(demo Change memory objects directly).
   if (seg[0] === "exploration" && seg[1] === "findings" && seg.length === 3 && seg[2] !== "stats") {
     const f = mockFindings.find((x) => x.id === seg[2]);
@@ -2205,10 +2485,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { items, cursor: items.length ? items[items.length - 1].seq : since };
   }
   if (seg[0] === "exploration" && seg[1] === "activity" && seg.length === 3) {
+    if (seg[2] === "history") return mockActivityHistory(q);
     const a = mockActivity.find((x) => x.seq === Number(seg[2]));
     return { detail: a?.detail ?? a?.summary ?? "" };
   }
-  if (path === "/tokens/daily") return D.dailyTokens;
+  if (path === "/exploration/main-sessions") return mockMainSessions();
+  if (path === "/tokens/daily") return mockDailyTokens(mockRequestedDays(q.get("days"), 30));
   if (path === "/tokens/conversations") return D.convTokens;
 
   // ── traffic / audit / settings ──
@@ -2261,6 +2543,15 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/llm/profiles" && m === "POST") return { id: Number(b.id) || 3 };
   if (path === "/llm/profiles/active") return { ok: true };
   if (path === "/llm/pool" && m === "GET") return D.llmPool;
+  if (path === "/llm/retry-policy" && m === "GET") {
+    return {
+      connect: mockRetryRule,
+      empty: mockRetryRule,
+      stream: mockRetryRule,
+      breaker: mockRetryRule,
+      intent: mockRetryRule,
+    };
+  }
   if (path === "/llm/pool/reset")
     return { ...D.llmPool, chain: D.llmPool.chain.map((c) => ({ ...c, state: "ok", fails: 0, cooldown_secs: 0 })) };
   if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")
@@ -2399,6 +2690,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── intercept ──
   if (path === "/intercept/rules" && m === "GET") return { rules: D.interceptRules };
+  if (path === "/asset-intercept/rules" && m === "GET") return { rules: [] };
   if (seg[0] === "intercept" && seg[1] === "rules" && seg[3] === "toggle")
     return { ok: true, enabled: b.enabled ?? true };
   if (path === "/intercept/pending" && m === "GET")
@@ -2418,6 +2710,16 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       detail.output = b.decision === "allowed" ? "Tool not executed in demo mode." : "";
     }
     return { ok: true };
+  }
+  if (seg[0] === "intercept" && seg[1] === "history" && seg[3] === "execution" && seg.length === 4 && m === "GET") {
+    const row = mockInterceptHistory.find((item) => item.id === Number(seg[2]));
+    return {
+      conversation_id: row?.conversation_id ?? null,
+      task_id: row?.task_id ?? null,
+      session: row?.task_id ? "plan" : "main",
+      seq: 0,
+      items: [],
+    };
   }
   if (seg[0] === "intercept" && seg[1] === "history" && seg.length === 3) {
     const row = mockInterceptHistory.find((r) => r.id === Number(seg[2]));
@@ -2474,6 +2776,28 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       daily: [],
     };
 
+  if (path === "/notify/meta" && m === "GET") return mockNotifyMeta;
+  if (path === "/notify/channels" && m === "GET") return { channels: [] };
+  if (path === "/notify/deliveries" && m === "GET") {
+    const page = Math.max(1, Number(q.get("page")) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(q.get("page_size")) || 50));
+    return { deliveries: [], total: 0, page, page_size: pageSize };
+  }
+  if (path === "/update/check" && m === "GET") {
+    return {
+      current: "dev",
+      mode: "binary",
+      os: "linux",
+      arch: "x64",
+      repo: "skilfoy/ARTEX",
+      has_backup: false,
+      comparable: false,
+      has_update: false,
+      reason: "Demo build is not compared with a release.",
+    };
+  }
+  if (path === "/logs/history" && m === "GET") return { items: [], has_more: false };
+
   // ── Bypass question(/btw):demo No bypass session ──
   // Must explicitly hit: path ends with s The ending will be judged as a set and returned by the following reading [],items That's it undefined.
   if (seg.at(-1) === "side-questions") {
@@ -2483,6 +2807,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── The write operation is complete: successful but not lost in the database ──
   if (["POST", "PUT", "PATCH", "DELETE"].includes(m)) return { ok: true };
+
+  // Unmatched reads throw only in the mock route test. Production preview keeps an empty body.
+  if (m === "GET" && process.env.MOCK_STRICT === "1") {
+    throw new Error(`unhandled GET ${path}`);
+  }
 
   // ── Read the ins and outs: collection classes [],The rest {} ──
   return /(\/(tasks|profiles|conversations|rules|history|projects|tokens|agents|servers|skills|tools|findings|intents)s?$)|s$/.test(
