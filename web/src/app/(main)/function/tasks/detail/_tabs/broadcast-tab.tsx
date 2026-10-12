@@ -61,31 +61,31 @@ const KIND_META: Record<string, KindMeta> = {
     chip: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
   },
   intent: {
-    label: "Intention",
+    label: "Intent",
     icon: CompassIcon,
     dot: "bg-blue-500",
     chip: "bg-blue-500/15 text-blue-600 dark:text-blue-400",
   },
   fact: {
-    label: "fact",
+    label: "Fact",
     icon: FlaskConicalIcon,
     dot: "bg-amber-500",
     chip: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
   },
   finding: {
-    label: "Vulnerability",
+    label: "Finding",
     icon: BugIcon,
     dot: "bg-rose-500",
     chip: "bg-rose-500/15 text-rose-600 dark:text-rose-400",
   },
   hint: {
-    label: "Tips",
+    label: "Hint",
     icon: LightbulbIcon,
     dot: "bg-violet-500",
     chip: "bg-violet-500/15 text-violet-600 dark:text-violet-400",
   },
   digest: {
-    label: "Compression",
+    label: "Summary",
     icon: LayersIcon,
     dot: "bg-teal-500",
     chip: "bg-teal-500/15 text-teal-600 dark:text-teal-400",
@@ -97,10 +97,10 @@ const FILTER_KINDS: ExploreKind[] = ["goal", "intent", "fact", "finding", "hint"
 
 const REL_LABEL: Record<string, string> = {
   spawns: "Derived",
-  derived_from: "Intention chain",
+  derived_from: "Intent chain",
   yields: "output",
   proves: "Proof",
-  covers: "Compression",
+  covers: "Summary",
 };
 
 // goal / intent The state semantics of status Table provided(StatusBadge);Other types of status are only in

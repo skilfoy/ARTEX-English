@@ -51,15 +51,15 @@ import { RetestsTab } from "./_tabs/retests-tab";
 import { SessionsTab } from "./_tabs/sessions-tab";
 
 const TABS = [
-  { value: "sessions", label: "session" },
+  { value: "sessions", label: "Sessions" },
   { value: "overview", label: "Overview" },
-  { value: "graph", label: "Explore links" },
-  { value: "broadcast", label: "Announcement board" },
-  { value: "findings", label: "Discover" },
+  { value: "graph", label: "Exploration graph" },
+  { value: "broadcast", label: "Activity" },
+  { value: "findings", label: "Findings" },
   { value: "retests", label: "Retest" },
-  { value: "assets", label: "Test assets" },
+  { value: "assets", label: "Assets" },
   { value: "coverage", label: "Asset coverage map" },
-  { value: "intercept", label: "Interception Approval" },
+  { value: "intercept", label: "Approvals" },
   { value: "report", label: "Report" },
 ];
 

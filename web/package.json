@@ -8,6 +8,7 @@
     "build:static": "NEXT_EXPORT=1 next build --webpack",
     "start": "next start",
     "lint": "biome lint",
+    "test:mock": "node --experimental-strip-types --import ./scripts/register-alias.mjs --test src/lib/mock/*.test.ts",
     "format": "biome format --write",
     "check": "biome check",
     "check:fix": "biome check --write",

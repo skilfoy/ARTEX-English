@@ -690,7 +690,7 @@ function GraphInner({ taskId, coverageEnabled = true }: { taskId: string; covera
           </span>
         </div>
         <p className="text-muted-foreground/80 border-border/60 border-t pt-2 leading-relaxed">
-          Force-oriented layout, nodes can be dragged and zoomed with the scroll wheel; the gray "⋯" is a folded node, and you can expand more by clicking on it.
+          Drag a node, scroll to zoom, and click a collapsed node to expand.
         </p>
       </div>
 
