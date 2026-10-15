@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preview actions now change the open session or say they are not available. Pausing a task, sending a chat line, deciding the held approval, and creating a task from a template survive navigation and reset on refresh.
 - Translated the current interface, mock preview, backend messages, agent prompts, scripts, and source documentation into English.
 - Added English screenshots of the hosted preview to the README. The original Chinese screenshot set was not in this fork.
 - Tied the preview workspace, tool history, and model transcripts to the real tasks, and filled the notification, log, and approval story.
