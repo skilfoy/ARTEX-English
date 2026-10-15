@@ -470,10 +470,11 @@ function mockTaskAssetID(taskID: string): number | undefined {
   return mockTaskAssetIDs.get(taskID);
 }
 
-function mockAssetCounts(taskID?: string | null): Record<string, number> {
+function mockAssetCounts(taskID?: string | null, companyID?: number): Record<string, number> {
   const numericTaskID = taskID ? mockTaskAssetID(taskID) : undefined;
   return mockAssets.reduce<Record<string, number>>((counts, asset) => {
     if (taskID && (numericTaskID === undefined || !asset.task_ids.includes(numericTaskID))) return counts;
+    if (companyID !== undefined && asset.company_id !== companyID) return counts;
     counts[asset.type] = (counts[asset.type] ?? 0) + 1;
     return counts;
   }, {});
@@ -493,17 +494,35 @@ function mockAssetMatchesDSL(asset: Asset, dsl: string): boolean {
 
 // mockFilterFindings Apply public filtering for discovery pages(Severity/Status/Type/Task/Keywords),Assets
 // Subtree filtering is done separately mockApplyAssetScope —— With the backend FindingFilter.where() The division of labor is consistent.
+function mockCompanyID(q: URLSearchParams): number | undefined {
+  const raw = q.get("company_id");
+  if (!raw) return undefined;
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+function mockTaskMatchesCompany(task: { company_ids?: number[] }, companyID: number): boolean {
+  return (task.company_ids ?? []).includes(companyID);
+}
+
+function mockFindingMatchesCompany(finding: { task_id?: string }, companyID: number): boolean {
+  const owner = mockTasks.find((task) => task.id === finding.task_id);
+  return !!owner && mockTaskMatchesCompany(owner, companyID);
+}
+
 function mockFilterFindings(q: URLSearchParams): (typeof mockFindings)[number][] {
   let list = mockFindings.filter((finding) => mockFindingMatchesQuery(finding, q.get("q")));
   const severity = q.get("severity");
   const status = q.get("status");
   const vulnclass = q.get("vulnclass");
   const taskID = q.get("task_id");
+  const companyID = mockCompanyID(q);
   if (severity) list = list.filter((finding) => finding.severity === severity);
   if (status) list = list.filter((finding) => finding.status === status);
   if (vulnclass) list = list.filter((finding) => finding.vulnclass === vulnclass);
   if (taskID === "__unassigned__") list = list.filter((finding) => !finding.task_id);
   else if (taskID) list = list.filter((finding) => finding.task_id === taskID);
+  if (companyID !== undefined) list = list.filter((finding) => mockFindingMatchesCompany(finding, companyID));
   return list;
 }
 
@@ -1560,7 +1579,9 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // ── tasks ──
   if (path === "/tasks" && m === "GET") {
     sortMockTasks();
-    return { tasks: mockTasks.map(publicMockTask), active: mockActiveTask };
+    const companyID = mockCompanyID(q);
+    const tasks = mockTasks.filter((item) => companyID === undefined || mockTaskMatchesCompany(item, companyID));
+    return { tasks: tasks.map(publicMockTask), active: mockActiveTask };
   }
   if (path === "/tasks" && m === "POST") {
     let suffix = 1;
@@ -2011,14 +2032,16 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
 
   // ── assets ──
-  if (path === "/assets/counts") return mockAssetCounts(q.get("task_id"));
+  if (path === "/assets/counts") return mockAssetCounts(q.get("task_id"), mockCompanyID(q));
   if (path === "/assets" && m === "GET") {
     const type = q.get("type") ?? "";
     const taskID = q.get("task_id");
     const numericTaskID = taskID ? mockTaskAssetID(taskID) : undefined;
+    const companyID = mockCompanyID(q);
     const dsl = q.get("dsl") ?? "";
     const list = mockAssets.filter((asset) => {
       if (type && asset.type !== type) return false;
+      if (companyID !== undefined && asset.company_id !== companyID) return false;
       if (taskID && (numericTaskID === undefined || !asset.task_ids.includes(numericTaskID))) return false;
       return !dsl || mockAssetMatchesDSL(asset, dsl);
     });
@@ -2237,10 +2260,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // ── exploration ──
   if (path === "/exploration/frontier") return D.frontier;
   if (path === "/exploration/findings/stats") {
-    const vulnclasses = Array.from(new Set(mockFindings.map((f) => f.vulnclass))).sort();
+    const companyID = mockCompanyID(q);
+    const findings = mockFindings.filter((finding) => companyID === undefined || mockFindingMatchesCompany(finding, companyID));
+    const vulnclasses = Array.from(new Set(findings.map((f) => f.vulnclass))).sort();
     // [By task]drop down:Vulnerable tasks + Description + Number of items(mock Task id is a string,Directly id Use).
     const taskMap = new Map<string, { name: string; description: string; count: number }>();
-    for (const f of mockFindings) {
+    for (const f of findings) {
       if (!f.task_id) continue;
       const owner = mockTasks.find((candidate) => candidate.id === f.task_id);
       const cur = taskMap.get(f.task_id) ?? {
@@ -2253,12 +2278,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     }
     const tasks = Array.from(taskMap, ([id, v]) => ({ id, name: v.name, description: v.description, count: v.count }));
     return {
-      total: mockFindings.length,
-      pending: mockFindings.filter((f) => f.status === "pending").length,
-      critical: mockFindings.filter((f) => f.severity === "critical").length,
-      high: mockFindings.filter((f) => f.severity === "high").length,
-      medium: mockFindings.filter((f) => f.severity === "medium").length,
-      low: mockFindings.filter((f) => f.severity === "low").length,
+      total: findings.length,
+      pending: findings.filter((f) => f.status === "pending").length,
+      critical: findings.filter((f) => f.severity === "critical").length,
+      high: findings.filter((f) => f.severity === "high").length,
+      medium: findings.filter((f) => f.severity === "medium").length,
+      low: findings.filter((f) => f.severity === "low").length,
       vulnclasses,
       tasks,
     };
@@ -2503,15 +2528,22 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     if (task) {
       const owner = mockTasks.find((item) => item.id === task);
       const sources = new Set(owner?.source_task_ids ?? []);
+      const companyID = mockCompanyID(q);
       return mockFindings
         .filter((f) => f.task_id === task || (!!f.task_id && sources.has(f.task_id)))
+        .filter((f) => companyID === undefined || mockFindingMatchesCompany(f, companyID))
         .map((f) => ({
           ...withFid(f),
           ...(f.task_id !== task ? { inherited: true, source_task_id: f.task_id } : {}),
         }));
     }
     // Global:With page/limit → Paging object;Otherwise bare array(dashboard).
-    if (!q.has("page") && !q.has("limit")) return mockFindings.map(withFid);
+    if (!q.has("page") && !q.has("limit")) {
+      const companyID = mockCompanyID(q);
+      return mockFindings
+        .filter((f) => companyID === undefined || mockFindingMatchesCompany(f, companyID))
+        .map(withFid);
+    }
     const sev = { critical: 4, high: 3, medium: 2, low: 1 } as const;
     const list = mockApplyAssetScope(mockFilterFindings(q), q.get("asset_scope"));
     list.sort((a, b) =>

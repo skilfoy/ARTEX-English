@@ -579,6 +579,7 @@ export interface FindingQuery {
   task?: string; // Task id;"all"/Empty = Do not filter by task
   query?: string;
   sort?: "severity" | "time";
+  companyId?: number;
   // Asset tree node key;Select a node = Select its entire subtree. empty = Do not filter by assets.
   assetScope?: string;
 }

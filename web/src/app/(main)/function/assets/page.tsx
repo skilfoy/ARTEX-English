@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { AssetDslSearch } from "@/components/asset-dsl-search";
+import { useCompanyFilter } from "@/components/company-filter";
 import { ScopeTextEditor } from "@/components/scope-text-editor";
 import {
   AlertDialog,
@@ -133,6 +134,7 @@ export default function AssetsPage() {
   const [companyDeleteTarget, setCompanyDeleteTarget] = React.useState<Company | null>(null);
   const [companyDeleteAssets, setCompanyDeleteAssets] = React.useState(false);
   const [companyDeleting, setCompanyDeleting] = React.useState(false);
+  const { companyId } = useCompanyFilter();
 
   // Companies + per-type counts (tab badges) — loaded on demand, no background polling.
   const loadMeta = React.useCallback(() => {
@@ -143,12 +145,12 @@ export default function AssetsPage() {
         /* Keep the last successful company snapshot on a transient failure. */
       });
     api
-      .assetCounts()
+      .assetCounts("", companyId ?? undefined)
       .then(setCounts)
       .catch(() => {
         /* Keep the last successful counters on a transient failure. */
       });
-  }, []);
+  }, [companyId]);
 
   // Manual refresh: reload counts/companies and re-fetch the current page.
   const refresh = React.useCallback(() => {
@@ -254,7 +256,9 @@ export default function AssetsPage() {
     const offset = page * size;
     const run = async () => {
       try {
-        const r = dsl ? await api.searchAssets(dsl, tab, size, offset) : await api.assets(tab, size, offset);
+        const r = dsl
+          ? await api.searchAssets(dsl, tab, size, offset, companyId ?? undefined)
+          : await api.assets(tab, size, offset, companyId ?? undefined);
         if (assetsRequestRef.current !== request) return;
         setRows(r.assets);
         setRowsTab(tab);
@@ -278,7 +282,7 @@ export default function AssetsPage() {
       clearTimeout(tid);
       if (assetsRequestRef.current === request) assetsRequestRef.current++;
     };
-  }, [tab, page, size, query, refreshKey]);
+  }, [tab, page, size, query, refreshKey, companyId]);
 
   React.useEffect(() => {
     if (tab === "company") return;
@@ -294,7 +298,8 @@ export default function AssetsPage() {
 
   const companyName = (id?: number) => (id ? (companyById.get(id) ?? "") : "");
 
-  const tabCounts: Record<string, number> = { ...counts, company: companies.length };
+  const visibleCompanies = companyId ? companies.filter((company) => company.id === companyId) : companies;
+  const tabCounts: Record<string, number> = { ...counts, company: visibleCompanies.length };
   const totalAssets = Object.values(counts).reduce((a, b) => a + b, 0);
 
   // rows are already the current server-side page.
@@ -361,7 +366,7 @@ export default function AssetsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {companies.map((c) => (
+                  {visibleCompanies.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell>
                         <div className="flex items-center gap-2">

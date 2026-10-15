@@ -221,6 +221,7 @@ function findingFilterParams(q: Omit<FindingQuery, "page" | "pageSize">): URLSea
   if (q.task && q.task !== "all") p.set("task_id", q.task);
   if (q.query?.trim()) p.set("q", q.query.trim());
   if (q.sort) p.set("sort", q.sort);
+  if (q.companyId) p.set("company_id", String(q.companyId));
   if (q.assetScope) p.set("asset_scope", q.assetScope);
   return p;
 }
@@ -244,8 +245,11 @@ export const api = {
     post<{ ok: boolean }>("/auth/change-password", { old_password: oldPassword, new_password: newPassword }),
 
   // ---- tasks ----
-  tasks: () =>
-    get<{ tasks: Task[]; active: string }>("/tasks").then((r) => ({ tasks: arr(r.tasks), active: r.active ?? "" })),
+  tasks: (companyId?: number) =>
+    get<{ tasks: Task[]; active: string }>(`/tasks${companyId ? `?company_id=${companyId}` : ""}`).then((r) => ({
+      tasks: arr(r.tasks),
+      active: r.active ?? "",
+    })),
   task: (id: string) => get<Task>(`/tasks/${encodeURIComponent(id)}`),
   createTask: (input: {
     name?: string;
@@ -475,16 +479,21 @@ export const api = {
 
   // ---- assets ----
   // Server-side paginated: pass limit/offset, get back the page + full match total.
-  assets: (type = "", limit = 50, offset = 0) =>
-    get<{ count: number; total: number; assets: Asset[] }>(`/assets?type=${type}&limit=${limit}&offset=${offset}`).then(
-      (r) => ({ assets: r?.assets ?? [], total: r?.total ?? r?.count ?? 0 }),
-    ),
-  searchAssets: (dsl: string, type = "", limit = 50, offset = 0) =>
+  assets: (type = "", limit = 50, offset = 0, companyId?: number) =>
     get<{ count: number; total: number; assets: Asset[] }>(
-      `/assets?dsl=${encodeURIComponent(dsl)}${type ? `&type=${encodeURIComponent(type)}` : ""}&limit=${limit}&offset=${offset}`,
+      `/assets?type=${type}&limit=${limit}&offset=${offset}${companyId ? `&company_id=${companyId}` : ""}`,
     ).then((r) => ({ assets: r?.assets ?? [], total: r?.total ?? r?.count ?? 0 })),
-  assetCounts: (taskId = "") =>
-    get<Record<string, number>>(`/assets/counts${taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""}`),
+  searchAssets: (dsl: string, type = "", limit = 50, offset = 0, companyId?: number) =>
+    get<{ count: number; total: number; assets: Asset[] }>(
+      `/assets?dsl=${encodeURIComponent(dsl)}${type ? `&type=${encodeURIComponent(type)}` : ""}&limit=${limit}&offset=${offset}${companyId ? `&company_id=${companyId}` : ""}`,
+    ).then((r) => ({ assets: r?.assets ?? [], total: r?.total ?? r?.count ?? 0 })),
+  assetCounts: (taskId = "", companyId?: number) => {
+    const params = new URLSearchParams();
+    if (taskId) params.set("task_id", taskId);
+    if (companyId) params.set("company_id", String(companyId));
+    const query = params.toString();
+    return get<Record<string, number>>(`/assets/counts${query ? `?${query}` : ""}`);
+  },
   deleteAssets: (ids: number[]) =>
     http<{ deleted: number }>("/assets", { method: "DELETE", body: JSON.stringify({ ids }) }),
   // task-scoped view of the same endpoint — server-side paginated like `assets`
@@ -555,7 +564,8 @@ export const api = {
   // Node with subtree aggregate count. No pagination——Tree is a navigation structure,Get it all in one go.
   findingAssetTree: (q: Omit<FindingQuery, "page" | "pageSize">) =>
     get<FindingAssetTree>(`/exploration/findings/asset-tree?${findingFilterParams(q).toString()}`),
-  findingStats: () => get<FindingStats>("/exploration/findings/stats"),
+  findingStats: (companyId?: number) =>
+    get<FindingStats>(`/exploration/findings/stats${companyId ? `?company_id=${companyId}` : ""}`),
   // exportFindings Trigger discovery page to export and download files.scope=selected Time biography ids(finding_id List);
   // scope=filtered Pass current filter(Inherit FindingQuery filter field);scope=all Ignore filtering.
   exportFindings: async (opts: {
