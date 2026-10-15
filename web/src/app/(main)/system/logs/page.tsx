@@ -6,17 +6,8 @@ import { Button } from "@/components/ui/button";
 import { sseUrl } from "@/lib/api";
 import { MOCK } from "@/lib/mock/enabled";
 import type { LogLine } from "@/lib/types";
+import { campaignLogs } from "@/lib/mock/data";
 import { cn } from "@/lib/utils";
-
-// Mock demo:No backend SSE,Put in a few lines of sample log.
-const MOCK_LOGS: LogLine[] = [
-  { seq: 1, ts: "2026-07-26T03:55:00Z", level: "info", tag: "engine", text: "ARTEX v0.1.0 backend listening on :8787 (workers=3)" },
-  { seq: 2, ts: "2026-07-26T03:55:01Z", level: "info", tag: "config", text: "LLM configured from DB: anthropic / claude-opus-4-8" },
-  { seq: 3, ts: "2026-07-26T03:56:10Z", level: "info", tag: "planner", text: "task t-acme-web: 3rd round of planning, generating intent i-4" },
-  { seq: 4, ts: "2026-07-26T03:57:00Z", level: "warn", tag: "guard", text: "block bash: target out of bounds out.evil.example is not within scope" },
-  { seq: 5, ts: "2026-07-26T03:57:30Z", level: "info", tag: "work#1", text: "report_finding: Default Credentials (high) has been dropped" },
-  { seq: 6, ts: "2026-07-26T03:58:20Z", level: "error", tag: "work#3", text: "intercept: mysqldump hits destructive rules, waiting for manual approval" },
-];
 
 const levelTone: Record<LogLine["level"], string> = {
   info: "text-foreground/80",
@@ -61,7 +52,7 @@ export default function LogsPage() {
   // DB-restored history from the last 100 rows written before restart).
   React.useEffect(() => {
     if (MOCK) {
-      setLines(MOCK_LOGS);
+      setLines(campaignLogs);
       return;
     }
     const es = new EventSource(sseUrl("/api/logs/stream?since=0"));

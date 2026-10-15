@@ -4,6 +4,7 @@
 
 - Translated the current interface, mock preview, backend messages, agent prompts, scripts, and source documentation into English.
 - Added English screenshots of the hosted preview to the README. The original Chinese screenshot set was not in this fork.
+- Tied the preview workspace, tool history, and model transcripts to the real tasks, and filled the notification, log, and approval story.
 - Gave every preview finding a dossier, its own traffic evidence, and a finished retest where one was recorded. Added the completed Northwind Trading engagement beside Acme.
 - Added source-built Docker images and Compose configurations for local and cloud use.
 - Added Terraform configurations for AWS, Google Cloud, and Azure. Each configuration provisions the complete application stack with PostgreSQL and a reverse proxy.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { activity, assets, companies, dailyTokens, findingRetestSeeds, findingTrafficSeeds, findings, llmRecords, tasks, tokenTotal, traffic, trafficBodies } from "./data";
+import { activity, assets, campaignLogs, commandRecords, companies, dailyTokens, findingRetestSeeds, findingTrafficSeeds, findings, llmProfiles, llmRecordDetail, llmRecords, notifyChannels, notifyDeliveries, tasks, tokenTotal, traffic, trafficBodies, workspaceList, workspaceRead, PAYMENT_HELD_COMMAND, interceptPending, interceptHistory } from "./data";
 
 const DAY = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -137,3 +137,88 @@ test("Northwind is a finished engagement and does not reuse Acme hosts", () => {
     assert.equal(exchange.host.includes("northwind") || exchange.host.startsWith("198.51.100."), true, exchange.host);
   }
 });
+
+test("workspace, commands, and transcripts stay on real tasks", () => {
+  const root = workspaceList("");
+  assert.ok(root.entries.some((entry) => entry.name === "t-acme-web" && entry.dir));
+  const web = workspaceList("t-acme-web");
+  assert.deepEqual(
+    web.entries.map((entry) => entry.name).sort(),
+    ["assets.md", "evidence", "scope.md"],
+  );
+  const scope = workspaceRead("t-acme-web/scope.md");
+  assert.match(scope.content, /Assess administrative access controls/);
+  assert.match(scope.content, /acme\.com/);
+  const evidence = workspaceRead("t-acme-web/evidence/index.md");
+  assert.match(evidence.content, /f-1: x-2/);
+  assert.equal(workspaceRead("t-acme-web/missing.md").content, "");
+  assert.deepEqual(
+    workspaceList("t-shop-pay").entries.map((entry) => entry.name),
+    ["scope.md"],
+  );
+  assert.equal(workspaceRead("t-northwind/scope.md").content.includes("acme.com"), false);
+  const notes = [scope.content, workspaceRead("t-acme-web/assets.md").content, evidence.content].join("\n");
+  assert.equal(/exploit\.py|sqlmap|wordlist/i.test(notes), false);
+
+  assert.equal(commandRecords.filter((row) => row.task_id === "t-acme-web").length, 5);
+  for (const command of commandRecords) {
+    const index = tasks.findIndex((task) => task.id === command.task_id);
+    assert.equal(command.exploration_id, index + 1, String(command.id));
+    assert.equal(/sqlmap|nmap|ffuf|mysqldump/i.test(`${command.command} ${command.output}`), false);
+  }
+  assert.equal(
+    commandRecords.find((row) => row.task_id === "t-shop-pay")?.command.includes(PAYMENT_HELD_COMMAND),
+    true,
+  );
+
+  const session = activity.map((item) => `${item.summary ?? ""}\n${item.detail ?? ""}`).join("\n");
+  const profileNames = new Set(llmProfiles.map((profile) => profile.name));
+  for (const task of tasks) {
+    const rows = llmRecords.filter((record) => record.task_id === task.id);
+    assert.ok(rows.reduce((sum, record) => sum + record.input_tokens, 0) <= (task.tokens?.input_tokens ?? 0));
+    assert.ok(rows.reduce((sum, record) => sum + record.output_tokens, 0) <= (task.tokens?.output_tokens ?? 0));
+    assert.ok(rows.reduce((sum, record) => sum + record.cache_read, 0) <= (task.tokens?.cache_read_tokens ?? 0));
+    assert.ok(rows.reduce((sum, record) => sum + record.cache_write, 0) <= (task.tokens?.cache_write_tokens ?? 0));
+  }
+  for (const record of llmRecords) {
+    assert.ok(profileNames.has(record.profile_name), record.profile_name);
+    const detail = llmRecordDetail(record.id);
+    assert.equal(detail.id, record.id);
+    const prompt = JSON.parse(detail.request_body).messages[0].content as string;
+    const reply = JSON.parse(detail.response_body).content[0].text as string;
+    assert.ok(session.includes(prompt), String(record.id));
+    assert.ok(session.includes(reply), String(record.id));
+    assert.equal(/sqlmap|curl -s/i.test(`${prompt}\n${reply}`), false);
+  }
+  assert.notEqual(llmRecordDetail(1).response_body, llmRecordDetail(2).response_body);
+  assert.equal(llmRecordDetail(999).id, 999);
+  assert.equal(llmRecordDetail(999).request_body, "");
+  assert.equal(llmRecords.some((record) => record.task_id === "t-001"), false);
+});
+
+test("notifications, logs, and the one approval name real tasks", () => {
+  assert.equal(interceptPending.length, 1);
+  assert.equal(interceptPending[0]?.task_id, "t-shop-pay");
+  assert.equal(interceptPending[0]?.tool_input.command, PAYMENT_HELD_COMMAND);
+  assert.equal(interceptHistory.filter((row) => row.status === "pending").length, 1);
+  assert.ok(interceptHistory.some((row) => row.task_id === "t-acme-web" && row.status !== "pending"));
+  assert.equal(notifyChannels.length, 1);
+  assert.equal(notifyChannels[0]?.config.url, "https://example.invalid/hooks/artex");
+  assert.equal(String(notifyChannels[0]?.config.headers).startsWith("__masked__"), true);
+  assert.equal(notifyDeliveries.length, 3);
+  assert.equal(notifyDeliveries.find((row) => row.state === "failed")?.last_error, "preview endpoint refused the connection");
+  assert.equal(notifyDeliveries.some((row) => row.severity === "critical" && row.state === "sent"), true);
+  assert.equal(notifyDeliveries.some((row) => row.batch_id === 7 && row.title.includes("digest")), true);
+  const findingIDs = new Set(findings.map((finding) => finding.id));
+  const taskIDs = new Set(tasks.map((task) => task.id));
+  for (const row of notifyDeliveries) {
+    assert.ok(findingIDs.has(row.finding_id), row.finding_id);
+    assert.ok([...taskIDs].some((id) => row.title.includes(id)), row.title);
+  }
+  assert.equal(campaignLogs.length, 4);
+  for (const line of campaignLogs) {
+    assert.ok([...taskIDs].some((id) => line.text.includes(id)), line.text);
+    assert.ok([...findingIDs].some((id) => line.text.includes(id)), line.text);
+  }
+});
+

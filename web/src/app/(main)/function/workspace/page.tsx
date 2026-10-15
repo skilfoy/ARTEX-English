@@ -67,8 +67,10 @@ type EditState = {
   saving: boolean;
 };
 
+const WORKSPACE_START = process.env.NEXT_PUBLIC_MOCK === "1" ? "t-acme-web" : "";
+
 export default function WorkspacePage() {
-  const [path, setPath] = React.useState("");
+  const [path, setPath] = React.useState(WORKSPACE_START);
   const [entries, setEntries] = React.useState<WorkspaceEntry[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [edit, setEdit] = React.useState<EditState | null>(null);
@@ -92,7 +94,7 @@ export default function WorkspacePage() {
   );
 
   React.useEffect(() => {
-    load("");
+    load(WORKSPACE_START);
   }, [load]);
 
   const crumbs = React.useMemo(() => {

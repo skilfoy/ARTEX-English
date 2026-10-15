@@ -1302,6 +1302,91 @@ function mockTrafficList(q: URLSearchParams) {
   };
 }
 
+function mockFilterCommands(q: URLSearchParams) {
+  const task = q.get("task") ?? "";
+  const query = (q.get("q") ?? "").toLowerCase();
+  return D.commandRecords.filter((row) => {
+    if (task) {
+      const numeric = Number(task);
+      const numericMatch = Number.isInteger(numeric) && (row.exploration_id === numeric || D.tasks[numeric - 1]?.id === row.task_id);
+      if (row.task_id !== task && !numericMatch) return false;
+    }
+    if (query && !`${row.tool} ${row.command} ${row.output}`.toLowerCase().includes(query)) return false;
+    return true;
+  });
+}
+
+function mockCommandPage(q: URLSearchParams) {
+  const rows = mockFilterCommands(q);
+  const page = Math.max(0, Number(q.get("page") ?? 0) || 0);
+  const size = Math.max(1, Number(q.get("size") ?? 50) || 50);
+  return { commands: rows.slice(page * size, page * size + size), total: rows.length };
+}
+
+function mockLLMRecordPage(q: URLSearchParams) {
+  const task = q.get("task") ?? "";
+  const model = (q.get("model") ?? "").toLowerCase();
+  const session = (q.get("session") ?? "").toLowerCase();
+  const rows = mockLLMRecords.filter((row) => {
+    if (task && row.task_id !== task) return false;
+    if (model && !row.model.toLowerCase().includes(model)) return false;
+    if (session && !row.session_id.toLowerCase().includes(session)) return false;
+    return true;
+  });
+  const page = Math.max(0, Number(q.get("page") ?? 0) || 0);
+  const size = Math.max(1, Number(q.get("size") ?? 50) || 50);
+  return { records: rows.slice(page * size, page * size + size), total: rows.length };
+}
+
+function mockJudgeUsage(days: number) {
+  const daily = Array.from({ length: days }, (_, index) => {
+    const when = new Date();
+    when.setUTCHours(0, 0, 0, 0);
+    when.setUTCDate(when.getUTCDate() - (days - 1 - index));
+    const calls = 1 + (index % 3);
+    return {
+      date: when.toISOString().slice(0, 10),
+      calls,
+      input_tokens: calls * 20,
+      output_tokens: calls * 8,
+    };
+  });
+  return {
+    calls: daily.reduce((sum, row) => sum + row.calls, 0),
+    input_tokens: daily.reduce((sum, row) => sum + row.input_tokens, 0),
+    output_tokens: daily.reduce((sum, row) => sum + row.output_tokens, 0),
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    daily,
+  };
+}
+
+function mockNotifyDeliveries(q: URLSearchParams) {
+  const channelID = Number(q.get("channel_id") ?? 0);
+  const state = q.get("state") ?? "";
+  const rows = D.notifyDeliveries.filter((row) => {
+    if (channelID && row.channel_id !== channelID) return false;
+    if (state && row.state !== state) return false;
+    return true;
+  });
+  const page = Math.max(1, Number(q.get("page") ?? 1) || 1);
+  const pageSize = Math.min(200, Math.max(1, Number(q.get("page_size") ?? 50) || 50));
+  return {
+    deliveries: rows.slice((page - 1) * pageSize, page * pageSize),
+    total: rows.length,
+    page,
+    page_size: pageSize,
+  };
+}
+
+function mockCampaignLogs(q: URLSearchParams) {
+  const before = Number(q.get("before") ?? 0);
+  const limit = Math.min(500, Math.max(1, Number(q.get("limit") ?? 200) || 200));
+  const rows = D.campaignLogs.filter((line) => !before || (line.db_id ?? 0) < before);
+  const items = rows.slice(-limit);
+  return { items, has_more: rows.length > items.length };
+}
+
 export async function mockHandle<T>(method: string, rawPath: string, body?: BodyInit | null): Promise<T> {
   advanceMockRetests();
   await delay();
@@ -1839,7 +1924,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { constraints: [] };
   }
   if (seg[0] === "tasks" && seg[2] === "intercept-rules" && seg.length === 3 && m === "GET") {
-    return { rules: [] };
+    const shop = seg[1] === "t-shop-pay" || seg[1] === "3";
+    return { rules: shop ? D.interceptRules.filter((rule) => rule.id === 3) : [] };
   }
   if (seg[0] === "tasks" && seg[2] === "scope" && seg.length === 3 && m === "POST") {
     const current = mockTaskScopes.get(seg[1]) ?? [];
@@ -2533,10 +2619,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/gc") return { removed: 0 };
 
   // ── Tool execution history ──
-  if (path === "/commands" && m === "GET") return { commands: D.commandRecords, total: D.commandRecords.length };
+  if (path === "/commands" && m === "GET") return mockCommandPage(q);
   if (path === "/commands/stats" && m === "GET") {
     const tally = new Map<string, { tool: string; total: number; errors: number }>();
-    for (const c of D.commandRecords) {
+    for (const c of mockFilterCommands(q)) {
       const tool = c.tool || "-";
       const s = tally.get(tool) ?? { tool, total: 0, errors: 0 };
       s.total++;
@@ -2547,7 +2633,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
 
   // ── LLM ──
-  if (path === "/llm/records" && m === "GET") return { records: mockLLMRecords, total: mockLLMRecords.length };
+  if (path === "/llm/records" && m === "GET") return mockLLMRecordPage(q);
   if (path === "/llm/records" && m === "DELETE") return { deleted: 0 };
   if (path === "/llm/records/tasks") {
     const counts = new Map<string, number>();
@@ -2751,7 +2837,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { ...row, audit: mockInterceptDetails[row.id] ?? null };
   }
   if (seg[0] === "intercept" && seg[1] === "pending" && seg.length === 3 && m === "GET")
-    return mockInterceptPending.find((p) => p.id === Number(seg[2])) ?? null;
+    return (
+      mockInterceptPending.find((p) => p.id === Number(seg[2])) ??
+      mockInterceptHistory.find((p) => p.id === Number(seg[2])) ??
+      null
+    );
   if (path === "/intercept/history" || (seg[0] === "intercept" && seg[1] === "task")) {
     const status = q.get("status") || "";
     const decisionSource = q.get("decision_source") || "";
@@ -2781,31 +2871,33 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/intercept/tool-config") return { enabled_tools: ["bash"] };
   if (path === "/intercept/judge" && m === "GET")
     return {
-      enabled: false,
-      profile_id: 0,
-      prompt: "",
+      enabled: true,
+      profile_id: 1,
+      prompt: "These figures are sample data. This preview did not call a model.",
       timeout_seconds: 15,
-      fail_action: "allow",
+      fail_action: "ask",
       ask_timeout_seconds: 300,
       ask_timeout_action: "deny",
     };
   if (path === "/intercept/judge" && m === "PUT") return { ok: true };
-  if (path === "/intercept/judge/usage" && m === "GET")
-    return {
-      calls: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
-      daily: [],
-    };
+  if (path === "/intercept/judge/usage" && m === "GET") return mockJudgeUsage(mockRequestedDays(q.get("days"), 30));
 
-  if (path === "/notify/meta" && m === "GET") return mockNotifyMeta;
-  if (path === "/notify/channels" && m === "GET") return { channels: [] };
-  if (path === "/notify/deliveries" && m === "GET") {
-    const page = Math.max(1, Number(q.get("page")) || 1);
-    const pageSize = Math.min(200, Math.max(1, Number(q.get("page_size")) || 50));
-    return { deliveries: [], total: 0, page, page_size: pageSize };
+  if (path === "/notify/meta" && m === "GET")
+    return {
+      ...mockNotifyMeta,
+      stats: {
+        channels: D.notifyChannels.length,
+        channels_on: D.notifyChannels.filter((channel) => channel.enabled).length,
+        pending: 0,
+        failed: D.notifyDeliveries.filter((row) => row.state === "failed").length,
+        sent_today: D.notifyDeliveries.filter((row) => row.state === "sent").length,
+        backlog_age_ms: 0,
+      },
+    };
+  if (path === "/notify/channels" && m === "GET") return { channels: D.notifyChannels };
+  if (path === "/notify/deliveries" && m === "GET") return mockNotifyDeliveries(q);
+  if (seg[0] === "notify" && seg[1] === "channels" && seg[3] === "test" && m === "POST") {
+    throw new Error("preview endpoint refused the connection");
   }
   if (path === "/update/check" && m === "GET") {
     return {
@@ -2820,7 +2912,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       reason: "Demo build is not compared with a release.",
     };
   }
-  if (path === "/logs/history" && m === "GET") return { items: [], has_more: false };
+  if (path === "/logs/history" && m === "GET") return mockCampaignLogs(q);
 
   // ── Bypass question(/btw):demo No bypass session ──
   // Must explicitly hit: path ends with s The ending will be judged as a set and returned by the following reading [],items That's it undefined.
