@@ -103,6 +103,7 @@ export const tasks: Task[] = [
     active_llm_profile_id: 1,
     llm_failover_state: "ready",
     source_task_ids: [],
+    company_ids: [1],
     tokens: { input_tokens: 1284500, output_tokens: 96320, cache_read_tokens: 890400, cache_write_tokens: 132000 },
   },
   {
@@ -130,6 +131,7 @@ export const tasks: Task[] = [
     active_llm_profile_id: 1,
     llm_failover_state: "ready",
     source_task_ids: ["t-acme-web"],
+    company_ids: [1],
     tokens: { input_tokens: 642300, output_tokens: 51200, cache_read_tokens: 401000, cache_write_tokens: 60000 },
   },
   {
@@ -156,6 +158,7 @@ export const tasks: Task[] = [
     active_llm_profile_id: 2,
     llm_failover_state: "ready",
     source_task_ids: ["t-acme-web", "t-acme-api"],
+    company_ids: [1],
     tokens: { input_tokens: 233000, output_tokens: 18700, cache_read_tokens: 120000, cache_write_tokens: 22000 },
     findings: { critical: 0, high: 0, medium: 1, low: 0 },
   },
@@ -185,6 +188,7 @@ export const tasks: Task[] = [
     active_llm_profile_id: 1,
     llm_failover_state: "ready",
     source_task_ids: [],
+    company_ids: [1],
     tokens: { input_tokens: 512000, output_tokens: 40100, cache_read_tokens: 300000, cache_write_tokens: 41000 },
     findings: { critical: 0, high: 0, medium: 0, low: 0 },
   },

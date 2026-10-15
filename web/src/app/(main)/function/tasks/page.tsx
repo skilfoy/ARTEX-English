@@ -4,6 +4,8 @@ import * as React from "react";
 
 import Link from "next/link";
 
+import { useCompanyFilter } from "@/components/company-filter";
+
 import {
   DndContext,
   type DragEndEvent,
@@ -452,10 +454,11 @@ export default function TasksPage() {
   // POLL_MS but usually comes back unchanged, and setTasks on an identical payload would
   // re-render the whole page for nothing. Bail out when it matches.
   const lastRef = React.useRef<string>("");
+  const { companyId } = useCompanyFilter();
 
   const load = React.useCallback(() => {
     api
-      .tasks()
+      .tasks(companyId ?? undefined)
       .then((r) => {
         const next = r.tasks.map((t) => (t.id === r.active ? { ...t, active: true } : t));
         const sig = JSON.stringify(next);
@@ -466,7 +469,7 @@ export default function TasksPage() {
       .catch(() => {
         // Polling is best-effort; the next interval retries automatically.
       });
-  }, []);
+  }, [companyId]);
 
   const loadCategories = React.useCallback(() => {
     api

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useCompanyFilter } from "@/components/company-filter";
 import { FindingRetestDialog } from "@/components/finding-retest-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { TablePagination } from "@/components/table-pagination";
@@ -134,6 +135,8 @@ export default function FindingsPage() {
   const [status, setStatus] = React.useState<"all" | FindingStatus>("all");
   const [vulnclass, setVulnclass] = React.useState<string>("all");
   const [task, setTask] = React.useState<string>("all");
+  const { companyId } = useCompanyFilter();
+  const companyFilter = companyId ?? undefined;
   const [sort, setSort] = React.useState<"severity" | "time">("severity");
   const [search, setSearch] = React.useState("");
   const [query, setQuery] = React.useState("");
@@ -162,7 +165,7 @@ export default function FindingsPage() {
   const retestRefreshVersion = React.useRef(0);
   const [deepenDescription, setDeepenDescription] = React.useState("");
   const [deepening, setDeepening] = React.useState(false);
-  const filterFingerprint = JSON.stringify([severity, status, vulnclass, task, sort, query]);
+  const filterFingerprint = JSON.stringify([severity, status, vulnclass, task, sort, query, companyFilter]);
   const activeFilterFingerprint = React.useRef(filterFingerprint);
   activeFilterFingerprint.current = filterFingerprint;
 
@@ -330,6 +333,7 @@ export default function FindingsPage() {
         task,
         query,
         sort,
+        companyId: companyFilter,
         assetScope: activeAssetScope ?? undefined,
       });
       if (request !== flatRequest.current || activeFilterFingerprint.current !== requestFilter) return;
@@ -339,7 +343,7 @@ export default function FindingsPage() {
       // Polling keeps the last successful snapshot visible.
       setFlat((current) => ({ ...current, loading: false }));
     }
-  }, [activeAssetScope, filterFingerprint, flatPage, flatPageSize, severity, status, vulnclass, task, query, sort]);
+  }, [activeAssetScope, filterFingerprint, flatPage, flatPageSize, severity, status, vulnclass, task, query, sort, companyFilter]);
 
   // loadAssetTree Get the entire asset tree. The tree does not change with the selected node(Otherwise, if you choose it, it will collapse into a chain.),
   // So it's not included here assetScope.
@@ -349,7 +353,7 @@ export default function FindingsPage() {
     const request = ++assetTreeRequest.current;
     setAssetTree((current) => ({ ...current, loading: true }));
     try {
-      const result = await api.findingAssetTree({ severity, status, vulnclass, task, query, sort });
+      const result = await api.findingAssetTree({ severity, status, vulnclass, task, query, sort, companyId: companyFilter });
       if (request !== assetTreeRequest.current || activeFilterFingerprint.current !== requestFilter) return;
       setAssetTree({
         nodes: result.nodes ?? [],
@@ -364,7 +368,7 @@ export default function FindingsPage() {
       setAssetTree((current) => ({ ...current, loading: false }));
       toast.error(`Asset tree loading failed: ${(e as Error).message}`);
     }
-  }, [filterFingerprint, severity, status, vulnclass, task, query, sort]);
+  }, [filterFingerprint, severity, status, vulnclass, task, query, sort, companyFilter]);
 
   const refreshGroups = React.useCallback(async () => {
     const requestFilter = filterFingerprint;
@@ -380,6 +384,7 @@ export default function FindingsPage() {
         task,
         query,
         sort,
+        companyId: companyFilter,
       });
       if (request !== groupsRequest.current || activeFilterFingerprint.current !== requestFilter) return;
       setGroups(result.items);
@@ -388,7 +393,7 @@ export default function FindingsPage() {
     } catch {
       // Polling keeps the last successful snapshot visible.
     }
-  }, [filterFingerprint, page, pageSize, severity, status, vulnclass, task, query, sort]);
+  }, [filterFingerprint, page, pageSize, severity, status, vulnclass, task, query, sort, companyFilter]);
 
   const loadGroup = React.useCallback(
     async (key: string, groupPage: number, groupPageSize: number) => {
@@ -417,6 +422,7 @@ export default function FindingsPage() {
           task: key,
           query,
           sort,
+          companyId: companyFilter,
         });
         if (groupRequests.current[key] !== request || activeFilterFingerprint.current !== requestFilter) return;
         setGroupFindings((current) => ({
@@ -447,7 +453,7 @@ export default function FindingsPage() {
         }));
       }
     },
-    [filterFingerprint, severity, status, vulnclass, query, sort],
+    [filterFingerprint, severity, status, vulnclass, query, sort, companyFilter],
   );
 
   React.useEffect(() => {
@@ -568,7 +574,7 @@ export default function FindingsPage() {
     let alive = true;
     const load = () => {
       api
-        .findingStats()
+        .findingStats(companyFilter)
         .then((s) => {
           if (alive) {
             setStats(s);
@@ -585,7 +591,7 @@ export default function FindingsPage() {
       alive = false;
       clearInterval(t);
     };
-  }, []);
+  }, [companyFilter]);
 
   React.useEffect(() => {
     if (!statsLoaded) return;
@@ -610,7 +616,7 @@ export default function FindingsPage() {
         toast.success(`Marked as "${statusMeta("finding", next).label}"`);
         // refresh stat cards (pending count) and drop the row if it no longer matches the status filter
         api
-          .findingStats()
+          .findingStats(companyFilter)
           .then(setStats)
           .catch(() => {
             // The row update remains valid even if the aggregate refresh fails.
@@ -681,7 +687,7 @@ export default function FindingsPage() {
         );
         toast.success("Saved");
         api
-          .findingStats()
+          .findingStats(companyFilter)
           .then(setStats)
           .catch(() => {
             // The edit remains valid even if the aggregate refresh fails.
@@ -714,7 +720,7 @@ export default function FindingsPage() {
         setExpanded((cur) => (cur === rowKey ? null : cur));
         toast.success("Vulnerability removed");
         api
-          .findingStats()
+          .findingStats(companyFilter)
           .then(setStats)
           .catch(() => {
             // The deletion remains valid even if the aggregate refresh fails.
