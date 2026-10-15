@@ -5,7 +5,7 @@
 
 import type { ChatMention } from "@/lib/chat-mentions";
 import { MOCK } from "@/lib/mock/enabled";
-import { mockHandle } from "@/lib/mock/handler";
+import { PREVIEW_UNAVAILABLE, mockHandle } from "@/lib/mock/handler";
 import type {
   ActiveFindingRetest,
   Activity,
@@ -439,7 +439,7 @@ export const api = {
   workspaceMkdir: (path: string) => post<{ ok: boolean; path: string }>(`/workspace/mkdir`, { path }),
   workspaceDelete: (path: string) => del<{ ok: boolean }>(`/workspace/delete?path=${encodeURIComponent(path)}`),
   workspaceUpload: async (dir: string, files: File[]) => {
-    if (MOCK) return { uploaded: files.length };
+    if (MOCK) throw new Error(PREVIEW_UNAVAILABLE);
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
@@ -882,15 +882,7 @@ export const api = {
   chatStatus: (taskId: string) => get<{ running: boolean }>(`/tasks/${taskId}/chat/status`),
   // Way1 File upload:Fall into session/Task working directory uploads/,Return Available agent Read relative path to.
   chatUpload: async (scope: "task" | "session" | "staging", id: string, files: File[]) => {
-    if (MOCK)
-      return {
-        attachments: files.map((f) => ({
-          name: f.name,
-          path: `uploads/${f.name}`,
-          size: f.size,
-          abs: `/mock/${f.name}`,
-        })),
-      };
+    if (MOCK) throw new Error(PREVIEW_UNAVAILABLE);
     const fd = new FormData();
     for (const f of files) fd.append("file", f);
     const token = getToken();
@@ -1150,7 +1142,7 @@ export const api = {
   // uploadSkill installs a skill from a .zip (multipart). Surfaces the backend
   // error text (e.g. Already exists / Missing SKILL.md) so the UI can show a precise message.
   uploadSkill: async (file: File, overwrite = false): Promise<{ name: string; files: number }> => {
-    if (MOCK) return { name: file.name.replace(/\.zip$/i, ""), files: 1 };
+    if (MOCK) throw new Error(PREVIEW_UNAVAILABLE);
     const fd = new FormData();
     fd.append("file", file);
     const token = getToken();
@@ -1250,7 +1242,7 @@ export const api = {
     return r.json();
   },
   interceptSetToolConfig: async (enabledTools: string[]): Promise<void> => {
-    if (MOCK) return;
+    if (MOCK) throw new Error(PREVIEW_UNAVAILABLE);
     const token = getToken();
     const r = await fetch("/api/intercept/tool-config", {
       method: "PUT",

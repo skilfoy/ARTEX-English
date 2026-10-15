@@ -1,7 +1,7 @@
 // MOCK_GET_ROUTES is the verified GET route list for the demo UI.
 // An unmatched GET throws only when MOCK_STRICT=1. Otherwise the handler keeps the safe [] / {} fallback.
-// POST, PUT, PATCH, and DELETE still end at { ok: true } when no branch matches.
-// Routes run only when NEXT_PUBLIC_MOCK=1, through http() in api.ts.
+// A write either changes this module's copy of the fixtures or throws PREVIEW_UNAVAILABLE.
+// The copy lives until the page is refreshed. Routes run only when NEXT_PUBLIC_MOCK=1.
 
 import {
   classifyCompanyScopeLine,
@@ -37,6 +37,13 @@ import type {
 import * as D from "./data";
 
 const delay = (ms = 120) => new Promise((r) => setTimeout(r, ms));
+
+// Shown when a control can be clicked but this preview will not change the fixture.
+export const PREVIEW_UNAVAILABLE = "Not available in the preview";
+
+function previewUnavailable(): never {
+  throw new Error(PREVIEW_UNAVAILABLE);
+}
 
 // Requests mutate a runtime copy, never the exported fixtures. This keeps module
 // initialization deterministic for tests/HMR while preserving state across mock calls.
@@ -1447,7 +1454,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/auth/status") return { initialized: true };
   if (path === "/health") return { ok: true, service: "artex", version: "dev" };
   if (path === "/auth/login" || path === "/auth/init") return { token: "mock-demo" };
-  if (path === "/auth/change-password") return { ok: true };
+  if (path === "/auth/change-password") previewUnavailable();
 
   // ── task cold archives ──
   if (path === "/task-archives" && m === "GET") {
@@ -1576,7 +1583,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       category_name: category?.name,
       description: String(b.description ?? "New tasks"),
       goal: String(b.goal ?? ""),
-      status: "created",
+      status: "running",
       created_at: now.toISOString(),
       created_unix: Math.floor(now.getTime() / 1000),
       paused: false,
@@ -1586,7 +1593,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       stalled: false,
       goals_total: 0,
       goals_met: 0,
-      engine_mode: "idle",
+      engine_mode: "exploring",
       tokens: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0 },
       llm_profile_id: profileIDs[0],
       llm_profile_ids: profileIDs,
@@ -1894,7 +1901,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return { id: seg[1], paused: Boolean(task?.paused), queued: Boolean(task?.queued), status: task?.status ?? "" };
   }
   if (seg[0] === "tasks" && seg[2] === "chat" && seg[3] === "status") return { running: false };
-  if (seg[0] === "tasks" && seg[2] === "chat" && seg[3] === "stop") return { status: "stopped" };
+  if (seg[0] === "tasks" && seg[2] === "chat" && seg[3] === "stop") previewUnavailable();
   if (path === "/active") {
     const id = String(b.id ?? mockActiveTask);
     if (mockTasks.some((item) => item.id === id)) {
@@ -1949,7 +1956,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       seg[1],
       (mockTaskScopes.get(seg[1]) ?? []).filter((row) => row.id !== id),
     );
-    return { ok: true };
+    return { ok: true, deleted: id };
   }
 
   // ── Global llm_usage Aggregation (new version of dashboard view,demo)──
@@ -1994,7 +2001,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       ],
     };
 
-  // ── Workspace File Manager(demo:Static example tree; write/Build/Delete the details below {ok:true})──
+  // ── Workspace File Manager. Reads come from the fixture. Writes are refused. ──
   if (path === "/workspace/list") return D.workspaceList(q.get("path") ?? "");
   if (path === "/workspace/read") return D.workspaceRead(q.get("path") ?? "");
 
@@ -2379,12 +2386,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     if (!finding.task_id || !mockTasks.some((candidate) => candidate.id === finding.task_id)) {
       throw new Error("finding origin task or node is no longer available");
     }
-    return {
-      task_id: finding.task_id,
-      intent_id: `mock-deepen-${Date.now()}`,
-      state: "open",
-      queued: false,
-    };
+    previewUnavailable();
   }
   // Associated traffic evidence:List / Binding / Edit / Unbind / Sort / Single message details(demo Memory state).
   // seg = ["exploration","findings",<id>,"traffic", ...]
@@ -2463,6 +2465,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // Single finding:GET Details / PATCH Change status/Severity/Name/Category(demo Change memory objects directly).
   if (seg[0] === "exploration" && seg[1] === "findings" && seg.length === 3 && seg[2] !== "stats") {
     const f = mockFindings.find((x) => x.id === seg[2]);
+    if (m === "DELETE") {
+      if (!f) throw new Error("The vulnerability does not exist");
+      previewUnavailable();
+    }
     if (!f) return {};
     if (m === "PATCH") {
       if (typeof b.status === "string") f.status = b.status as typeof f.status;
@@ -2602,8 +2608,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── traffic / audit / settings ──
   if (path === "/audit") return D.audit;
-  if (path === "/traffic" && m === "DELETE") return { deleted: 0 };
-  if (path === "/traffic/hosts" && m === "DELETE") return { deleted: (b.hosts as unknown[])?.length ?? 0 };
+  if (path === "/traffic" && m === "DELETE") previewUnavailable();
+  if (path === "/traffic/hosts" && m === "DELETE") previewUnavailable();
   if (path === "/traffic/hosts") return { hosts: D.trafficHosts };
   if (path === "/traffic") return mockTrafficList(q);
   if (path === "/traffic/exchange") {
@@ -2611,12 +2617,42 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return body ? { req: body.req, resp: body.resp } : { req: "", resp: "" };
   }
   if (path === "/settings" && m === "GET") return D.settings;
-  if (path === "/settings" && m === "PUT") return { ...D.settings, ...b };
-  if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };
-  if (path === "/settings/python/detect") return { python_interpreter: "/usr/bin/python3" };
-  if (path === "/chat")
-    return { reply: "(demo) I have injected this suggestion as a high-quality intention, and the work agent will execute it as soon as possible.", mode: "hint" };
-  if (path === "/gc") return { removed: 0 };
+  if (path === "/settings" && m === "PUT") previewUnavailable();
+  if (path === "/settings/web-search/test") previewUnavailable();
+  if (path === "/settings/python/detect") previewUnavailable();
+  if (path === "/chat" && m === "POST") {
+    const taskId = q.get("task") || mockActiveTask;
+    const taskRow = mockTasks.find((item) => item.id === taskId);
+    if (!taskRow) throw new Error("Task does not exist");
+    const message = String(b.message ?? "").trim();
+    if (!message) throw new Error("Message cannot be empty");
+    const segment = Number(b.seg ?? 0) || 0;
+    const now = new Date().toISOString();
+    const taskName = taskRow.name || taskRow.id;
+    const reply = `Simulated answer for ${taskName}. This is not an agent run, and it does not add a finding.`;
+    const userSeq = nextMockWorkerMessageActivitySeq++;
+    const replySeq = nextMockWorkerMessageActivitySeq++;
+    mockActivity.push({
+      seq: userSeq,
+      worker: "mainagent",
+      main_seg: segment,
+      ts: now,
+      kind: "user",
+      summary: message,
+      detail: message,
+    });
+    mockActivity.push({
+      seq: replySeq,
+      worker: "mainagent",
+      main_seg: segment,
+      ts: now,
+      kind: "text",
+      summary: reply,
+      detail: reply,
+    });
+    return { reply, mode: "simulated", task_id: taskRow.id };
+  }
+  if (path === "/gc") previewUnavailable();
 
   // ── Tool execution history ──
   if (path === "/commands" && m === "GET") return mockCommandPage(q);
@@ -2634,8 +2670,8 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── LLM ──
   if (path === "/llm/records" && m === "GET") return mockLLMRecordPage(q);
-  if (path === "/llm/records" && m === "DELETE") return { deleted: 0 };
-  if (path === "/llm/records/tasks") {
+  if (path === "/llm/records" && m === "DELETE") previewUnavailable();
+  if (path === "/llm/records/tasks" && m === "GET") {
     const counts = new Map<string, number>();
     for (const record of mockLLMRecords) {
       if (record.task_id) counts.set(record.task_id, (counts.get(record.task_id) ?? 0) + 1);
@@ -2646,12 +2682,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     return D.llmRecordDetail(Number(seg[2]), mockLLMRecords);
   }
   if (path === "/llm" && m === "GET") return D.llmConfig;
-  if (path === "/llm" && m === "POST") return { ok: true };
-  if (path === "/llm/test")
-    return { ok: true, latency_ms: 128, model: String(b.model ?? "claude-opus-4-8"), reply: "OK" };
+  if (path === "/llm" && m === "POST") previewUnavailable();
+  if (path === "/llm/test") previewUnavailable();
   if (path === "/llm/profiles" && m === "GET") return { profiles: D.llmProfiles };
-  if (path === "/llm/profiles" && m === "POST") return { id: Number(b.id) || 3 };
-  if (path === "/llm/profiles/active") return { ok: true };
+  if (path === "/llm/profiles" && m === "POST") previewUnavailable();
+  if (path === "/llm/profiles/active" && m !== "GET") previewUnavailable();
   if (path === "/llm/pool" && m === "GET") return D.llmPool;
   if (path === "/llm/retry-policy" && m === "GET") {
     return {
@@ -2662,26 +2697,16 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       intent: mockRetryRule,
     };
   }
-  if (path === "/llm/pool/reset")
-    return { ...D.llmPool, chain: D.llmPool.chain.map((c) => ({ ...c, state: "ok", fails: 0, cooldown_secs: 0 })) };
-  if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE")
-    return { deleted: Number(seg[2]) };
+  if (path === "/llm/pool/reset") previewUnavailable();
+  if (seg[0] === "llm" && seg[1] === "profiles" && seg.length === 3 && m === "DELETE") previewUnavailable();
 
   // ── agents ──
   if (path === "/agents" && m === "GET") return { agents: D.agents };
-  if (path === "/agents" && m === "POST")
-    return {
-      id: "9",
-      key: String(b.key ?? "custom"),
-      name: String(b.name ?? ""),
-      role: "custom",
-      builtin: false,
-      enabled: true,
-    };
+  if (path === "/agents" && m === "POST") previewUnavailable();
   if (seg[0] === "agents" && seg.length === 2 && m === "GET") return D.agentDetail(seg[1]);
   if (seg[0] === "agents" && seg[2] === "triggers" && m === "GET") return { triggers: [] };
-  if (seg[0] === "agents" && seg[2] === "prompts") return { versions: D.agentDetail(seg[1]).versions };
-  if (seg[0] === "agents" && seg[2] === "variables") return { variables: D.agentDetail(seg[1]).variables };
+  if (seg[0] === "agents" && seg[2] === "prompts" && m === "GET") return { versions: D.agentDetail(seg[1]).versions };
+  if (seg[0] === "agents" && seg[2] === "variables" && m === "GET") return { variables: D.agentDetail(seg[1]).variables };
   if (seg[0] === "agents" && seg[2] === "prompt" && seg[3] === "preview")
     return { rendered: String(b.template ?? "").replace(/\{\{\.(\w+)\}\}/g, "«$1»") };
   if (seg[0] === "agents" && seg[2] === "visibility" && m === "GET") return D.agentDetail(seg[1]).visibility;
@@ -2761,7 +2786,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     const a = msgs.find((x) => x.seq === Number(seg[3]));
     return { detail: a?.detail ?? a?.summary ?? "" };
   }
-  if (seg[0] === "conversations" && seg[2] === "messages" && m === "POST") return { status: "ok" };
+  if (seg[0] === "conversations" && seg[2] === "messages" && m === "POST") previewUnavailable();
   if (seg[0] === "conversations" && seg[2] === "stop") {
     stopMockRetest(Number(seg[1]));
     return { status: "stopped" };
@@ -2769,30 +2794,30 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── tools ──
   if (path === "/tools" && m === "GET") return { tools: D.tools };
-  if (path === "/tools/custom" && m === "POST") return { key: String(b.key ?? "custom-tool") };
-  if (path === "/tools/custom/test") return { output: "(demo) Tool execution output example.", is_error: false };
+  if (path === "/tools/custom" && m === "POST") previewUnavailable();
+  if (path === "/tools/custom/test") previewUnavailable();
 
   // ── mcp ──
   if (path === "/mcp" && m === "GET") return { servers: D.mcpServers };
-  if (path === "/mcp" && m === "POST") return { id: 3 };
-  if (seg[0] === "mcp" && seg[2] === "tools") return { tools: D.mcpToolsById[Number(seg[1])] ?? [] };
-  if (seg[0] === "mcp" && seg[2] === "refresh") return { tools: D.mcpToolsById[Number(seg[1])] ?? [] };
-  if (seg[0] === "mcp" && seg.length === 2 && m === "DELETE") return { deleted: Number(seg[1]) };
+  if (path === "/mcp" && m === "POST") previewUnavailable();
+  if (seg[0] === "mcp" && seg[2] === "tools" && m === "GET") return { tools: D.mcpToolsById[Number(seg[1])] ?? [] };
+  if (seg[0] === "mcp" && seg[2] === "refresh") previewUnavailable();
+  if (seg[0] === "mcp" && seg.length === 2 && m === "DELETE") previewUnavailable();
 
   // ── scopesentry(demo:Not configured)──
   if (path === "/sync/scopesentry/status")
     return { exists: false, configured: false, enabled: false, reachable: false, tools: [] };
   if (path === "/sync/scopesentry/projects") return { projects: [], tag: {} };
   if (path === "/sync/scopesentry/tasks") return { tasks: [] };
-  if (path === "/sync/scopesentry/sync") return { synced: {}, companies: null, warnings: null, errors: null };
+  if (path === "/sync/scopesentry/sync") previewUnavailable();
 
   // ── skills ──
   if (path === "/skills" && m === "GET") return { skills: D.skills };
-  if (path === "/skills/missing") return { missing: D.missingSkills };
-  if (seg[0] === "skills" && seg[2] === "usage") return { calls: D.skillCalls };
-  if (path === "/skills" && m === "POST") return { name: String(b.name ?? "new-skill") };
-  if (seg[0] === "skills" && seg[2] === "files" && seg.length === 3) return { files: ["SKILL.md"] };
-  if (seg[0] === "skills" && seg[2] === "files" && seg.length >= 4)
+  if (path === "/skills/missing" && m === "GET") return { missing: D.missingSkills };
+  if (seg[0] === "skills" && seg[2] === "usage" && m === "GET") return { calls: D.skillCalls };
+  if (path === "/skills" && m === "POST") previewUnavailable();
+  if (seg[0] === "skills" && seg[2] === "files" && seg.length === 3 && m === "GET") return { files: ["SKILL.md"] };
+  if (seg[0] === "skills" && seg[2] === "files" && seg.length >= 4 && m === "GET")
     return { content: "#SKILL.md\n\n(demo) This is a sample documentation for this skill.", file: seg.slice(3).join("/") };
 
   // ── visibility ──
@@ -2801,17 +2826,24 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // ── intercept ──
   if (path === "/intercept/rules" && m === "GET") return { rules: D.interceptRules };
   if (path === "/asset-intercept/rules" && m === "GET") return { rules: [] };
-  if (seg[0] === "intercept" && seg[1] === "rules" && seg[3] === "toggle")
-    return { ok: true, enabled: b.enabled ?? true };
+  if (seg[0] === "intercept" && seg[1] === "rules" && seg[3] === "toggle") previewUnavailable();
   if (path === "/intercept/pending" && m === "GET")
     return { pending: mockInterceptHistory.filter((r) => r.status === "pending") };
   if (seg[0] === "intercept" && seg[1] === "pending" && seg[3] === "decide") {
     const id = Number(seg[2]);
-    const row = mockInterceptHistory.find((r) => r.id === id) ?? mockInterceptPending.find((r) => r.id === id);
-    if (row?.status !== "pending") throw new Error("The approval has been processed or does not exist, please refresh the record");
+    const history = mockInterceptHistory.find((r) => r.id === id);
+    const queued = mockInterceptPending.find((r) => r.id === id);
+    const row = history ?? queued;
+    if (!row || row.status !== "pending") {
+      throw new Error("The approval has been processed or does not exist, please refresh the record");
+    }
     if (b.decision !== "allowed" && b.decision !== "denied") throw new Error("Invalid approval action");
-    row.status = b.decision;
-    row.decided_at = new Date().toISOString();
+    const decidedAt = new Date().toISOString();
+    for (const candidate of [history, queued]) {
+      if (!candidate || candidate.status !== "pending") continue;
+      candidate.status = b.decision;
+      candidate.decided_at = decidedAt;
+    }
     const detail = mockInterceptDetails[id];
     if (detail) {
       detail.effective_action = b.decision === "allowed" ? "allow" : "deny";
@@ -2819,7 +2851,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       detail.execution_status = b.decision === "allowed" ? "unknown" : "not_executed";
       detail.output = b.decision === "allowed" ? "Tool not executed in demo mode." : "";
     }
-    return { ok: true };
+    return { ok: true, id, status: b.decision, decided_at: decidedAt };
   }
   if (seg[0] === "intercept" && seg[1] === "history" && seg[3] === "execution" && seg.length === 4 && m === "GET") {
     const row = mockInterceptHistory.find((item) => item.id === Number(seg[2]));
@@ -2879,7 +2911,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
       ask_timeout_seconds: 300,
       ask_timeout_action: "deny",
     };
-  if (path === "/intercept/judge" && m === "PUT") return { ok: true };
+  if (path === "/intercept/judge" && m === "PUT") previewUnavailable();
   if (path === "/intercept/judge/usage" && m === "GET") return mockJudgeUsage(mockRequestedDays(q.get("days"), 30));
 
   if (path === "/notify/meta" && m === "GET")
@@ -2918,11 +2950,10 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   // Must explicitly hit: path ends with s The ending will be judged as a set and returned by the following reading [],items That's it undefined.
   if (seg.at(-1) === "side-questions") {
     if (m === "GET") return { items: [], current: null, next_cursor: 0, snapshot: null };
-    if (m === "POST") throw new Error("Demo mode does not support side questions");
+    previewUnavailable();
   }
 
-  // ── The write operation is complete: successful but not lost in the database ──
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(m)) return { ok: true };
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(m)) previewUnavailable();
 
   // Unmatched reads throw only in the mock route test. Production preview keeps an empty body.
   if (m === "GET" && process.env.MOCK_STRICT === "1") {

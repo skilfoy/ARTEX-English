@@ -1488,7 +1488,10 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   function stop() {
     if (stopping) return;
     setStopping(true);
-    void api.stopChat(taskId).finally(() => setStopping(false));
+    void api
+      .stopChat(taskId)
+      .catch((error) => toast.error((error as Error).message || "Not available in the preview"))
+      .finally(() => setStopping(false));
   }
 
   function send() {
