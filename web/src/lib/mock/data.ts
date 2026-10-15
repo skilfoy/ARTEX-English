@@ -3611,6 +3611,9 @@ export const llmPool: LLMPoolStatus = {
 };
 
 // ── Intercept ────────────────────────────────────────────────────────────────
+export const PAYMENT_HELD_COMMAND =
+  "Describe the held payment-review command: a bash call that would change an order amount. This preview did not run it.";
+
 export const interceptRules: InterceptRule[] = [
   {
     id: 1,
@@ -3644,19 +3647,35 @@ export const interceptRules: InterceptRule[] = [
     created_at: T("2026-09-20T15:53:55Z"),
     updated_at: T("2026-09-20T15:53:55Z"),
   },
+  {
+    id: 3,
+    name: "Payment changes require approval",
+    enabled: true,
+    priority: 5,
+    match_target: "tool_input",
+    match_type: "string",
+    pattern: "order amount",
+    action: "ask",
+    message: "Payment changes require approval",
+    timeout_enabled: true,
+    timeout_seconds: 120,
+    timeout_action: "deny",
+    created_at: T("2026-09-30T02:23:55Z"),
+    updated_at: T("2026-10-09T02:23:55Z"),
+  },
 ];
 
 export const interceptPending: InterceptPending[] = [
   {
     id: 101,
-    rule_id: 1,
-    task_id: "t-acme-web",
-    agent_name: "work#3",
+    rule_id: 3,
+    task_id: "t-shop-pay",
+    agent_name: "work#2",
     tool_name: "bash",
-    tool_input: { command: "mysqldump -h 203.0.113.10 -uroot acme_prod > /tmp/dump.sql" },
+    tool_input: { command: PAYMENT_HELD_COMMAND },
     status: "pending",
-    reason: "Data leakage gate control: Export of the entire database requires manual approval",
-    created_at: T("2026-09-30T02:01:43Z"),
+    reason: "Payment changes require approval for finding f-10 on task t-shop-pay",
+    created_at: T("2026-10-09T02:23:55Z"),
   },
 ];
 
@@ -3667,7 +3686,7 @@ export const interceptHistory: InterceptApprovalRow[] = [
     task_id: "t-acme-web",
     agent_name: "work#1",
     tool_name: "bash",
-    tool_input: { command: "dd if=/dev/zero of=/tmp/x" },
+    tool_input: { command: "A destructive disk command was described and denied." },
     status: "denied",
     reason: "Destructive orders require approval",
     created_at: T("2026-09-29T22:13:58Z"),
@@ -3681,7 +3700,7 @@ export const interceptHistory: InterceptApprovalRow[] = [
     task_id: "t-acme-api",
     agent_name: "work#2",
     tool_name: "bash",
-    tool_input: { command: "rm -rf /var/www/html" },
+    tool_input: { command: "A file-deletion command was described and denied." },
     status: "denied",
     reason: "[Model] Delete target production file (D4)",
     created_at: T("2026-09-29T21:16:48Z"),
@@ -3696,7 +3715,7 @@ export const interceptHistory: InterceptApprovalRow[] = [
     task_id: "t-acme-web",
     agent_name: "work#13",
     tool_name: "bash",
-    tool_input: { command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc" },
+    tool_input: { command: "A directory-copy command was described and allowed." },
     status: "allowed",
     reason: "Outgoing traffic is directly rejected",
     created_at: T("2026-09-30T00:10:42Z"),
@@ -3710,10 +3729,11 @@ export const interceptHistory: InterceptApprovalRow[] = [
     task_id: "t-acme-web",
     agent_name: "work#7",
     tool_name: "bash",
-    tool_input: { command: 'mysql -e "DROP TABLE users_bak_0921"' },
-    status: "pending",
+    tool_input: { command: "A database cleanup command was described and denied." },
+    status: "denied",
     reason: "[Model] Suspected backup table, unable to determine whether to produce data",
     created_at: T("2026-09-29T19:57:42Z"),
+    decided_at: T("2026-09-29T19:58:10Z"),
     conv_title: "",
     conv_agent_key: "",
     rule_name: "",
@@ -3735,6 +3755,13 @@ interceptHistory.unshift({
   conv_title: "",
   conv_agent_key: "",
   rule_name: "",
+});
+
+interceptHistory.unshift({
+  ...interceptPending[0],
+  conv_title: "",
+  conv_agent_key: "",
+  rule_name: "Payment changes require approval",
 });
 
 export const interceptDetails: Record<number, InterceptAudit> = {
@@ -4255,48 +4282,107 @@ export function assetRefsFor(_assetId: number) {
   };
 }
 
-// ── Workspace File Manager(/workspace/*,demo:Static example tree)──
-const WS_TREE: Record<string, { name: string; dir: boolean; size: number; content?: string }[]> = {
-  "": [
-    { name: "t-acme-web", dir: true, size: 0 },
-    { name: "transcripts", dir: true, size: 0 },
-    {
-      name: "notes.md",
-      dir: false,
-      size: 96,
-      content: "# Workspace Notes\n\n(demo) This is a sample file in the root directory of the workspace, which can be edited and saved online.",
-    },
+// ── Workspace (/workspace). Keyed by real task ids. No scripts or payloads. ──
+const WS_FILES: Record<string, string> = {};
+
+function rememberFile(path: string, content: string) {
+  WS_FILES[path] = content;
+}
+
+function scopeNote(taskId: string): string {
+  const task = tasks.find((item) => item.id === taskId);
+  const hosts =
+    taskId === "t-acme-web"
+      ? [
+          "acme.com",
+          "www.acme.com",
+          "admin.acme.com",
+          "api.acme.com",
+          "shop.acme.com",
+          "vpn.acme.com",
+          "203.0.113.10",
+          "203.0.113.11",
+          "10.10.10.0/24",
+        ]
+      : taskId === "t-acme-api"
+        ? ["api.acme.com"]
+        : taskId === "t-shop-pay"
+          ? ["shop.acme.com"]
+          : taskId === "t-vpn-edge"
+            ? ["vpn.acme.com", "198.51.100.20"]
+            : taskId === "t-northwind"
+              ? ["northwind.example", "www.northwind.example", "mail.northwind.example", "198.51.100.0/24"]
+              : [];
+  return [
+    `# ${task?.name ?? taskId}`,
+    "",
+    task?.goal ?? "",
+    "",
+    "## In scope",
+    "",
+    ...hosts.map((host) => `- ${host}`),
+    "",
+    "This preview did not send a request.",
+  ].join("\n");
+}
+
+function acmeAssetsNote(): string {
+  const hosts = [
+    ...new Set(
+      assets
+        .filter((asset) => asset.company_id === 1)
+        .flatMap((asset) => [asset.domain, asset.ip].filter((value): value is string => Boolean(value))),
+    ),
+  ];
+  return [
+    "# Assets",
+    "",
+    "Hosts already recorded for Acme.",
+    "",
+    ...hosts.map((host) => `- ${host}`),
+    "",
+    "This preview did not send a request.",
+  ].join("\n");
+}
+
+function evidenceIndex(): string {
+  const lines = ["# Evidence", "", "Finding id and the traffic id bound to it.", ""];
+  for (const finding of findings) {
+    if (finding.task_id !== ACTIVE_TASK) continue;
+    const ids = (findingTrafficSeeds[finding.id] ?? []).map((seed) => seed.traffic_id);
+    lines.push(`- ${finding.id}: ${ids.join(", ") || "none"}`);
+  }
+  return lines.join("\n");
+}
+
+type WsNode = { name: string; dir: boolean; size: number; content?: string };
+
+function fileNode(path: string, name: string, content: string): WsNode {
+  rememberFile(path, content);
+  return { name, dir: false, size: new TextEncoder().encode(content).length, content };
+}
+
+const WS_TREE: Record<string, WsNode[]> = {
+  "": tasks.map((task) => ({ name: task.id, dir: true, size: 0 })),
+  [ACTIVE_TASK]: [
+    fileNode(`${ACTIVE_TASK}/scope.md`, "scope.md", scopeNote(ACTIVE_TASK)),
+    fileNode(`${ACTIVE_TASK}/assets.md`, "assets.md", acmeAssetsNote()),
+    { name: "evidence", dir: true, size: 0 },
   ],
-  "t-acme-web": [
-    { name: "i12", dir: true, size: 0 },
-    { name: "recon.txt", dir: false, size: 64, content: "acme.com\nwww.acme.com\napi.acme.com\nadmin.acme.com\n" },
-  ],
-  "t-acme-web/i12": [
-    {
-      name: "exploit.py",
-      dir: false,
-      size: 220,
-      content:
-        "#!/usr/bin/env python3\n# (demo) SQLi PoC — www.acme.com/search?q=\nimport requests\n\nr = requests.get('https://www.acme.com/search', params={'q': \"1' OR '1'='1\"})\nprint(r.status_code, len(r.text))\n",
-    },
-    {
-      name: "response.html",
-      dir: false,
-      size: 180,
-      content: "<!-- (demo) captured response body fragment -->\n<html><body>MySQL error near ''1'='1'</body></html>",
-    },
-  ],
-  transcripts: [
-    { name: "exp1-worker-i12.jsonl", dir: false, size: 512, content: "(demo) Original LLM conversation record example, omitted here." },
-  ],
+  [`${ACTIVE_TASK}/evidence`]: [fileNode(`${ACTIVE_TASK}/evidence/index.md`, "index.md", evidenceIndex())],
 };
+
+for (const task of tasks) {
+  if (task.id === ACTIVE_TASK) continue;
+  WS_TREE[task.id] = [fileNode(`${task.id}/scope.md`, "scope.md", scopeNote(task.id))];
+}
 
 const wsClean = (p: string) => p.replace(/^\/+|\/+$/g, "");
 
 export function workspaceList(path: string) {
   const key = wsClean(path);
   const items = WS_TREE[key] ?? [];
-  const now = Date.parse("2026-10-06T17:39:32Z");
+  const now = Date.parse(T("2026-10-12T02:23:55Z"));
   return {
     path: key,
     entries: items.map((it, i) => ({
@@ -4311,77 +4397,116 @@ export function workspaceList(path: string) {
 
 export function workspaceRead(path: string) {
   const key = wsClean(path);
-  const slash = key.lastIndexOf("/");
-  const parent = slash >= 0 ? key.slice(0, slash) : "";
-  const name = slash >= 0 ? key.slice(slash + 1) : key;
-  const f = (WS_TREE[parent] ?? []).find((x) => x.name === name && !x.dir);
-  return { path: key, size: f?.size ?? 0, binary: false, content: f?.content ?? "" };
+  const content = WS_FILES[key] ?? "";
+  return { path: key, size: new TextEncoder().encode(content).length, binary: false, content };
 }
 
-// ── Tool execution history(/commands)──
+// Held command text is PAYMENT_HELD_COMMAND, shared with the pending intercept.
+
+// ── Tool execution history (/commands) ──
 export const commandRecords = [
   {
     id: 1,
     exploration_id: 1,
-    worker: "worker-1",
+    task_id: "t-acme-web",
+    worker: "work#1",
     tool: "bash",
-    command: JSON.stringify({ command: "curl -s 'https://www.acme.com/search?q=test'" }),
-    output: "HTTP/1.1 200 OK\nContent-Length: 12034\n<html>…Search results page…</html>",
+    command: JSON.stringify({ command: "Read the recorded response headers for the in-scope site." }),
+    output: "The stored response named nginx and an administration login page.",
     is_error: false,
-    created_at: T("2026-10-06T17:15:42Z"),
+    created_at: T("2026-09-29T05:43:58Z"),
   },
   {
     id: 2,
     exploration_id: 1,
-    worker: "worker-1",
+    task_id: "t-acme-web",
+    worker: "work#1",
     tool: "bash",
-    command: JSON.stringify({ command: "sqlmap -u 'https://www.acme.com/search?q=1' --batch --dbs" }),
-    output: "[*] available databases [2]:\n[*] acme_prod\n[*] information_schema\nback-end DBMS: MySQL >= 5.7",
+    command: JSON.stringify({ command: "List the hosts already recorded for acme.com." }),
+    output: "The fixture lists www, admin, api, shop, and vpn.",
     is_error: false,
-    created_at: T("2026-10-06T17:16:54Z"),
+    created_at: T("2026-09-29T05:46:07Z"),
   },
   {
     id: 3,
     exploration_id: 1,
-    worker: "worker-2",
-    tool: "bash",
-    command: JSON.stringify({ command: "ffuf -u https://api.acme.com/FUZZ -w common.txt -mc 200,401,403" }),
-    output: "v1       [Status: 200]\nhealth   [Status: 200]\norders   [Status: 401]\nadmin    [Status: 403]",
+    task_id: "t-acme-web",
+    worker: "work#1",
+    tool: "upsert_asset",
+    command: JSON.stringify({ command: "Record the hosts that answered." }),
+    output: "Six host records were already in the asset list.",
     is_error: false,
-    created_at: T("2026-10-06T17:18:05Z"),
+    created_at: T("2026-09-29T05:46:16Z"),
   },
   {
     id: 4,
     exploration_id: 1,
-    worker: "worker-2",
+    task_id: "t-acme-web",
+    worker: "planner",
     tool: "bash",
-    command: JSON.stringify({ command: "nmap -sV -p- 203.0.113.10" }),
-    output: "PORT    STATE SERVICE VERSION\n22/tcp  open  ssh     OpenSSH 8.9\n443/tcp open  https   nginx 1.24",
+    command: JSON.stringify({ command: "Open the recorded search exchange." }),
+    output: "The stored search response is an HTML page. This preview did not send a request.",
     is_error: false,
-    created_at: T("2026-10-06T17:19:31Z"),
+    created_at: T("2026-09-30T00:46:26Z"),
   },
   {
     id: 5,
     exploration_id: 1,
-    worker: "worker-1",
+    task_id: "t-acme-web",
+    worker: "work#1",
     tool: "bash",
-    command: JSON.stringify({ command: "curl -s https://admin.acme.com/login --data 'user=admin&pass=admin123'" }),
-    output: "curl: (28) Operation timed out after 10000 ms",
+    command: JSON.stringify({ command: "Open the recorded administration sign-in." }),
+    output: "The preview did not run the command.",
     is_error: true,
-    created_at: T("2026-10-06T17:20:28Z"),
+    created_at: T("2026-09-30T01:57:54Z"),
+  },
+  {
+    id: 6,
+    exploration_id: 3,
+    task_id: "t-shop-pay",
+    worker: "work#2",
+    tool: "bash",
+    command: JSON.stringify({ command: PAYMENT_HELD_COMMAND }),
+    output: "The command is held for approval on task t-shop-pay for finding f-10. This preview did not run it.",
+    is_error: false,
+    created_at: T("2026-10-09T02:23:55Z"),
   },
 ];
 
-// ── LLM Recording(/llm/records,/llm/records/{id})──
+// ── LLM Recording (/llm/records, /llm/records/{id}) ──
+// Prompt and reply text is copied from the task session. It is not a new procedure.
+const llmTranscripts: Record<number, { prompt: string; reply: string }> = {
+  1: {
+    prompt: "Round 0 · Target Teardown",
+    reply:
+      "The first batch of 4 intentions were derived in this round: i1 asset reconnaissance, i2 background password, i4 injection, and i5 API override. g1 goes to i2, g2 goes to i4/i5, and each of the two goals has an independent entrance to advance. Wait for the worker to produce the facts and then increase the weight based on blood.",
+  },
+  2: {
+    prompt: "First passively reconnaissance subdomains, and then perform port/service identification on surviving hosts.",
+    reply: "5 surviving subdomains, where admin is the background login page.",
+  },
+  3: {
+    prompt: "Open 22/80/443.",
+    reply:
+      "admin is an independent backend login page; confirm that the five entrances are valid and accurately describe the initial intention.",
+  },
+  4: {
+    prompt:
+      "The starting situation is almost blank. Do ≤3 read-only detections to calibrate the initial intention direction (without enumeration/verification, that is the job of the worker).",
+    reply:
+      "Deliberately keep the routes diverse: i1 reconnaissance + i2 (g1 certification route) + i4/i5 (g2 data route), 2 independent mechanisms run in parallel without premature convergence.",
+  },
+};
+
 export const llmRecords = [
   {
     id: 1,
-    ts: T("2026-10-06T17:15:43Z"),
+    ts: T("2026-09-29T05:39:38Z"),
     model: "claude-opus-4-8",
-    profile_name: "Default",
-    session_id: "exp1-worker-i12",
+    profile_name: "Claude Opus 4.8",
+    session_id: "planner",
     task_id: "t-acme-web",
-    worker: "worker-1",
+    worker: "planner",
     latency_ms: 3210,
     input_tokens: 8421,
     output_tokens: 512,
@@ -4391,12 +4516,12 @@ export const llmRecords = [
   },
   {
     id: 2,
-    ts: T("2026-10-06T17:16:30Z"),
+    ts: T("2026-09-29T05:43:10Z"),
     model: "claude-opus-4-8",
-    profile_name: "Default",
-    session_id: "exp1-planner",
+    profile_name: "Claude Opus 4.8",
+    session_id: "i1",
     task_id: "t-acme-web",
-    worker: "planner",
+    worker: "work#1",
     latency_ms: 4180,
     input_tokens: 12044,
     output_tokens: 733,
@@ -4406,12 +4531,12 @@ export const llmRecords = [
   },
   {
     id: 3,
-    ts: T("2026-10-06T17:18:15Z"),
+    ts: T("2026-09-29T05:46:07Z"),
     model: "claude-opus-4-8",
-    profile_name: "Default",
-    session_id: "exp1-worker-i18",
+    profile_name: "Claude Opus 4.8",
+    session_id: "i1",
     task_id: "t-acme-web",
-    worker: "worker-2",
+    worker: "work#1",
     latency_ms: 2890,
     input_tokens: 7311,
     output_tokens: 421,
@@ -4421,90 +4546,176 @@ export const llmRecords = [
   },
   {
     id: 4,
-    ts: T("2026-10-06T17:18:36Z"),
+    ts: T("2026-09-29T05:39:32Z"),
     model: "claude-opus-4-8",
-    profile_name: "Default",
-    session_id: "exp1-worker-i18",
+    profile_name: "Claude Opus 4.8",
+    session_id: "planner",
     task_id: "t-acme-web",
-    worker: "worker-2",
+    worker: "planner",
     latency_ms: 900,
     input_tokens: 7600,
     output_tokens: 0,
     cache_read: 5200,
     cache_write: 0,
     status: "error",
-    error: "429 Too Many Requests (Backed off and retried)",
+    error: "The preview recorded an error for this call and did not retry it.",
   },
 ];
 
-// Distinct tasks with counts, derived from llmRecords above (task picker).
 const llmTaskCounts: Record<string, number> = {};
 for (const r of llmRecords) if (r.task_id) llmTaskCounts[r.task_id] = (llmTaskCounts[r.task_id] ?? 0) + 1;
 export const llmTasks: LLMTask[] = Object.entries(llmTaskCounts).map(([task_id, count]) => ({ task_id, count }));
 
 export function llmRecordDetail(id: number, records = llmRecords) {
-  const item = records.find((r) => r.id === id) ?? records[0];
+  const item = records.find((r) => r.id === id);
+  if (!item) {
+    return {
+      id,
+      ts: "",
+      model: "",
+      profile_name: "",
+      session_id: "",
+      task_id: "",
+      worker: "",
+      latency_ms: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read: 0,
+      cache_write: 0,
+      status: "missing",
+      request_body: "",
+      response_body: "",
+      raw_request: "",
+      raw_response: "",
+    };
+  }
+  const transcript = llmTranscripts[item.id] ?? { prompt: "", reply: "" };
   return {
     ...item,
     request_body: JSON.stringify(
       {
         model: item.model,
-        system: "You are an \"executor\" of an authorized penetration testing system... (omitted)",
-        messages: [{ role: "user", content: "Start executing the intention in the system prompt: just do it, only produce facts, and stop when done." }],
-        tools: ["bash", "insert_assets", "record_fact", "report_finding"],
+        messages: [{ role: "user", content: transcript.prompt }],
       },
       null,
       2,
     ),
     response_body: JSON.stringify(
       {
-        stop_reason: item.status === "error" ? "error" : "tool_use",
-        content: [
-          { type: "text", text: "Do injection detection for search?q=, first use the error-reporting payload to verify." },
-          { type: "tool_use", name: "bash", input: { command: "curl -s 'https://www.acme.com/search?q=1%27'" } },
-        ],
+        stop_reason: item.status === "error" ? "error" : "end_turn",
+        content: [{ type: "text", text: transcript.reply }],
         usage: { input_tokens: item.input_tokens, output_tokens: item.output_tokens },
       },
       null,
       2,
     ),
-    // HTTP Original: Request complete tool including discarded by normalized view schema,Response is raw SSE frame.
-    raw_request: JSON.stringify({
-      model: item.model,
-      max_tokens: 8192,
-      stream: true,
-      system: [
-        { type: "text", text: "You are an \"executor\" of an authorized penetration testing system... (omitted)", cache_control: { type: "ephemeral" } },
-      ],
-      messages: [{ role: "user", content: "Start executing the intention in the system prompt: just do it, only produce facts, and stop when done." }],
-      tools: [
-        {
-          name: "bash",
-          description: "Execute a shell command in the target environment and return its output.",
-          input_schema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
-        },
-      ],
-      thinking: { type: "enabled" },
-    }),
-    raw_response: [
-      `event: message_start`,
-      `data: {"type":"message_start","message":{"id":"msg_01mock","model":"${item.model}","usage":{"input_tokens":${item.input_tokens},"output_tokens":1}}}`,
-      ``,
-      `event: content_block_delta`,
-      `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Check the search?q= parameter for injection."}}`,
-      ``,
-      `event: content_block_start`,
-      `data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_01mock","name":"bash"}}`,
-      ``,
-      `event: content_block_delta`,
-      `data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"command\\":\\"curl -s 'https://www.acme.com/search?q=1%27'\\"}"}}`,
-      ``,
-      `event: message_delta`,
-      `data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":${item.output_tokens}}}`,
-      ``,
-      `event: message_stop`,
-      `data: {"type":"message_stop"}`,
-      ``,
-    ].join("\n"),
+    raw_request: JSON.stringify({ model: item.model, messages: [{ role: "user", content: transcript.prompt }] }),
+    raw_response: transcript.reply,
   };
 }
+
+export const notifyChannels = [
+  {
+    id: 1,
+    name: "Campaign webhook",
+    kind: "webhook",
+    enabled: true,
+    mode: "realtime" as const,
+    config: {
+      url: "https://example.invalid/hooks/artex",
+      method: "POST",
+      headers: "__masked__:…artex",
+    },
+    filter: { min_severity: "low" },
+    rate_per_min: 0,
+    created_at: T("2026-09-29T05:39:12Z"),
+    updated_at: T("2026-10-10T02:23:55Z"),
+    secret_keys: ["headers"],
+  },
+];
+
+export const notifyDeliveries = [
+  {
+    id: 1,
+    finding_id: "f-12",
+    event_kind: "finding_created",
+    channel_id: 1,
+    channel_name: "Campaign webhook",
+    channel_kind: "webhook",
+    state: "sent" as const,
+    attempts: 1,
+    last_error: "",
+    created_at: T("2026-09-29T20:10:05Z"),
+    sent_at: T("2026-09-29T20:10:06Z"),
+    next_attempt_at: T("2026-09-29T20:10:06Z"),
+    title: "Critical finding f-12 on task t-acme-web delivered",
+    severity: "critical",
+  },
+  {
+    id: 2,
+    finding_id: "f-2",
+    event_kind: "finding_created",
+    channel_id: 1,
+    channel_name: "Campaign webhook",
+    channel_kind: "webhook",
+    state: "sent" as const,
+    attempts: 1,
+    last_error: "",
+    batch_id: 7,
+    created_at: T("2026-09-30T01:26:28Z"),
+    sent_at: T("2026-10-10T02:23:55Z"),
+    next_attempt_at: T("2026-10-10T02:23:55Z"),
+    title: "High finding f-2 on task t-acme-api batched into a digest",
+    severity: "high",
+  },
+  {
+    id: 3,
+    finding_id: "f-10",
+    event_kind: "finding_created",
+    channel_id: 1,
+    channel_name: "Campaign webhook",
+    channel_kind: "webhook",
+    state: "failed" as const,
+    attempts: 1,
+    last_error: "preview endpoint refused the connection",
+    created_at: T("2026-09-28T20:58:50Z"),
+    next_attempt_at: T("2026-10-09T02:23:55Z"),
+    title: "Finding f-10 on task t-shop-pay was not delivered",
+    severity: "medium",
+  },
+];
+
+export const campaignLogs = [
+  {
+    seq: 1,
+    db_id: 1,
+    ts: T("2026-10-06T02:23:55Z"),
+    level: "info" as const,
+    tag: "task",
+    text: "Task t-acme-web started. Finding f-1 is part of this campaign.",
+  },
+  {
+    seq: 2,
+    db_id: 2,
+    ts: T("2026-09-30T00:46:26Z"),
+    level: "info" as const,
+    tag: "finding",
+    text: "Finding f-1 recorded on task t-acme-web.",
+  },
+  {
+    seq: 3,
+    db_id: 3,
+    ts: T("2026-10-09T02:23:55Z"),
+    level: "warn" as const,
+    tag: "intercept",
+    text: "Intercept held on task t-shop-pay for finding f-10.",
+  },
+  {
+    seq: 4,
+    db_id: 4,
+    ts: T("2026-10-10T02:23:55Z"),
+    level: "info" as const,
+    tag: "notify",
+    text: "Digest sent for finding f-2 on task t-acme-api.",
+  },
+];

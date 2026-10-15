@@ -111,3 +111,56 @@ test("Northwind coverage and archive stay separate from Acme", async () => {
     true,
   );
 });
+
+test("commands, approvals, judge usage, and notifications stay on the campaign", async () => {
+  const web = await mockHandle<{ total: number; commands: { exploration_id: number; task_id: string }[] }>(
+    "GET",
+    "/commands?task=1",
+  );
+  assert.equal(web.total, 5);
+  assert.ok(web.commands.every((row) => row.exploration_id === 1 && row.task_id === "t-acme-web"));
+  const shop = await mockHandle<{ total: number; commands: { command: string }[] }>("GET", "/commands?task=3");
+  assert.equal(shop.total, 1);
+  assert.match(shop.commands[0]?.command ?? "", /order amount/);
+  const other = await mockHandle<{ total: number }>("GET", "/commands?task=2");
+  assert.equal(other.total, 0);
+
+  const pending = await mockHandle<{ pending: { task_id: string; status: string; tool_input: { command: string } }[] }>(
+    "GET",
+    "/intercept/pending",
+  );
+  assert.equal(pending.pending.length, 1);
+  assert.equal(pending.pending[0]?.task_id, "t-shop-pay");
+  assert.match(pending.pending[0]?.tool_input.command ?? "", /order amount/);
+  const webApprovals = await mockHandle<{ items: { status: string }[] }>("GET", "/intercept/task/t-acme-web");
+  assert.equal(webApprovals.items.some((row) => row.status === "pending"), false);
+  const shopRules = await mockHandle<{ rules: { id: number; name: string }[] }>(
+    "GET",
+    "/tasks/t-shop-pay/intercept-rules",
+  );
+  assert.equal(shopRules.rules.length, 1);
+  assert.equal(shopRules.rules[0]?.name, "Payment changes require approval");
+
+  const usage = await mockHandle<{ daily: { date: string; calls: number }[] }>("GET", "/intercept/judge/usage?days=7");
+  assert.equal(usage.daily.length, 7);
+  assert.equal(usage.daily.at(-1)?.date, new Date().toISOString().slice(0, 10));
+  assert.ok(usage.daily.every((row) => row.calls > 0));
+
+  const channels = await mockHandle<{ channels: { config: { url: string; headers: string } }[] }>("GET", "/notify/channels");
+  assert.equal(channels.channels[0]?.config.url, "https://example.invalid/hooks/artex");
+  assert.match(channels.channels[0]?.config.headers ?? "", /^__masked__/);
+  const deliveries = await mockHandle<{ total: number; deliveries: { state: string; last_error: string }[] }>(
+    "GET",
+    "/notify/deliveries",
+  );
+  assert.equal(deliveries.total, 3);
+  assert.equal(
+    deliveries.deliveries.find((row) => row.state === "failed")?.last_error,
+    "preview endpoint refused the connection",
+  );
+  await assert.rejects(() => mockHandle("POST", "/notify/channels/1/test"), /preview endpoint refused the connection/);
+
+  const logs = await mockHandle<{ items: { text: string }[] }>("GET", "/logs/history");
+  assert.equal(logs.items.length, 4);
+  assert.ok(logs.items.some((line) => line.text.includes("t-shop-pay") && line.text.includes("f-10")));
+});
