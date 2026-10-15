@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { activity, dailyTokens, findings, llmRecords, tasks, tokenTotal, traffic } from "./data";
+import { activity, assets, companies, dailyTokens, findingRetestSeeds, findingTrafficSeeds, findings, llmRecords, tasks, tokenTotal, traffic, trafficBodies } from "./data";
 
 const DAY = 24 * 60 * 60 * 1000;
 const now = Date.now();
@@ -60,7 +60,80 @@ test("linked ids exist and retired strings are gone", () => {
     tasks.reduce((sum, task) => sum + (task.tokens?.input_tokens ?? 0), 0),
   );
   const source = readFileSync(new URL("./data.ts", import.meta.url), "utf8");
-  for (const banned of ["t-001", "Chaoyang", "138****6021"]) {
+  for (const banned of ["t-001", "Chaoyang", "138****6021", "Vulnerability Overview"]) {
     assert.equal(source.includes(banned), false, banned);
+  }
+});
+
+test("every finding has a dossier and its own traffic", () => {
+  const exchangeIDs = new Set((traffic.exchanges ?? []).map((exchange) => exchange.id));
+  assert.equal(findings.length, Object.keys(findingTrafficSeeds).length);
+  for (const finding of findings) {
+    assert.match(finding.report ?? "", /## What was observed/);
+    assert.match(finding.report ?? "", /## Asset/);
+    assert.match(finding.report ?? "", /## Why this severity/);
+    assert.match(finding.report ?? "", /## What to verify next/);
+    assert.doesNotMatch(finding.report ?? "", /sqlmap|jndi|scriptText|psexec/i, finding.id);
+    const seeds = findingTrafficSeeds[finding.id];
+    assert.ok(seeds && seeds.length > 0, finding.id);
+    for (const seed of seeds) {
+      assert.equal(exchangeIDs.has(seed.traffic_id), true, `${finding.id} ${seed.traffic_id}`);
+      assert.doesNotMatch(seed.note, /sqlmap|jndi|scriptText|psexec/i, finding.id);
+      const body = trafficBodies[seed.traffic_id];
+      const exchange = (traffic.exchanges ?? []).find((item) => item.id === seed.traffic_id);
+      assert.ok(body && exchange);
+      const path = new URL(exchange.url).pathname + new URL(exchange.url).search;
+      assert.ok(body.req.includes(path), seed.traffic_id);
+      assert.ok(body.req.includes(exchange.host), seed.traffic_id);
+      assert.match(body.resp, new RegExp(`HTTP/1\\.1 ${exchange.status}`));
+    }
+  }
+  assert.deepEqual(
+    findingRetestSeeds.map((seed) => [seed.finding_id, seed.verdict]),
+    [
+      ["f-1", "reproduced"],
+      ["f-4", "fixed"],
+      ["f-6", "inconclusive"],
+    ],
+  );
+});
+
+test("Northwind is a finished engagement and does not reuse Acme hosts", () => {
+  assert.equal(tasks[4]?.id, "t-northwind");
+  const task = tasks[4];
+  assert.equal(task?.status, "done");
+  assert.deepEqual(task?.company_ids, [2]);
+  assert.deepEqual(task?.findings, { critical: 1, high: 1, medium: 1, low: 0 });
+  const company = companies.find((item) => item.id === 2);
+  assert.equal(company?.name, "Northwind Trading");
+  const rows = assets.filter((asset) => asset.company_id === 2);
+  assert.equal(rows.length, company?.asset_count);
+  assert.deepEqual(
+    rows.map((asset) => asset.id),
+    [27, 28, 29, 30],
+  );
+  for (const asset of rows) {
+    const blob = `${asset.domain ?? ""} ${asset.ip ?? ""} ${asset.url ?? ""}`;
+    assert.equal(blob.includes("acme.com"), false, blob);
+    assert.deepEqual(asset.task_ids, [5]);
+  }
+  const northwindFindings = findings.filter((finding) => finding.task_id === "t-northwind");
+  assert.deepEqual(
+    northwindFindings.map((finding) => finding.id),
+    ["f-n1", "f-n2", "f-n3"],
+  );
+  for (const finding of northwindFindings) {
+    assert.equal(finding.assets?.length, 1, finding.id);
+    assert.equal(finding.assets?.[0]?.label.includes("acme.com"), false, finding.id);
+    assert.equal(finding.assets?.[0]?.label.includes("northwind"), true, finding.id);
+  }
+  const northwindTraffic = (traffic.exchanges ?? []).filter((exchange) => exchange.id.startsWith("x-n"));
+  assert.deepEqual(
+    northwindTraffic.map((exchange) => exchange.id),
+    ["x-n1", "x-n2", "x-n3"],
+  );
+  for (const exchange of northwindTraffic) {
+    assert.equal(exchange.host.includes("acme.com"), false, exchange.id);
+    assert.equal(exchange.host.includes("northwind") || exchange.host.startsWith("198.51.100."), true, exchange.host);
   }
 });
