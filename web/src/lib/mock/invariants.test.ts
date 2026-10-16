@@ -63,7 +63,7 @@ test("company asset counts match the asset rows", () => {
 
 test("session text does not quote a procedure or a credential", () => {
   const source = readFileSync(new URL("./data.ts", import.meta.url), "utf8");
-  const banned = /sqlmap|impacket-|psexec|secretsdump|JdbcRowSet|JNDIExploit|hashcat|git-dumper|crackmapexec|ReverseShell|ldap:\/\/|os\.system|sudo python|NOPASSWD|admin\/admin123|Acme@2021|Deploy@Acme|Sql@2020/i;
+  const banned = /sqlmap|impacket-|psexec|secretsdump|JdbcRowSet|JNDIExploit|hashcat|git-dumper|crackmapexec|ReverseShell|ldap:\/\/|os\.system|sudo python|sudo -l|NOPASSWD|admin\/admin123|Acme@2021|Deploy@Acme|Sql@2020|fscan|proxychains|Groovy RCE|Kerberoast|GetUserSPNs|krb5tgs/i;
   const hit = source.split("\n").find((line) => banned.test(line));
   assert.equal(hit, undefined);
 });

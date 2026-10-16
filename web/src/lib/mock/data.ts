@@ -903,7 +903,7 @@ export const findings: Finding[] = [
   {
     id: "f-16",
     assets: [assetRef(21)],
-    vulnclass: "Kerberoasting",
+    vulnclass: "Weak service account",
     severity: "high",
     status: "pending",
     summary: "The domain service account svc_sql has a weak recorded password",
@@ -1165,7 +1165,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i12",
       type: "intent",
-      payload: P({ summary: "Perform Kerberoasting on the domain service account and crack it offline" }),
+      payload: P({ summary: "Record the service-account secret" }),
       priority: 8,
       state: "done",
       origin: "planner",
@@ -1358,7 +1358,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiKerb",
       type: "finding",
-      payload: P({ summary: "Kerberoasting cracks domain service account svc_sql password" }),
+      payload: P({ summary: "The service-account secret was weak" }),
       priority: 0,
       state: "confirmed",
       origin: "work#12",
@@ -1378,7 +1378,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "h1",
       type: "hint",
-      payload: P({ summary: "The background is Element-UI, and the default password table is run first." }),
+      payload: P({ summary: "Try the recorded administration credential first" }),
       priority: 5,
       state: "consumed",
       origin: "mainagent",
@@ -1387,7 +1387,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "h2",
       type: "hint",
-      payload: P({ summary: "Intranet priority is given to Jenkins: Unauthorized /script direct Groovy RCE" }),
+      payload: P({ summary: "The stored console did not require a sign-in" }),
       priority: 6,
       state: "consumed",
       origin: "mainagent",
@@ -2532,7 +2532,7 @@ export const activity: Activity[] = [
     intent_id: "i9",
     ts: T("2026-09-29T22:29:13Z"),
     kind: "thinking",
-    summary: "Directly connect to 10.10.10.0/24, use fscan/intranet scanning to discover hosts and ports, and identify domain controllers and high-value hosts.",
+    summary: "The second network was already recorded. This preview did not scan it.",
   },
   {
     seq: 351,
@@ -2542,7 +2542,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t9a",
-    summary: "./fscan -h 10.10.10.0/24 -np -nobr 2>&1 | tail -n 30",
+    summary: "Recorded a network check. This preview did not run it.",
   },
   {
     seq: 352,
@@ -2702,14 +2702,14 @@ export const activity: Activity[] = [
     cache_write_tokens: 9500,
   },
 
-  // work#12 · i12 Kerberoasting(done)
+  // work#12 · i12 service-account secret was already recorded
   {
     seq: 380,
     worker: "work#12",
     intent_id: "i12",
     ts: T("2026-09-29T23:31:09Z"),
     kind: "thinking",
-    summary: "Use svc_deploy credentials for domain authentication, then GetUserSPNs requests the Kerberoast-enabled service account TGS.",
+    summary: "A recorded service-account secret was weak. This preview did not try to recover it.",
   },
   {
     seq: 381,
@@ -2729,8 +2729,8 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t12a",
-    summary: "svc_sql  MSSQLSvc/db01.acme.local:1433  $krb5tgs$23$*svc_sql$...",
-    detail: "Get the TGS ticket for svc_sql (Kerberos RC4).",
+    summary: "A service-account ticket was recorded.",
+    detail: "The ticket was already in the notes. This preview did not request another.",
   },
   {
     seq: 383,
@@ -2761,7 +2761,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "report_finding",
     tool_use_id: "t12c",
-    summary: "report_finding(Kerberoasting, high)",
+    summary: "report_finding(weak service account, high)",
   },
   {
     seq: 386,
@@ -2769,7 +2769,7 @@ export const activity: Activity[] = [
     intent_id: "i12",
     ts: T("2026-09-29T23:49:16Z"),
     kind: "result",
-    summary: "Kerberoasting breaks out the svc_sql password and enters it into the image for use in domain control attacks.",
+    summary: "The service-account secret was recorded as weak. This preview did not use it.",
     input_tokens: 108000,
     output_tokens: 6800,
     cache_read_tokens: 72000,
@@ -2903,7 +2903,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-29T20:11:07Z"),
     kind: "text",
     summary:
-      "www-data does not have enough permissions. Elevate the permissions first (sudo -l seems to work). After getting root, use DMZ as a springboard to discover the intranet, giving priority to domain controllers and Jenkins.",
+      "The recorded DMZ account is limited. A local privilege change is in the notes. This preview did not run it.",
   },
   {
     seq: 402,
@@ -2918,7 +2918,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-29T22:53:06Z"),
     kind: "text",
     summary:
-      "Yes, /script goes directly to Groovy RCE without authentication. I have injected a prompt to let the worker first run Jenkins - after taking it, you can export the domain credentials, and then use Kerberoasting to run domain control.",
+      "The stored console response did not require a sign-in. This preview did not send a new request.",
   },
   { seq: 404, worker: "mainagent", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "DC01 won? Give a summary." },
   {
@@ -3997,7 +3997,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-29T20:12:33Z"),
       kind: "text",
       summary:
-        "The first step is to elevate the privileges: sudo -l has python3 password-free, directly raise root. Then use the DMZ as a springboard to perform an intranet survival scan (fscan), focusing on finding domain controllers and CI/CD servers.",
+        "The recorded DMZ account is limited. The notes include a local privilege change. This preview did not run it.",
     },
     {
       seq: 4,
@@ -4013,7 +4013,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       kind: "tool_use",
       tool: "bash",
       tool_use_id: "c31",
-      summary: "proxychains curl -s http://10.10.10.20:8080/script -o /dev/null -w '%{http_code}'",
+      summary: "Recorded a console check. This preview did not send it.",
     },
     {
       seq: 6,
@@ -4031,7 +4031,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-29T22:45:06Z"),
       kind: "text",
       summary:
-        "There is a play - Script Console has no authentication, directly Groovy RCE. I've injected a hint to let the worker prioritize this one. After taking it, pay attention to the credential database, which may contain domain accounts.",
+        "The stored console response did not require a sign-in. This preview did not send a new request.",
     },
     {
       seq: 8,
@@ -4048,7 +4048,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       summary:
         "Recorded observation. This preview did not run it.",
     },
-    { seq: 10, worker: "user", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "The target is captured, let's summarize the attack chain." },
+    { seq: 10, worker: "user", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "The recorded goal is met. What should the note say?" },
     {
       seq: 11,
       worker: "mainagent",
