@@ -52,6 +52,22 @@ test("fixture timestamps stay inside the current window", () => {
   }
 });
 
+test("company asset counts match the asset rows", () => {
+  for (const company of companies) {
+    const rows = assets.filter((asset) => asset.company_id === company.id);
+    assert.equal(rows.length, company.asset_count, company.name);
+  }
+  assert.equal(companies.find((company) => company.id === 1)?.asset_count, 26);
+  assert.equal(companies.find((company) => company.id === 2)?.asset_count, 4);
+});
+
+test("session text does not quote a procedure or a credential", () => {
+  const source = readFileSync(new URL("./data.ts", import.meta.url), "utf8");
+  const banned = /sqlmap|impacket-|psexec|secretsdump|JdbcRowSet|JNDIExploit|hashcat|git-dumper|crackmapexec|ReverseShell|ldap:\/\/|os\.system|sudo python|NOPASSWD|admin\/admin123|Acme@2021|Deploy@Acme|Sql@2020/i;
+  const hit = source.split("\n").find((line) => banned.test(line));
+  assert.equal(hit, undefined);
+});
+
 test("linked ids exist and retired strings are gone", () => {
   for (const finding of findings) assert.ok(finding.task_id && taskIDs.has(finding.task_id), finding.id);
   for (const record of llmRecords) assert.ok(record.task_id && taskIDs.has(record.task_id), String(record.id));
