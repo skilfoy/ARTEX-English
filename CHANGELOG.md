@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Preview actions now change the open session or say they are not available. Pausing a task, sending a chat line, deciding the held approval, and creating a task from a template survive navigation and reset on refresh.
+- Replaced the README gallery with frames from the current production preview. The dashboard frame shows the token chart, and the findings frame shows Northwind.
 - The sidebar company control filters tasks, assets, and findings to Acme or Northwind. Clearing it shows both.
 - Translated the current interface, mock preview, backend messages, agent prompts, scripts, and source documentation into English.
 - Added English screenshots of the hosted preview to the README. The original Chinese screenshot set was not in this fork.
