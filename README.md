@@ -127,6 +127,14 @@ NEXT_PUBLIC_MOCK=1 npm run build
 
 For integrated local development, `./dev.sh` starts the Go backend, traffic proxy, and Next.js development server. The [cloud deployment guide](infra/README.md) covers virtual machines, DNS, HTTPS, and operations.
 
+## Safe live lab
+
+Do not point this software at the public internet.
+
+The only live target is [Vivarium](https://github.com/skilfoy/vivarium), a private lab. Start that habitat, import `range-scope.json`, and stay inside the CIDR list in that file. A destination the file denies is a failed run, not a finding. Model calls stay on the operator machine. A person approves anything past the lab's safety ceiling.
+
+This section adds no tools, skills, prompts, or other capability.
+
 ## License and use conditions
 
 ARTEX is licensed under the [GNU Affero General Public License, version 3](LICENSE). Preserve the license, source disclosure obligations, and attribution when distributing modified versions or offering them over a network.
