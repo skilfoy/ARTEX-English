@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { llmRecords } from "./data";
 import { mockHandle } from "./handler";
 
 test("each traffic row has its own body and filters stay exact", async () => {
@@ -163,4 +164,38 @@ test("commands, approvals, judge usage, and notifications stay on the campaign",
   const logs = await mockHandle<{ items: { text: string }[] }>("GET", "/logs/history");
   assert.equal(logs.items.length, 4);
   assert.ok(logs.items.some((line) => line.text.includes("t-shop-pay") && line.text.includes("f-10")));
+});
+
+test("the usage ledger counts the recorded calls", async () => {
+  const usage = await mockHandle<{
+    by_profile: { profile_name: string; calls: number; tasks: number; input_tokens: number; output_tokens: number }[];
+    daily: { input_tokens: number; output_tokens: number }[];
+  }>("GET", "/tokens/usage?days=365");
+  const profile = usage.by_profile[0];
+  assert.equal(usage.by_profile.length, 1);
+  assert.equal(profile?.profile_name, "Claude Opus 4.8");
+  assert.equal(profile?.calls, llmRecords.length);
+  assert.equal(profile?.tasks, new Set(llmRecords.map((row) => row.task_id)).size);
+  assert.equal(
+    profile?.input_tokens,
+    llmRecords.reduce((sum, row) => sum + row.input_tokens, 0),
+  );
+  assert.equal(
+    profile?.output_tokens,
+    llmRecords.reduce((sum, row) => sum + row.output_tokens, 0),
+  );
+  assert.equal(
+    usage.daily.reduce((sum, row) => sum + row.input_tokens, 0),
+    profile?.input_tokens,
+  );
+  const byModel = await mockHandle<{ models: { model: string; calls: number; input_tokens: number }[] }>(
+    "GET",
+    "/llm/records/by-model?task=t-acme-web",
+  );
+  assert.deepEqual(
+    byModel.models.map((row) => row.model),
+    ["claude-opus-4-8"],
+  );
+  assert.equal(byModel.models[0]?.calls, llmRecords.length);
+  assert.equal(byModel.models[0]?.input_tokens, profile?.input_tokens);
 });

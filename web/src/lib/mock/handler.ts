@@ -1053,22 +1053,64 @@ function mockRequestedDays(raw: string | null, fallback: number): number {
   return Math.min(366, Math.max(1, days));
 }
 
-// Daily buckets end today so dashboard ranges of 7, 30, 90, 180, and 365 all have points.
-function mockUsageDaily(days: number) {
-  const profile = D.llmProfiles.find((item) => item.is_default)?.name ?? "default";
-  return Array.from({ length: days }, (_, index) => {
-    const day = new Date();
-    day.setUTCHours(0, 0, 0, 0);
-    day.setUTCDate(day.getUTCDate() - (days - 1 - index));
-    const wave = 20000 + Math.round(15000 * Math.abs(Math.sin(index / 3)));
-    return {
-      profile_name: profile,
-      date: day.toISOString().slice(0, 10),
-      input_tokens: wave,
-      output_tokens: Math.round(wave * 0.08),
-      cache_read_tokens: Math.round(wave * 0.7),
+// Daily points are the recorded model calls, not a separate invented series.
+function mockUsageFromRecords(days: number) {
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
+  const startKey = start.toISOString().slice(0, 10);
+  const rows = D.llmRecords.filter((row) => row.ts.slice(0, 10) >= startKey);
+  const byProfile = new Map<
+    string,
+    { calls: number; tasks: Set<string>; input: number; output: number; cacheRead: number; cacheWrite: number }
+  >();
+  const daily = new Map<
+    string,
+    { profile_name: string; date: string; input_tokens: number; output_tokens: number; cache_read_tokens: number }
+  >();
+  for (const row of rows) {
+    const name = row.profile_name;
+    const bucket = byProfile.get(name) ?? {
+      calls: 0,
+      tasks: new Set<string>(),
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
     };
-  });
+    bucket.calls += 1;
+    if (row.task_id) bucket.tasks.add(row.task_id);
+    bucket.input += row.input_tokens;
+    bucket.output += row.output_tokens;
+    bucket.cacheRead += row.cache_read;
+    bucket.cacheWrite += row.cache_write;
+    byProfile.set(name, bucket);
+    const date = row.ts.slice(0, 10);
+    const key = `${name}|${date}`;
+    const day = daily.get(key) ?? {
+      profile_name: name,
+      date,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+    };
+    day.input_tokens += row.input_tokens;
+    day.output_tokens += row.output_tokens;
+    day.cache_read_tokens += row.cache_read;
+    daily.set(key, day);
+  }
+  return {
+    by_profile: [...byProfile.entries()].map(([profile_name, bucket]) => ({
+      profile_name,
+      calls: bucket.calls,
+      tasks: bucket.tasks.size,
+      input_tokens: bucket.input,
+      output_tokens: bucket.output,
+      cache_read_tokens: bucket.cacheRead,
+      cache_write_tokens: bucket.cacheWrite,
+    })),
+    daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date) || a.profile_name.localeCompare(b.profile_name)),
+  };
 }
 
 // The fixture covers 30 days. Longer ranges keep those days and extend backward.
@@ -1982,45 +2024,37 @@ function route(m: string, path: string, seg: string[], q: URLSearchParams, b: Re
 
   // ── Global llm_usage Aggregation (new version of dashboard view,demo)──
   if (path === "/tokens/usage") {
-    const days = mockRequestedDays(q.get("days"), 365);
-    return {
-      by_profile: [
-        {
-          profile_name: D.llmProfiles.find((item) => item.is_default)?.name ?? "default",
-          calls: 60,
-          tasks: 4,
-          input_tokens: 1570000,
-          output_tokens: 110000,
-          cache_read_tokens: 1120000,
-          cache_write_tokens: 140000,
-        },
-      ],
-      daily: mockUsageDaily(days),
-    };
+    return mockUsageFromRecords(mockRequestedDays(q.get("days"), 365));
   }
 
-  // ── By model token Dosage(demo:An example)──
-  if (path === "/llm/records/by-model")
+  // ── By model token Dosage(demo: summed from the recorded calls)──
+  if (path === "/llm/records/by-model") {
+    const task = q.get("task") ?? "";
+    const rows = D.llmRecords.filter((row) => !task || row.task_id === task);
+    const byModel = new Map<
+      string,
+      { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number }
+    >();
+    for (const row of rows) {
+      const bucket = byModel.get(row.model) ?? { calls: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+      bucket.calls += 1;
+      bucket.input += row.input_tokens;
+      bucket.output += row.output_tokens;
+      bucket.cacheRead += row.cache_read;
+      bucket.cacheWrite += row.cache_write;
+      byModel.set(row.model, bucket);
+    }
     return {
-      models: [
-        {
-          model: "claude-opus-4-6",
-          calls: 42,
-          input_tokens: 1250000,
-          output_tokens: 86000,
-          cache_read_tokens: 940000,
-          cache_write_tokens: 120000,
-        },
-        {
-          model: "claude-haiku-4-5",
-          calls: 18,
-          input_tokens: 320000,
-          output_tokens: 24000,
-          cache_read_tokens: 180000,
-          cache_write_tokens: 20000,
-        },
-      ],
+      models: [...byModel.entries()].map(([model, bucket]) => ({
+        model,
+        calls: bucket.calls,
+        input_tokens: bucket.input,
+        output_tokens: bucket.output,
+        cache_read_tokens: bucket.cacheRead,
+        cache_write_tokens: bucket.cacheWrite,
+      })),
     };
+  }
 
   // ── Workspace File Manager. Reads come from the fixture. Writes are refused. ──
   if (path === "/workspace/list") return D.workspaceList(q.get("path") ?? "");

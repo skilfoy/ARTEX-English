@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Company asset counts and the usage ledger now match the rows. The session no longer quotes commands, payloads, or credentials.
 - Replaced the README gallery with frames from the current production preview. The dashboard frame shows the token chart, and the findings frame shows Northwind.
 - The sidebar company control filters tasks, assets, and findings to Acme or Northwind. Clearing it shows both.
 - Translated the current interface, mock preview, backend messages, agent prompts, scripts, and source documentation into English.
