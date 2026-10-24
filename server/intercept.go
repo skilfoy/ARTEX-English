@@ -16,6 +16,7 @@ import (
 	"github.com/skilfoy/ARTEX-English/guard"
 	"github.com/skilfoy/ARTEX-English/intercept"
 	"github.com/skilfoy/ARTEX-English/llmrec"
+	"github.com/skilfoy/ARTEX-English/program"
 )
 
 // judgeWorkerLane is the usage-ledger "worker" label for intercept fallback-judge
@@ -25,7 +26,9 @@ const judgeWorkerLane = "judge"
 // chatGuard returns a guard wired with the manager's interceptor, used for chat
 // conversations. Called once per applyLLM so a new LLM config always gets a fresh guard.
 func (s *Server) chatGuard() *guard.Guard {
-	return guard.NewWithInterceptor(s.m.interceptor)
+	g := guard.NewWithInterceptor(s.m.interceptor)
+	g.SetScope(program.ProcessScope())
+	return g
 }
 
 // wireInterceptReviewer installs the LLM fallback judge into the interceptor. The

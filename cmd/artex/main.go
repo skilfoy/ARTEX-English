@@ -18,6 +18,7 @@ import (
 
 	"github.com/skilfoy/ARTEX-English/agent"
 	"github.com/skilfoy/ARTEX-English/config"
+	"github.com/skilfoy/ARTEX-English/program"
 	"github.com/skilfoy/ARTEX-English/selfupdate"
 	"github.com/skilfoy/ARTEX-English/server"
 )
@@ -90,6 +91,35 @@ func run() int {
 		log.Printf("[config] Config file %s not found; checking environment variables, including ARTEX_PG_DSN", cfgPath)
 	}
 
+	if err := program.InstallFromEnv(); err != nil {
+		log.Fatalf("scope file: %v", err)
+	}
+	if program.ProcessScope() != nil {
+		log.Printf("[scope] fail-closed scope loaded from ARTEX_SCOPE_FILE")
+	}
+	if mountPath := os.Getenv("ARTEX_MOUNT"); mountPath != "" {
+		mount, err := program.OpenMount(mountPath)
+		if err != nil {
+			log.Fatalf("mount: %v", err)
+		}
+		graph, err := mount.Graph()
+		if err != nil {
+			log.Fatalf("mount graph: %v", err)
+		}
+		log.Printf("[mount] %s files=%d edges=%d", mount.Root, len(graph.Nodes), len(graph.Edges))
+	}
+	if manifestPath := os.Getenv("ARTEX_MCP_MANIFEST"); manifestPath != "" {
+		raw, err := os.ReadFile(manifestPath)
+		if err != nil {
+			log.Fatalf("mcp manifest: %v", err)
+		}
+		servers, err := program.ParseManifest(raw)
+		if err != nil {
+			log.Fatalf("mcp manifest: %v", err)
+		}
+		log.Printf("[mcp] %d servers in manifest", len(servers))
+	}
+
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	ctx, shutdown := shutdownContext(sigCtx)
@@ -112,6 +142,11 @@ func run() int {
 		skillDir = abs
 	}
 	log.Printf("[config] Skill directory: %s", skillDir)
+	if skills, err := program.ScanSkills(skillDir); err != nil {
+		log.Printf("[program] skill scan: %v", err)
+	} else {
+		log.Printf("[program] skills %d, hard gates %d", len(skills), program.HardGateCount(skills))
+	}
 	srv := server.New(ctx, mgr, skillDir, *dataDir, config.KeyDir())
 	httpSrv := &http.Server{
 		Addr:              *addr,

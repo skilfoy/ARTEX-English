@@ -1,8 +1,8 @@
 // Package guard implements the safety boundary layer (docs §11): an audit log,
 // user-configured intercept-rule evaluation, and Observer/G5 failure attribution.
 // Every tool call passes through the PreToolUse hook before executing.
-// (The RoE authorization-scope mechanism was removed; a replacement may be added
-// later.) Destructive/exfil gating is no longer hard-coded here — it lives in the
+// (A loaded program.Scope is the authorization edge. With no scope attached,
+// behavior matches the historical pass-through so existing tasks keep running.) Destructive/exfil gating is no longer hard-coded here — it lives in the
 // DB intercept rules (seeded as ordinary [Built-in] rules, so users can disable or
 // delete them), evaluated via applyIntercept.
 package guard
@@ -16,6 +16,7 @@ import (
 
 	"github.com/Autumn-27/norma/hook"
 	"github.com/skilfoy/ARTEX-English/intercept"
+	"github.com/skilfoy/ARTEX-English/program"
 )
 
 // AuditEntry records one gated tool call.
@@ -34,6 +35,7 @@ type Guard struct {
 	attrib      map[string]int // failure attribution counts (Observer / G5)
 	reg         *hook.Registry
 	interceptor *intercept.Interceptor // optional; nil disables user-configured rules
+	scope       *program.Scope
 }
 
 // New creates a Guard without user-configured intercept rules (used for pentest
@@ -49,6 +51,17 @@ func newGuard(ic *intercept.Interceptor) *Guard {
 		On(hook.PreToolUse, g.preToolUse).
 		On(hook.PostToolUse, g.postToolUse)
 	return g
+}
+
+// SetScope attaches a fail-closed scope. Nil clears the guard-local scope.
+// A nil guard-local scope still honors program.ProcessScope when one is installed.
+func (g *Guard) SetScope(s *program.Scope) { g.scope = s }
+
+func (g *Guard) activeScope() *program.Scope {
+	if g.scope != nil {
+		return g.scope
+	}
+	return program.ProcessScope()
 }
 
 // Hooks returns the hook registry to attach to an agent session.
@@ -73,6 +86,12 @@ func (g *Guard) preToolUse(ctx context.Context, ev hook.Event) hook.Result {
 		}
 		_ = json.Unmarshal(ev.Input, &in)
 		cmd = in.Text
+	}
+	if scope := g.activeScope(); scope != nil {
+		decision := scope.Check(string(ev.Input))
+		if !decision.Allowed {
+			return g.block(ev.ToolName, systemBlockMessage(decision.Reason), cmd)
+		}
 	}
 	g.record(ev.ToolName, "allow", "", cmd)
 	return g.applyIntercept(ctx, ev)

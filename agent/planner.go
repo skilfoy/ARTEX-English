@@ -14,6 +14,7 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 	"github.com/skilfoy/ARTEX-English/db"
 	"github.com/skilfoy/ARTEX-English/intercept"
+	"github.com/skilfoy/ARTEX-English/program"
 )
 
 // Planner is the event-driven LLM planner (docs §4.3): each time the asset or
@@ -266,7 +267,10 @@ func workerOutput(ts *db.ExplorationStore, id int64) string {
 	if out == "" {
 		out = pick.Summary
 	}
-	return truncOutput(out, 800)
+	if out == "(could not retrieve worker output)" || out == "(no worker output recorded yet)" {
+		return out
+	}
+	return program.WrapUntrusted(truncOutput(out, 800), "WORKER_OUTPUT")
 }
 
 // truncOutput caps a worker-output blob so the trigger context doesn't bloat the

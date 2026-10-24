@@ -20,6 +20,7 @@ import (
 	"github.com/skilfoy/ARTEX-English/enrich"
 	"github.com/skilfoy/ARTEX-English/guard"
 	"github.com/skilfoy/ARTEX-English/intercept"
+	"github.com/skilfoy/ARTEX-English/program"
 	"github.com/skilfoy/ARTEX-English/traffic"
 )
 
@@ -849,8 +850,14 @@ func taskFromPG(pt *pgdb.Task, store *pgdb.ExplorationStore, ic *intercept.Inter
 		TimeoutSeconds: pt.TimeoutSeconds, PlanHeartbeatSeconds: pt.PlanHeartbeatSeconds,
 		CoverageEnabled: pt.CoverageEnabled,
 		FirstRunAt:      unixOrZero(pt.FirstRunAt), DeadlineAt: unixOrZero(pt.DeadlineAt),
-		Store: store, Guard: guard.NewWithInterceptor(ic), notify: make(chan struct{}, 1),
+		Store: store, Guard: scopedGuard(ic), notify: make(chan struct{}, 1),
 	}
+}
+
+func scopedGuard(ic *intercept.Interceptor) *guard.Guard {
+	g := guard.NewWithInterceptor(ic)
+	g.SetScope(program.ProcessScope())
+	return g
 }
 
 // UpdateTaskMetadata changes list-only task metadata without interrupting any

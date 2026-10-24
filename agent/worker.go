@@ -360,7 +360,9 @@ func (w *Worker) ExecuteWithMessage(ctx context.Context, name string, taskID int
 
 func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.AssetStore, ts *db.ExplorationStore, intent *db.Node, hooks harness.HookRunner, emit func(db.Activity), enr EnrichTrigger, notifyFinding func(int64, string), requestID, message string) (harness.TerminalReason, WriteCounts, error) {
 	tsx := NewToolSet(ts, name)
-	tsx.SetFindingRecorder(w.findingRecorder)
+	if w.findingRecorder != nil {
+		tsx.SetFindingRecorder(classifyingRecorder{inner: w.findingRecorder, workDir: w.workDir, taskID: taskID})
+	}
 	tsx.SetTaskID(taskID)
 	coverageEnabled := as == nil || as.CoverageEnabled(taskID)
 	tsx.SetCoverageEnabled(coverageEnabled)
@@ -370,6 +372,7 @@ func (w *Worker) execute(ctx context.Context, name string, taskID int64, as *db.
 	tsx.SetOwnerNode(intent.ID)         // assets this worker discovers anchor to its intent → visible to the task
 	tsx.SetEnrich(enr)                  // async DNS/HTTP auto-completion for assets this worker writes
 	tsx.SetNotifyFinding(notifyFinding) // when report_finding is stored, wake the planner immediately with which intent and finding
+	noteProgramDesk(w.workDir, taskID, "worker", name)
 	// base = built-in worker tools ∪ host tools (traffic) ∪ default tools (incl. Bash);
 	// then augment with the agent's visible skills/MCP. During the SDK settlement
 	// phase, Bash is hidden via Settlement.DisabledTools (no local gating needed).
