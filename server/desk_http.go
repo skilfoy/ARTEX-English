@@ -170,19 +170,35 @@ func (s *Server) taskDeskReview(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<12)).Decode(&body); err != nil || body.Path == "" {
 		writeErr(w, 400, "path is required")
 		return
 	}
-	if err := desk.NoteReview(body.Path); err != nil {
-		writeErr(w, 400, err.Error())
+	root := program.MountRoot()
+	if root == "" {
+		writeErr(w, 409, "no mount")
+		return
+	}
+	report, err := desk.ReviewPatch(root, body.Path)
+	if err != nil {
+		if saveErr := desk.Save(); saveErr != nil {
+			writeErr(w, 500, saveErr.Error())
+			return
+		}
+		code := 400
+		if len(report.Files) > 0 {
+			code = 409
+		}
+		writeErr(w, code, err.Error())
 		return
 	}
 	if err := desk.Save(); err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
-	writeJSON(w, 200, deskView(desk))
+	view := deskView(desk)
+	view["patch"] = report
+	writeJSON(w, 200, view)
 }
 
 func (s *Server) taskDeskLease(w http.ResponseWriter, r *http.Request) {

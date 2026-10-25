@@ -115,3 +115,35 @@ func TestProgramSkillsSkipsPayloadNames(t *testing.T) {
 		t.Fatalf("skills: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestDeskReviewChecksPatch(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(root+"/portal", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := "package portal\nconst Version = \"1\"\n"
+	if err := os.WriteFile(root+"/portal/main.go", []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	patch := "--- a/portal/main.go\n+++ b/portal/main.go\n@@ -1,2 +1,2 @@\n package portal\n-const Version = \"1\"\n+const Version = \"2\"\n"
+	if err := os.MkdirAll(root+"/.artex-patches", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root+"/.artex-patches/1-note.patch", []byte(patch), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	program.InstallMountRoot(root)
+	t.Cleanup(func() { program.InstallMountRoot("") })
+	s := &Server{m: &Manager{dir: t.TempDir()}}
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks/9/desk/review", strings.NewReader(`{"path":".artex-patches/1-note.patch"}`))
+	req.SetPathValue("id", "9")
+	rec := httptest.NewRecorder()
+	s.taskDeskReview(rec, req)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"applied":false`) {
+		t.Fatalf("review: %d %s", rec.Code, rec.Body.String())
+	}
+	got, err := os.ReadFile(root + "/portal/main.go")
+	if err != nil || string(got) != source {
+		t.Fatalf("source changed: %q", got)
+	}
+}

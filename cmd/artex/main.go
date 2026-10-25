@@ -107,6 +107,7 @@ func run() int {
 			log.Fatalf("mount graph: %v", err)
 		}
 		program.InstallMountGraph(graph)
+		program.InstallMountRoot(mount.Root)
 		log.Printf("[mount] %s files=%d edges=%d", mount.Root, len(graph.Nodes), len(graph.Edges))
 	}
 	if manifestPath := os.Getenv("ARTEX_MCP_MANIFEST"); manifestPath != "" {

@@ -90,6 +90,7 @@ type manifestSet struct {
 
 var processManifest atomic.Pointer[manifestSet]
 var processMount atomic.Pointer[CodeGraph]
+var processMountRoot atomic.Pointer[string]
 
 // InstallManifest publishes the MCP allowlist. Nil clears it, which restores
 // the historical pass-through for tool names.
@@ -129,3 +130,21 @@ func InstallMountGraph(graph *CodeGraph) { processMount.Store(graph) }
 
 // MountGraph returns the installed code graph, or nil.
 func MountGraph() *CodeGraph { return processMount.Load() }
+
+// InstallMountRoot records the tree the graph was built from. Empty clears it.
+func InstallMountRoot(root string) {
+	if root == "" {
+		processMountRoot.Store(nil)
+		return
+	}
+	processMountRoot.Store(&root)
+}
+
+// MountRoot returns the installed mount, or an empty string.
+func MountRoot() string {
+	root := processMountRoot.Load()
+	if root == nil {
+		return ""
+	}
+	return *root
+}

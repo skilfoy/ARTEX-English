@@ -362,6 +362,9 @@ func (p *Planner) Plan(ctx context.Context, taskID int64, as *db.AssetStore, ts 
 	// The cost is that a long round may compact the situation (planner rounds are usually
 	// short, so the risk is low). situational is spliced into input below.
 	situational := renderTriggers(ts, triggers) + renderGraphOverview(tsx.graphOverviewData())
+	if note := program.CodeGraphNote(); note != "" {
+		situational += "\n\n" + note
+	}
 	// Task-level deadline / final mode (injected via ctx; see taskclock.go). On the final
 	// round, splice the task-timeout wrap-up into this round's user input (with situational)
 	// as this round's operating instruction: judge goals only, and do not produce a new intent.

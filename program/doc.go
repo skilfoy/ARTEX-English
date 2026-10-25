@@ -10,4 +10,7 @@
 // A scope file uses the Vivarium range-scope shape. Default is deny. A deny
 // network wins over an allow network. Names that are not listed are out.
 // The operator vault and flag values are not accepted by this package.
+// A mounted tree contributes paths and import edges to the planner. File
+// bodies stay on disk. A patch under .artex-patches can be checked against
+// that tree. The check does not apply the patch and does not open a pull request.
 package program
