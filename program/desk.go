@@ -22,6 +22,7 @@ type Desk struct {
 	Log    []Event
 	Team   Fireteam
 	Record *Run
+	Lease  Lease
 }
 
 // Graph is the engagement graph. Kinds are fixed so a label cannot smuggle
@@ -86,7 +87,7 @@ type Run struct {
 
 var nodeKinds = map[string]bool{
 	"asset": true, "identity": true, "service": true,
-	"finding": true, "evidence": true, "scope-group": true,
+	"finding": true, "evidence": true, "scope-group": true, "plane": true,
 }
 
 var roles = map[string]bool{
@@ -98,6 +99,14 @@ type deskFile struct {
 	Log    []Event  `json:"log"`
 	Team   Fireteam `json:"team"`
 	Record *Run     `json:"record,omitempty"`
+	Lease  Lease    `json:"lease,omitempty"`
+}
+
+// Lease is a short hold so two operators do not confirm the same desk.
+// An empty or expired lease blocks nobody.
+type Lease struct {
+	Owner string    `json:"owner,omitempty"`
+	Until time.Time `json:"until,omitempty"`
 }
 
 // Open loads a desk directory, creating it if needed.
@@ -121,6 +130,7 @@ func Open(dir string) (*Desk, error) {
 	desk.Log = file.Log
 	desk.Team = file.Team
 	desk.Record = file.Record
+	desk.Lease = file.Lease
 	return desk, nil
 }
 
@@ -130,7 +140,7 @@ func (d *Desk) path() string { return filepath.Join(d.dir, "desk.json") }
 func (d *Desk) Save() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	raw, err := json.MarshalIndent(deskFile{Graph: d.Graph, Log: d.Log, Team: d.Team, Record: d.Record}, "", "  ")
+	raw, err := json.MarshalIndent(deskFile{Graph: d.Graph, Log: d.Log, Team: d.Team, Record: d.Record, Lease: d.Lease}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -148,6 +158,9 @@ func (d *Desk) AddNode(id, kind, label, ref string) error {
 	}
 	if id == "" || strings.ContainsAny(id, " \t\r\n") {
 		return fmt.Errorf("desk: bad node id")
+	}
+	if ok, reason := ScanText(label + "\n" + ref); !ok {
+		return fmt.Errorf("desk: %s", reason)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -194,6 +207,9 @@ func (d *Desk) Append(kind string, fields map[string]string) {
 	}
 	d.mu.Lock()
 	d.Log = append(d.Log, Event{At: time.Now().UTC(), Kind: kind, Fields: clean})
+	if len(d.Log) > 2000 {
+		d.Log = d.Log[len(d.Log)-2000:]
+	}
 	d.mu.Unlock()
 }
 
@@ -305,6 +321,49 @@ func (d *Desk) MayWrite() bool {
 		return true
 	}
 	return d.Team.Confirmed
+}
+
+// Acquire holds the desk for owner until ttl elapses. A second owner is refused
+// while the hold is unexpired.
+func (d *Desk) Acquire(owner string, ttl time.Duration) error {
+	if strings.TrimSpace(owner) == "" || ttl <= 0 {
+		return fmt.Errorf("desk: bad lease")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.Lease.Owner != "" && d.Lease.Owner != owner && time.Now().Before(d.Lease.Until) {
+		return fmt.Errorf("desk: leased to %s", d.Lease.Owner)
+	}
+	d.Lease.Owner = owner
+	d.Lease.Until = time.Now().Add(ttl)
+	return nil
+}
+
+// Allows reports whether owner may confirm. An empty or expired lease allows
+// anyone. A live lease allows only its owner.
+func (d *Desk) Allows(owner string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.Lease.Owner == "" || !time.Now().Before(d.Lease.Until) {
+		return true
+	}
+	return owner != "" && owner == d.Lease.Owner
+}
+
+// Recent returns the last n log events. This is the executor view: the log,
+// not a generated story.
+func (d *Desk) Recent(n int) []Event {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if n > len(d.Log) {
+		n = len(d.Log)
+	}
+	if n <= 0 {
+		return nil
+	}
+	out := make([]Event, n)
+	copy(out, d.Log[len(d.Log)-n:])
+	return out
 }
 
 // RecordFixture stores a score for a scripted walk. It is not a harness
