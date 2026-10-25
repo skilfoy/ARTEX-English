@@ -65,3 +65,32 @@ func TestScopeBlocksOutOfRangeTarget(t *testing.T) {
 		t.Fatal("local command was blocked")
 	}
 }
+
+func TestHardGateAndManifest(t *testing.T) {
+	program.SetHardGate(true)
+	defer program.SetHardGate(false)
+	g := New()
+	blocked := func(tool, cmd string) bool {
+		input, _ := json.Marshal(map[string]string{"command": cmd})
+		b, _, _ := g.Hooks().PreToolUse(context.Background(), tool, input)
+		return b
+	}
+	if !blocked("Bash", "curl https://example.com/") {
+		t.Fatal("hard gate allowed a remote call with no scope")
+	}
+	if blocked("Bash", "ls range-scope.json") {
+		t.Fatal("hard gate blocked a local command")
+	}
+	servers, err := program.ParseManifest([]byte(`[{"name":"browser","url":"http://127.0.0.1:9/mcp"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	program.InstallManifest(servers)
+	defer program.InstallManifest(nil)
+	if !blocked("mcp__other__navigate", "ls") {
+		t.Fatal("unlisted mcp server was allowed")
+	}
+	if blocked("mcp__browser__navigate", "ls") {
+		t.Fatal("listed mcp server was blocked")
+	}
+}

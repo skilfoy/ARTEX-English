@@ -93,8 +93,12 @@ func TestDeskFireteamAndLog(t *testing.T) {
 	if err := desk.AddRole("web", "read"); err != nil {
 		t.Fatal(err)
 	}
+	if !desk.MayWrite() {
+		t.Fatal("advisory team must not block writes")
+	}
+	desk.SetStrict(true)
 	if desk.MayWrite() {
-		t.Fatal("unconfirmed team may write")
+		t.Fatal("unconfirmed strict team may write")
 	}
 	if err := desk.MarkDone("web"); err != nil {
 		t.Fatal(err)
@@ -207,5 +211,70 @@ func TestScanSkillsHardGate(t *testing.T) {
 	}
 	if len(skills) != 1 || !skills[0].HardGate || skills[0].Summary != "Scope gate" {
 		t.Fatalf("%+v", skills)
+	}
+}
+
+func TestAdvisorySeatAndFixture(t *testing.T) {
+	dir := t.TempDir()
+	desk, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desk.SeatAdvisory(AdvisoryRoles)
+	desk.SeatAdvisory(AdvisoryRoles)
+	if !desk.MayWrite() {
+		t.Fatal("advisory seats blocked a write")
+	}
+	if len(desk.Team.Members) != len(AdvisoryRoles) {
+		t.Fatalf("seats = %d", len(desk.Team.Members))
+	}
+	scope, err := Parse([]byte(`{"default":"deny","allow":[{"cidr":"10.16.0.0/24"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := desk.RecordFixture(scope.Hash()); err != nil {
+		t.Fatal(err)
+	}
+	if err := desk.Save(); err != nil {
+		t.Fatal(err)
+	}
+	again, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Record == nil || again.Record.Harness != "fixture" || len(again.Record.ScopeHash) != 64 {
+		t.Fatalf("fixture record missing: %+v", again.Record)
+	}
+}
+
+func TestRemoteAndManifestGates(t *testing.T) {
+	if MentionsRemote("ls range-scope.json") {
+		t.Fatal("a file name is not a remote host")
+	}
+	if MentionsRemote("curl http://127.0.0.1:8080/health") {
+		t.Fatal("loopback is not a remote host")
+	}
+	if !MentionsRemote("curl https://claims.northline.lab/") {
+		t.Fatal("a named host should count as remote")
+	}
+	SetHardGate(true)
+	defer SetHardGate(false)
+	if !HardGateOn() {
+		t.Fatal("hard gate did not stick")
+	}
+	servers, err := ParseManifest([]byte(`[{"name":"browser","url":"http://127.0.0.1:9/mcp","phases":["web"]}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	InstallManifest(servers)
+	defer InstallManifest(nil)
+	if ok, _ := ManifestAllows("Bash"); !ok {
+		t.Fatal("non-mcp tool was refused")
+	}
+	if ok, _ := ManifestAllows("mcp__browser__navigate"); !ok {
+		t.Fatal("listed mcp server was refused")
+	}
+	if ok, reason := ManifestAllows("mcp__other__navigate"); ok || reason == "" {
+		t.Fatal("unlisted mcp server was allowed")
 	}
 }

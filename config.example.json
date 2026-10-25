@@ -18,7 +18,7 @@
     }
   },
 
-  "_comment_program": "Optional environment variables. ARTEX_SCOPE_FILE is a Vivarium range-scope.json; when set, the guard denies tool input that names a target outside it. ARTEX_MOUNT is a source tree the operator owns; startup builds a file-and-import graph and does not modify the tree. ARTEX_MCP_MANIFEST is a JSON list of MCP servers. authRef is an environment variable name, never a secret. None of the three are required.",
+  "_comment_program": "Optional environment variables. ARTEX_SCOPE_FILE is a Vivarium range-scope.json; when set, the guard denies tool input that names a target outside it. If the scopesentry skill is installed and that variable is empty, remote tool input is refused until a scope file is loaded. Local commands stay allowed. ARTEX_MOUNT is a source tree the operator owns; startup builds a file-and-import graph and does not modify the tree. ARTEX_MCP_MANIFEST is a JSON list of MCP servers; mcp tool names must name a server in that list. authRef is an environment variable name, never a secret. None of the three are required.",
 
   "_comment_skill_dir": "Skill root (one skill per subdirectory, including SKILL.md). Precedence: environment variable ARTEX_SKILL_DIR > this field > default (skills/ next to the executable). Leave this field empty or delete it to use the default. Relative paths are resolved against the current working directory.",
   "skill_dir": "/opt/artex/skills"

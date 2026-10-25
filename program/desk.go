@@ -53,12 +53,14 @@ type Event struct {
 	Fields map[string]string `json:"fields,omitempty"`
 }
 
-// Fireteam is a set of specialist roles sharing one desk. A finding write is
-// allowed when the team is empty or after Confirm.
+// Fireteam is a set of specialist roles sharing one desk.
+// Strict refuses a finding write until Confirm. The default is advisory:
+// a seated team is recorded and does not block writes.
 type Fireteam struct {
 	Members   []Member `json:"members"`
 	Collected bool     `json:"collected"`
 	Confirmed bool     `json:"confirmed"`
+	Strict    bool     `json:"strict,omitempty"`
 }
 
 // Member is one specialist. Note is a status, not a procedure.
@@ -272,15 +274,52 @@ func (d *Desk) Confirm() error {
 	return nil
 }
 
+// SetStrict turns the write gate on or off. Turning it on clears confirm
+// so a previously advisory team cannot write until it is collected again.
+func (d *Desk) SetStrict(on bool) {
+	d.mu.Lock()
+	d.Team.Strict = on
+	if on {
+		d.Team.Collected = false
+		d.Team.Confirmed = false
+	}
+	d.mu.Unlock()
+}
+
+// SeatAdvisory seats any missing roles. Errors for an unknown or already
+// seated role are ignored so a second worker start is a no-op. Strict is
+// left untouched.
+func (d *Desk) SeatAdvisory(roles []string) {
+	for _, role := range roles {
+		_ = d.AddRole(role, "advisory")
+	}
+}
+
 // MayWrite reports whether a finding may be recorded.
 // An empty team is not a fireteam, so writes stay allowed.
+// A seated team blocks only when Strict is set and Confirm has not run.
 func (d *Desk) MayWrite() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if len(d.Team.Members) == 0 {
+	if !d.Team.Strict || len(d.Team.Members) == 0 {
 		return true
 	}
 	return d.Team.Confirmed
+}
+
+// RecordFixture stores a score for a scripted walk. It is not a harness
+// result and it does not contact a network.
+func (d *Desk) RecordFixture(scopeHash string) error {
+	return d.SetRun(Run{
+		Harness:      "fixture",
+		Revision:     "catalog",
+		Model:        "none",
+		ScopeHash:    scopeHash,
+		Coverage:     0,
+		Precision:    1,
+		Depth:        0,
+		Reproducible: true,
+	})
 }
 
 // SetRun stores a score after checking its shape.

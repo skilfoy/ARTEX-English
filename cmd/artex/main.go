@@ -106,6 +106,7 @@ func run() int {
 		if err != nil {
 			log.Fatalf("mount graph: %v", err)
 		}
+		program.InstallMountGraph(graph)
 		log.Printf("[mount] %s files=%d edges=%d", mount.Root, len(graph.Nodes), len(graph.Edges))
 	}
 	if manifestPath := os.Getenv("ARTEX_MCP_MANIFEST"); manifestPath != "" {
@@ -117,6 +118,7 @@ func run() int {
 		if err != nil {
 			log.Fatalf("mcp manifest: %v", err)
 		}
+		program.InstallManifest(servers)
 		log.Printf("[mcp] %d servers in manifest", len(servers))
 	}
 
@@ -145,7 +147,11 @@ func run() int {
 	if skills, err := program.ScanSkills(skillDir); err != nil {
 		log.Printf("[program] skill scan: %v", err)
 	} else {
-		log.Printf("[program] skills %d, hard gates %d", len(skills), program.HardGateCount(skills))
+		gates := program.HardGateCount(skills)
+		if gates > 0 {
+			program.SetHardGate(true)
+		}
+		log.Printf("[program] skills %d, hard gates %d", len(skills), gates)
 	}
 	srv := server.New(ctx, mgr, skillDir, *dataDir, config.KeyDir())
 	httpSrv := &http.Server{

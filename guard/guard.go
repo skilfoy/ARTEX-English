@@ -92,6 +92,11 @@ func (g *Guard) preToolUse(ctx context.Context, ev hook.Event) hook.Result {
 		if !decision.Allowed {
 			return g.block(ev.ToolName, systemBlockMessage(decision.Reason), cmd)
 		}
+	} else if program.HardGateOn() && program.MentionsRemote(string(ev.Input)) {
+		return g.block(ev.ToolName, systemBlockMessage("hard gate: load a scope file before a remote call"), cmd)
+	}
+	if ok, reason := program.ManifestAllows(ev.ToolName); !ok {
+		return g.block(ev.ToolName, systemBlockMessage(reason), cmd)
 	}
 	g.record(ev.ToolName, "allow", "", cmd)
 	return g.applyIntercept(ctx, ev)

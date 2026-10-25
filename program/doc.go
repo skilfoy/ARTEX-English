@@ -3,7 +3,9 @@
 // It does not run tools and it does not describe how to attack anything. It
 // decides whether a target is inside a loaded scope file, fences text before
 // that text is put back into a prompt, and keeps the engagement record: the
-// graph, the run log, the fireteam, and the score.
+// graph, the run log, the fireteam, and the score. A seated fireteam is
+// advisory unless the desk is marked strict. Strict mode refuses a finding
+// until the operator confirms the team.
 //
 // A scope file uses the Vivarium range-scope shape. Default is deny. A deny
 // network wins over an allow network. Names that are not listed are out.
