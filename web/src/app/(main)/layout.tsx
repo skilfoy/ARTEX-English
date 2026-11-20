@@ -1,5 +1,6 @@
 "use client";
 
+import { Info } from "lucide-react";
 import type { ReactNode } from "react";
 import * as React from "react";
 
@@ -8,6 +9,7 @@ import { CompanyFilterProvider } from "@/components/company-filter";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { auth } from "@/lib/auth";
 import { getClientCookie } from "@/lib/cookie.client";
+import { MOCK } from "@/lib/mock/enabled";
 import {
   SIDEBAR_COLLAPSIBLE_VALUES,
   SIDEBAR_VARIANT_VALUES,
@@ -81,6 +83,20 @@ export default function Layout({ children }: Readonly<{ children: ReactNode }>) 
           "min-w-0 overflow-x-hidden",
         )}
       >
+        {MOCK && (
+          <aside
+            aria-label="Simulation notice"
+            className="flex shrink-0 items-start gap-2.5 border-b border-primary/25 bg-primary/10 px-4 py-2.5 text-sm text-foreground lg:px-6"
+          >
+            <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <p className="font-semibold">Interactive demo</p>
+              <p>
+                Tasks and activity are simulated. Try the controls freely. No scans run, and refreshing resets your changes.
+              </p>
+            </div>
+          </aside>
+        )}
         <MainContent>{children}</MainContent>
       </SidebarInset>
     </SidebarProvider>
