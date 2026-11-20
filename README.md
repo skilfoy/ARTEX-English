@@ -52,7 +52,7 @@ The hosted preview at [artex-english.vercel.app](https://artex-english.vercel.ap
 | Framework | Next.js |
 | Build command | `NEXT_PUBLIC_MOCK=1 npm run build` |
 
-The build command is included in [web/vercel.json](web/vercel.json). A Vercel deployment of `web/` provides the frontend preview only.
+The build command is included in [web/vercel.json](web/vercel.json). The hosted simulator uses sample data. Deployments configured for the [private workspace](docs/PRIVATE_WORKSPACE.md) also let verified accounts create empty workspaces for persistent defensive records.
 
 To run that same preview locally:
 

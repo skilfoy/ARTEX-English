@@ -18,7 +18,10 @@ const nextConfig = {
         trailingSlash: true,
       }
     : isMock
-      ? { images: { unoptimized: true } }
+      ? {
+          images: { unoptimized: true },
+          pageExtensions: ["hosted.ts", "tsx", "ts", "jsx", "js"],
+        }
       : {
           async rewrites() {
             const backend = process.env.AUTOPENTEST_API ?? "http://localhost:8787";
