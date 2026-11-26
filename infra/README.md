@@ -20,7 +20,9 @@ All three create a new network, a static public address, a disk sized for the ti
 - `artex`, the Go process with the English UI embedded, also only on the Compose network
 - `caddy`, published on ports 80 and 443 and reverse-proxying to `artex:8787`
 
-Ports 8787 and 8788 are not open on the public address. The traffic-recording proxy stays inside the Compose network, same as the local Compose file binding it to localhost.
+Ports 8787 and 8788 are not open on the public address. The traffic-recording proxy stays inside the Compose network, same as the local Compose file binding it to localhost. This distribution does not open an MCP port. MCP here is either a local stdio process or an outbound client. See [DISTRIBUTION.md](../DISTRIBUTION.md#mcp).
+
+Postgres and Caddy are pinned by digest in [image-pins.txt](image-pins.txt). Do not switch those services back to a floating tag.
 
 The upstream author restricts use to study and locally isolated technical verification and prohibits testing online or networked systems. These configurations describe infrastructure and do not change those stated conditions. Review the [license and usage section](../README.md#license-and-use-conditions) before provisioning or using the software.
 

@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- Postgres and Caddy are pinned to multi-arch index digests. See `infra/image-pins.txt`.
+- `DISTRIBUTION.md` records that this tree does not listen for MCP, and that the cloud compose file publishes only Caddy.
+
 ## [0.7.0-en.0] - 2026-11-26
 
 English operator distribution. Application code is BaaRai/ARTEX v0.7.0 (`22ae88af`). This tag packages that tree. It does not change the agent.

@@ -13,3 +13,5 @@ jobs:
         run: python3 detections/tests/test_pack.py
       - name: Known-bad image names stay inside the detection pack
         run: python3 scripts/check_supply_chain.py
+      - name: Base images stay pinned to the index digest
+        run: python3 scripts/check_image_pins.py
