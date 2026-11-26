@@ -7,12 +7,25 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/skilfoy/ARTEX-English/selfupdate"
 )
+
+// updatesEnabled is off unless an operator opts in. This tree is the v0.3.14
+// English archive: it must not phone home or swap its own binary by default.
+func updatesEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ARTEX_UPDATES"))) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
 
 // HTTP surface for one-click updates. Download, verification, and swap all live in the selfupdate
 // package; this file only owns the auth boundary, the single-flight lock, progress broadcast, and telling main "it is time to exit".
@@ -224,6 +237,14 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 		"boot_notice": boot.Detail,
 		"rolled_back": boot.RolledBack,
 	}
+	if !updatesEnabled() {
+		out["updates_enabled"] = false
+		out["has_update"] = false
+		out["reason"] = "In-app updates are disabled. This archive does not fetch or install release binaries. Set ARTEX_UPDATES=1 only if you accept that risk."
+		writeJSON(w, 200, out)
+		return
+	}
+	out["updates_enabled"] = true
 
 	// The top-bar hint uses the cache (the default). "Check for updates" passes force=1 and bypasses it.
 	force := r.URL.Query().Get("force") != ""
@@ -268,6 +289,10 @@ func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
 // Returns 202 immediately. The work runs on a background goroutine: a full download can take minutes,
 // and doing it inside the request would be cut off by a reverse-proxy timeout. Progress is /api/update/stream.
 func (s *Server) updateApply(w http.ResponseWriter, r *http.Request) {
+	if !updatesEnabled() {
+		writeErr(w, 403, "in-app updates are disabled")
+		return
+	}
 	current := BuildVersion
 
 	// Use the cache, so what gets installed is the version the user saw and confirmed in the UI.

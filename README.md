@@ -1,6 +1,10 @@
 # ARTEX English
 
-An English-language fork of [Autumn-27/ARTEX](https://github.com/Autumn-27/ARTEX), an autonomous security research system with a Go backend, PostgreSQL storage, and a Next.js interface.
+> **Archive line, do not expose.** This branch is the natural-English edition of upstream **v0.3.14**. That release has a publicly reported console authentication bypass. Later maintained lines fixed it. Do not put this build on a network, and do not treat it as the current product.
+>
+> The current line is [`next`](https://github.com/skilfoy/ARTEX-English/tree/next), based on [BaaRai/ARTEX v0.7.0](https://github.com/BaaRai/ARTEX/releases/tag/v0.7.0), with this fork's cloud installer and a defender pack. Read [SECURITY.md](SECURITY.md). In-app updates on this archive are off unless `ARTEX_UPDATES=1`.
+
+An English-language fork of Autumn-27/ARTEX, an autonomous security research system with a Go backend, PostgreSQL storage, and a Next.js interface. The original repository was deleted on 2026-10-08. The last open upstream tag, v0.3.15, is archived at [Hinln/ARTEX](https://github.com/Hinln/ARTEX). This repository is not ThreatBook RedAgents and it is not an official continuation by the original author.
 
 The interface contains task planning, agent sessions, findings, asset graphs, traffic evidence, approval records, model configuration, and system settings. The hosted preview uses simulated data. A functioning local installation requires PostgreSQL and an LLM configuration.
 
@@ -129,8 +133,10 @@ For integrated local development, `./dev.sh` starts the Go backend, traffic prox
 
 ## License and use conditions
 
-ARTEX is licensed under the [GNU Affero General Public License, version 3](LICENSE). Preserve the license, source disclosure obligations, and attribution when distributing modified versions or offering them over a network.
+ARTEX is licensed under the [GNU Affero General Public License, version 3](LICENSE). Preserve the license, source disclosure obligations, and attribution when distributing modified versions or offering them over a network. If you run this program as a network service, AGPL requires you to offer the corresponding source to users of that service.
 
-The upstream author states that use is restricted to personal study, source code research, and technical verification in a locally isolated environment. The author expressly prohibits scanning, probing, exploiting, or attacking websites, online services, or networked systems, including systems owned by or authorized for the user. The stated restrictions also prohibit actual penetration testing, attack and defense exercises, production use, and unlawful or destructive activity. Users are responsible for applicable legal requirements. The software is provided as is without warranties, and the author disclaims liability for losses arising from its use. The application displays these conditions at login. Consult the [upstream source](https://github.com/Autumn-27/ARTEX/blob/main/README.md) for the author's complete notice.
+Run it only in a lab you control, against systems you own or have explicit written authorization to test. Do not expose the console or the recording proxy to the internet. A public census in November 2026 found on the order of a thousand ARTEX consoles reachable from the internet.
 
-This fork acknowledges [Autumn-27 and the upstream contributors](https://github.com/Autumn-27/ARTEX/graphs/contributors). Its English text is a translation and adaptation for accessibility. Git history preserves the upstream source and its original wording.
+The original author published a stricter notice, which this build still shows at login and which remains in git history: personal study and local technical verification, and a prohibition on scanning or attacking networked systems. That notice is not erased here. The deleted upstream README is not a living link. Use the v0.3.15 archive at [Hinln/ARTEX](https://github.com/Hinln/ARTEX) when you need the last open upstream tree.
+
+This fork acknowledges Autumn-27 and the upstream contributors. Its English text is a translation and adaptation for accessibility. Git history preserves the upstream source and its original wording.

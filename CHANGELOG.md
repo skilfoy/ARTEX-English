@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- This branch is the v0.3.14 English archive. Do not expose it. The maintained line is `next`.
+- In-app updates no longer phone home or install a binary unless `ARTEX_UPDATES=1`.
+- Supply-chain CI rejects known-bad prebuilt image names outside the files that document them.
+- Terraform `admin_cidr` must be a specific network. `0.0.0.0/0` is rejected.
 - Company asset counts and the usage ledger now match the rows. The session no longer quotes commands, payloads, or credentials.
 - Replaced the README gallery with frames from the current production preview. The dashboard frame shows the token chart, and the findings frame shows Northwind.
 - The sidebar company control filters tasks, assets, and findings to Acme or Northwind. Clearing it shows both.

@@ -31,7 +31,13 @@ variable "instance_type" {
   description = "Optional. Overrides the machine selected by tier. Disk size, swap, and the Node build heap still come from tier."
 }
 variable "ssh_public_key" { type = string }
-variable "admin_cidr" { type = string }
+variable "admin_cidr" {
+  type = string
+  validation {
+    condition     = can(cidrhost(var.admin_cidr, 0)) && var.admin_cidr != "0.0.0.0/0" && var.admin_cidr != "::/0"
+    error_message = "admin_cidr must be a specific CIDR, not the whole internet. Use a /32 or a tight network."
+  }
+}
 variable "web_cidrs" {
   type    = list(string)
   default = []

@@ -58,6 +58,10 @@ jobs:
         run: sha256sum *.zip > SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
+          prerelease: true
+          make_latest: false
+          body: |
+            Archive build of the v0.3.14 English tree. Do not expose this console. The maintained line is the `next` branch.
           files: |
             dist/*.zip
             dist/SHA256SUMS
@@ -81,4 +85,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/skilfoy/artex-english:${{ github.ref_name }}
-            ghcr.io/skilfoy/artex-english:latest
+          # Never publish :latest from this archive. v0.3.14 is not a current release.
