@@ -1,0 +1,24 @@
+title: Known-bad ARTEX container image name
+id: 9a7b2c10-5e44-4d2a-8f61-0c3b9d4e7a18
+status: experimental
+description: >
+  A command line names a prebuilt ARTEX image reported in November 2026
+  to carry an unauthenticated command backdoor. Build from source instead.
+author: skilfoy
+date: 2026/11/26
+references:
+  - https://github.com/skilfoy/ARTEX-English/blob/next/detections/README.md
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    CommandLine|contains:
+      - "tomicdd/artex"
+      - "congdonglinux/artex"
+  condition: selection
+falsepositives:
+  - A defender searching logs for these names
+level: high
+tags:
+  - attack.resource_development

@@ -1,0 +1,24 @@
+title: ARTEX console process
+id: 6c1e0a4a-1d4b-4f7a-9c2e-7b0d5a1e8f30
+status: experimental
+description: >
+  A process image named artex started. Fires on an authorized lab install.
+  It does not describe what the process is allowed to do.
+author: skilfoy
+date: 2026/11/26
+references:
+  - https://github.com/skilfoy/ARTEX-English/blob/next/detections/README.md
+logsource:
+  category: process_creation
+  product: linux
+detection:
+  selection:
+    Image|endswith:
+      - "/artex"
+      - "/artex.exe"
+  condition: selection
+falsepositives:
+  - An operator running this distribution on purpose
+level: informational
+tags:
+  - attack.command_and_control

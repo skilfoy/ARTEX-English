@@ -1,0 +1,7 @@
+# Image-name notices. These match the names as text. They are not exploit signatures.
+alert http any any -> any any (msg:"ARTEX known-bad image name tomicdd/artex"; flow:established,to_server; content:"tomicdd/artex"; nocase; sid:9108781; rev:1; classtype:misc-activity;)
+alert http any any -> any any (msg:"ARTEX known-bad image name congdonglinux/artex"; flow:established,to_server; content:"congdonglinux/artex"; nocase; sid:9108782; rev:1; classtype:misc-activity;)
+
+# Console port. Expect this inside a lab. Disable it on a management network that
+# is supposed to run the distribution.
+alert tcp any any -> any 8787 (msg:"ARTEX console port 8787"; flow:to_server,established; threshold:type limit, track by_src, count 1, seconds 3600; sid:9108783; rev:1; classtype:misc-activity;)
